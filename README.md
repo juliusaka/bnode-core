@@ -36,11 +36,11 @@ TODO: add examples
 
 1. Clone the repository:
 
-   ```
-    git clone <repository-url>
-    cd bnode-core
-    git submodule update --init #no need for recursive update
-    ```
+  ```
+  git clone <repository-url>
+  cd bnode-core
+  git submodule update --init #no need for recursive update
+  ```
 
 2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/), a very-fast python package manager.
 
@@ -49,7 +49,7 @@ You're done!
 3. (Optional:) If you want a virtual environment, run:
 
 ```
-    uv sync
+uv sync
 ```
 
 to install a virtual environment of the project defined in pyproject.toml. You can also use ```uv sync``` to test if the package can be installed in the way you specified it. To activate the virtual environment, use:
