@@ -26,6 +26,8 @@ The main features of the package this repository implements are:
 
 
 ## Installation
+e.g. for running the examples in the `examples/` folder.
+TODO: add examples
 1. Clone the repository:
    ```
     git clone <repository-url>
@@ -51,7 +53,17 @@ source .venv/bin/activate
 You don't need to install the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
 
 ## Usage
-TODO: Add reference to mkdocs
+To see the documentation, run:
+```
+make doc
+```
+or, if you don't have make installed,
+```
+uvx --with mkdocstrings  --with mkdocs-material --with mkdocstrings-python --with mkdocs-include-markdown-plugin mkdocs serve
+```
+and open the website shown in the terminal.
+
+(When deploying this on GitHub, the github action will automatically build and publish the documentation to GitHub pages.)
 
 ## Support
 If you have questions or issues, please open an issue on GitHub. You can also reach out to me via [email](mailto:julius.aka@uni-a.de), see [Authors](#authors).
