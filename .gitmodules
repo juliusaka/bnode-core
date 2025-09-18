@@ -1,0 +1,6 @@
+[submodule "resources/data/surrogate-test-data"]
+	path = resources/data/surrogate-test-data
+	url = git@git.rz.uni-augsburg.de:akajuliu/surrogate-test-data.git
+[submodule "resources/models/surrogate-test-models"]
+	path = resources/models/surrogate-test-models
+	url = git@git.rz.uni-augsburg.de:akajuliu/surrogate-test-models.git
