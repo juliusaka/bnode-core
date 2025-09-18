@@ -59,6 +59,34 @@ If you have questions or issues, please open an issue on GitHub. You can also re
 ## Contributing
 You are welcome to contribute further test models to this project. Please fork the repository and create a pull request with your changes.
 
+### Development Setup
+For the development setup, [Make](https://gnuwin32.sourceforge.net/packages/make.htm) should be installed. [What does make do?](https://makefiletutorial.com/) 
+For us, this is just a convenient way to run common tasks.
+
+For installing ```make``` on Windows, download the setup from [this website](https://gnuwin32.sourceforge.net/packages/make.htm) and add the make.exe to your PATH environment variable. 
+- (Usually, this is `C:\Program Files (x86)\GnuWin32\bin`, add this to the PATH variable in the system environment variables, system properties --> advanced system settings --> environment variables, then restart your terminal).
+
+For linux, install make via your package manager, e.g. `sudo apt install make`.
+
+Afterwards, you can use the commands in the Makefile, e.g. `make check` to check the code style, `make format` to format the code, or `make test` to run the tests.
+
+### Development Features
+
+- **Continuous Integration `make allci`**
+  - Ruff for linting `make check`
+  - Ruff for formatting `make format`
+  - Ty for type checking `make type`
+  - Pytest for testing `make test`
+  - Pytest-cov for testing coverage `make cov`
+  - Pre-commit hooks to make some checks and formatting code before commits `make commit`
+- **Documentation**
+  - [Mkdocs](https://www.mkdocs.org/getting-started/) for documentation building with Markdown `make doc`
+  - Using [mkdocs-material](https://squidfunk.github.io/mkdocs-material/creating-your-site/) as theme
+  - Automatic build of the API Reference page
+  - Docstrings are in [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) and used in mkdocs using [mkdocstrings](https://mkdocstrings.github.io/)
+  - Pre-configured GitHub Action / Gitlab CI for publishing the documentation on Github pages / Gitlab page
+- see the modern-python-boilerplate for including a dockerfile, packaging, publishing to PyPI, etc. (we don't need this features yet)
+
 <a id="authors"></a>
 ## Authors
 - Julius Aka, 
@@ -86,3 +114,6 @@ url={https://openreview.net/forum?id=nA464tCGR5}
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+The repository structure is inspired by [modern-python-boilerplate](https://github.com/lambda-science/modern-python-boilerplate/).
