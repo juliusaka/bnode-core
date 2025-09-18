@@ -1,5 +1,5 @@
 site_name: bnode-core
-site_url: https://github.com/lambda-science/modern-python-boilerplate
+site_url: https://github.com/juliusaka/balanced-neural-odes
 site_author: Julius Aka
 site_description: bnode-core
 theme:
@@ -46,6 +46,7 @@ plugins:
 nav:
   - Home: index.md
   - API Reference: reference.md
+  - License: LICENSE.md
 markdown_extensions:
   - attr_list
   - admonition
@@ -62,10 +63,12 @@ markdown_extensions:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
-repo_url: https://github.com/lambda-science/modern-python-boilerplate
+repo_url: https://github.com/juliusaka/balanced-neural-odes
 extra:
   social:
     - icon: material/web
       link: https://cmeyer.fr/
     - icon: fontawesome/brands/x-twitter
       link: https://x.com/corentinm_py
+watch:
+  - README.md

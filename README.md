@@ -1,15 +1,18 @@
 # bnode-core
 Balanced Neural ODEs - Core Library
+
 ## Description
+
 This repository contains code implementing "Balanced Neural ODEs" (BNODEs) as described in the paper:
 
 - Julius Aka, Johannes Brunnemann, Jörg Eiden, Arne Speerforck, Lars Mikelsons. "Balanced Neural ODEs: nonlinear model order reduction and Koopman operator approximations", ICLR 2025. [OpenReview](https://openreview.net/forum?id=nA464tCGR5) ([bibtex key](#citation))
 
 Balanced Neural ODEs (BNODEs) are a data-driven method to learn reduced-order models for high-dimensional dynamical systems. The approach combines Variational Autoencoders (VAEs) with Neural Ordinary Differential Equations (Neural ODEs) to learn a low-dimensional latent representation of the system's dynamics.
 
-![BNODE Architecture](docs/images/bnode.svg)
+![BNODE Architecture](images/bnode.svg)
 
 It consits of the following main components:
+
 - *Encoder*: Maps high-dimensional input data to a low-dimensional latent space. Distinct encoders are use for
     - (physical) parameter encoding (if applicable)
     - Control input encoding (if applicable)
@@ -20,6 +23,7 @@ It consits of the following main components:
 Each component can be set to be a nonlinear neural network or to be a purely linear model, allowing for flexibility in model complexity. For example, using linearity in the control encoder, the Neural ODE and the decoder results in a Koopman operator approximation for model-predictive control. 
 
 The main features of the package this repository implements are:
+
 - **Dataset generation**: Functions to generate dataset from physical models provided as FMU (Functional Mock-up Unit, [FMI standard](https://fmi-standard.org/)) with different sampling methods.
 - **Model training**: Architecture implementation of BNODEs and state space NeuralODEs using [PyTorch](https://pytorch.org/) and [torchdiffeq](https://github.com/rtqichen/torchdiffeq). Both models can be trained using the same trainer, facilitating a lot of special considerations needed for training Neural ODEs.
 - Various utilties for enabling an efficient workflow, e.g. logging with [mlflow](https://mlflow.org/), configuration management with [hydra](https://hydra.cc/) and a simple GUI for visualizing training results.
@@ -27,24 +31,31 @@ The main features of the package this repository implements are:
 
 ## Installation
 e.g. for running the examples in the `examples/` folder.
+
 TODO: add examples
+
 1. Clone the repository:
+
    ```
     git clone <repository-url>
     cd bnode-core
     git submodule update --init #no need for recursive update
     ```
+
 2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/), a very-fast python package manager.
 
 You're done!
 
 3. (Optional:) If you want a virtual environment, run:
+
 ```
     uv sync
 ```
+
 to install a virtual environment of the project defined in pyproject.toml. You can also use ```uv sync``` to test if the package can be installed in the way you specified it. To activate the virtual environment, use:
 
-```[linux-bash]
+```
+[linux-bash]
 source .venv/bin/activate
 [windows-powershell]
 .venv\Scripts\Activate
@@ -54,13 +65,17 @@ You don't need to install the virtual environment, **you can simply** place ```u
 
 ## Usage
 To see the documentation, run:
+
 ```
 make doc
 ```
+
 or, if you don't have make installed,
+
 ```
 uvx --with mkdocstrings  --with mkdocs-material --with mkdocstrings-python --with mkdocs-include-markdown-plugin mkdocs serve
 ```
+
 and open the website shown in the terminal.
 
 (When deploying this on GitHub, the github action will automatically build and publish the documentation to GitHub pages.)
@@ -85,18 +100,18 @@ Afterwards, you can use the commands in the Makefile, e.g. `make check` to check
 ### Development Features
 
 - **Continuous Integration `make allci`**
-  - Ruff for linting `make check`
-  - Ruff for formatting `make format`
-  - Ty for type checking `make type`
-  - Pytest for testing `make test`
-  - Pytest-cov for testing coverage `make cov`
-  - Pre-commit hooks to make some checks and formatting code before commits `make commit`
+    - Ruff for linting `make check`
+    - Ruff for formatting `make format`
+    - Ty for type checking `make type`
+    - Pytest for testing `make test`
+    - Pytest-cov for testing coverage `make cov`
+    - Pre-commit hooks to make some checks and formatting code before commits `make commit`
 - **Documentation**
-  - [Mkdocs](https://www.mkdocs.org/getting-started/) for documentation building with Markdown `make doc`
-  - Using [mkdocs-material](https://squidfunk.github.io/mkdocs-material/creating-your-site/) as theme
-  - Automatic build of the API Reference page
-  - Docstrings are in [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) and used in mkdocs using [mkdocstrings](https://mkdocstrings.github.io/)
-  - Pre-configured GitHub Action / Gitlab CI for publishing the documentation on Github pages / Gitlab page
+    - [Mkdocs](https://www.mkdocs.org/getting-started/) for documentation building with Markdown `make doc`
+    - Using [mkdocs-material](https://squidfunk.github.io/mkdocs-material/creating-your-site/) as theme
+    - Automatic build of the API Reference page
+    - Docstrings are in [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) and used in mkdocs using [mkdocstrings](https://mkdocstrings.github.io/)
+    - Pre-configured GitHub Action / Gitlab CI for publishing the documentation on Github pages / Gitlab page
 - see the modern-python-boilerplate for including a dockerfile, packaging, publishing to PyPI, etc. (we don't need this features yet)
 
 <a id="authors"></a>
@@ -125,7 +140,7 @@ url={https://openreview.net/forum?id=nA464tCGR5}
 ```
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.
 
 ## Acknowledgments
 The repository structure is inspired by [modern-python-boilerplate](https://github.com/lambda-science/modern-python-boilerplate/).
