@@ -194,3 +194,5 @@ env/
 **/__pycache__/
 dist/
 .coverage
+
+*.typed
