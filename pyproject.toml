@@ -4,11 +4,39 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "Julius Aka", email = "aka.julius@hotmail.de" }
+    { name = "Julius Aka", email = "julius.aka@uni-a.de" }
 ]
 requires-python = ">=3.12"
 dependencies = []
 
+[project.urls]
+Homepage = ""
+Documentation = ""
+Repository = ""
+Issues = ""
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "ty",
+    "twine",
+    "build",
+    "pre-commit",
+    "rich",
+]
+
+[project.scripts]
+# this is a possibility to define commands
+modern_python_boilerplate = "modern_python_boilerplate.main:hello_world"
+
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]
 build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.coverage.run]
+omit = ["tests/*"]
