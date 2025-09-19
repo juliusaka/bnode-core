@@ -67,8 +67,12 @@ repo_url: https://github.com/juliusaka/balanced-neural-odes
 extra:
   social:
     - icon: material/web
-      link: https://cmeyer.fr/
-    - icon: fontawesome/brands/x-twitter
-      link: https://x.com/corentinm_py
+      link: https://www.uni-augsburg.de/de/fakultaet/fai/informatik/prof/imech/team/julius-aka/
+    - icon: material/linkedin
+      link: https://www.linkedin.com/in/julius-aka/
+    - icon: material/school
+      link: https://scholar.google.com/citations?user=7SypqSQAAAAJ&hl
+    - icon: material/github
+      link: https://github.com/juliusaka
 watch:
   - README.md
