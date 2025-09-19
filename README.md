@@ -9,7 +9,9 @@ This repository contains code implementing "Balanced Neural ODEs" (BNODEs) as de
 
 Balanced Neural ODEs (BNODEs) are a data-driven method to learn reduced-order models for high-dimensional dynamical systems. The approach combines Variational Autoencoders (VAEs) with Neural Ordinary Differential Equations (Neural ODEs) to learn a low-dimensional latent representation of the system's dynamics.
 
-![BNODE Architecture](images/bnode.svg)
+<p align="center">
+    <img src="images/bnode.svg" alt="BNODE Architecture" style="max-width:100%; height:auto;">
+</p>
 
 It consits of the following main components:
 
@@ -112,7 +114,7 @@ Afterwards, you can use the commands in the Makefile, e.g. `make check` to check
     - Automatic build of the API Reference page
     - Docstrings are in [Google style](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html) and used in mkdocs using [mkdocstrings](https://mkdocstrings.github.io/)
     - Pre-configured GitHub Action / Gitlab CI for publishing the documentation on Github pages / Gitlab page
-- see the modern-python-boilerplate for including a dockerfile, packaging, publishing to PyPI, etc. (we don't need this features yet)
+- see [modern-python-boilerplate](https://github.com/lambda-science/modern-python-boilerplate/) for including Docker, packaging, publishing to PyPI, etc. (we don't need this features yet)
 
 <a id="authors"></a>
 ## Authors
