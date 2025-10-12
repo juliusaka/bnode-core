@@ -53,7 +53,7 @@ TODO: add examples
     ```
 
 
-3. Install Torch: Depending on your hardware and CUDA version, install the appropriate version of PyTorch. UV does not support automatic backend selection in the default "uv run / uv sync" command yet. But the uv pip interface (replacement for commonly used pip commands) does support [automatic backend selection](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection).
+3. Install Torch: Depending on your hardware (available accelerators, e.g. CUDA ), install the appropriate version of PyTorch. UV does not support automatic backend selection in the default "uv run / uv sync" command yet. But the uv pip interface (replacement for commonly used pip commands) does support [automatic backend selection](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection).
 
     So you can install torch with
 
