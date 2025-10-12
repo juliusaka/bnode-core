@@ -1,6 +1,6 @@
 # API Reference
 
-::: bnode_core.main
+::: bnode_core.config
     handler: python
     options:
       show_root_heading: true
