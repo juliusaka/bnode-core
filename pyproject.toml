@@ -7,13 +7,18 @@ authors = [
     { name = "Julius Aka", email = "julius.aka@uni-a.de" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "hydra-core>=1.3.2",
+    "torch>=2.7.0",
+    "torchaudio>=2.8.0",
+    "torchvision>=0.22.0",
+]
 
 [project.urls]
-Homepage = ""
-Documentation = ""
-Repository = ""
-Issues = ""
+Homepage = " "
+Documentation = " "
+Repository = " "
+Issues = " "
 
 [dependency-groups]
 dev = [

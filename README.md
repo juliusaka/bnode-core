@@ -39,22 +39,42 @@ TODO: add examples
 1. Clone the repository:
 
   ```
-  git clone <repository-url>
-  cd bnode-core
-  git submodule update --init #no need for recursive update
+        git clone <repository-url>
+        cd bnode-core
+        git submodule update --init #no need for recursive update
   ```
 
 2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/), a very-fast python package manager.
 
+Then, create a virtual environment and install the dependencies:
+
+```
+uv venv create 
+```
+
+
+3. Install Torch:
+    Depending on your hardware and CUDA version, install the appropriate version of PyTorch. UV does not support automatic backend selection in the default "uv run / uv sync" command yet. But the uv pip interface (replacement for commonly used pip commands) does support [automatic backend selection](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection).
+    So you can install torch with
+
+   ```
+    uv pip install torch torchvision torchaudio --torch-backend auto
+   ```
+   before using ```uv sync``` / ```uv run```.
+   You can also manually select the appropriate command from [uv doc](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection)
+
 You're done!
 
-3. (Optional:) If you want a virtual environment, run:
-
+4. (Optional:) Use the virtual environment:
+   
+Run 
 ```
 uv sync
 ```
 
-to install a virtual environment of the project defined in pyproject.toml. You can also use ```uv sync``` to test if the package can be installed in the way you specified it. To activate the virtual environment, use:
+at the first time (no 'uv run' command before) to install a virtual environment of the project defined in pyproject.toml. You can also use ```uv sync``` to test if the package can be installed in the way you specified it. 
+
+To activate the virtual environment, use:
 
 ```
 [linux-bash]
@@ -62,8 +82,9 @@ source .venv/bin/activate
 [windows-powershell]
 .venv\Scripts\Activate
 ```
+in your Terminal or add it in VS Code using the command palette (Ctrl+Shift+P) and searching for "Python: Select Interpreter".
 
-You don't need to install the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
+You don't need to use the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
 
 ## Usage
 To see the documentation, run:
@@ -81,6 +102,28 @@ uvx --with mkdocstrings  --with mkdocs-material --with mkdocstrings-python --wit
 and open the website shown in the terminal.
 
 (When deploying this on GitHub, the github action will automatically build and publish the documentation to GitHub pages.)
+
+## Package Structure
+The package is structured as follows:
+
+```
+└───bnode_core
+    │   config.py
+    │   filepaths.py
+    │
+    ├───data_generation
+    │       data_preperation.py
+    │       raw_data_generation.py
+    │
+    ├───ode
+    │       bnode.py
+    │       node.py
+    │       trainer.py
+    │
+    ├───plots
+    │
+    └───utils
+```
 
 ## Support
 If you have questions or issues, please open an issue on GitHub. You can also reach out to me via [email](mailto:julius.aka@uni-a.de), see [Authors](#authors).
