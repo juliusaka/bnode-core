@@ -38,51 +38,52 @@ TODO: add examples
 
 1. Clone the repository:
 
-  ```
-        git clone <repository-url>
-        cd bnode-core
-        git submodule update --init #no need for recursive update
-  ```
+    ```
+    git clone <repository-url>
+    cd bnode-core
+    git submodule update --init #no need for recursive update
+    ```
 
 2. [Install uv](https://docs.astral.sh/uv/getting-started/installation/), a very-fast python package manager.
 
-Then, create a virtual environment and install the dependencies:
+    Then, create a virtual environment:
 
-```
-uv venv create 
-```
+    ```
+    uv venv 
+    ```
 
 
-3. Install Torch:
-    Depending on your hardware and CUDA version, install the appropriate version of PyTorch. UV does not support automatic backend selection in the default "uv run / uv sync" command yet. But the uv pip interface (replacement for commonly used pip commands) does support [automatic backend selection](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection).
+3. Install Torch: Depending on your hardware and CUDA version, install the appropriate version of PyTorch. UV does not support automatic backend selection in the default "uv run / uv sync" command yet. But the uv pip interface (replacement for commonly used pip commands) does support [automatic backend selection](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection).
+
     So you can install torch with
 
    ```
     uv pip install torch torchvision torchaudio --torch-backend auto
    ```
-   before using ```uv sync``` / ```uv run```.
-   You can also manually select the appropriate command from [uv doc](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection)
+    before using ```uv sync``` / ```uv run```.
+    
+    You can also manually select the appropriate command from [uv doc](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection)
 
-You're done!
+    **You're done!**
 
 4. (Optional:) Use the virtual environment:
-   
-Run 
-```
-uv sync
-```
+    
+    Run 
+    ```
+    uv sync
+    ```
 
-at the first time (no 'uv run' command before) to install a virtual environment of the project defined in pyproject.toml. You can also use ```uv sync``` to test if the package can be installed in the way you specified it. 
+    at the first time (no 'uv run' command before) to install a virtual environment of the project defined in pyproject.toml. You can also use ```uv sync``` to test if the package can be installed in the way you specified it. 
 
-To activate the virtual environment, use:
+    To activate the virtual environment, use:
 
-```
-[linux-bash]
-source .venv/bin/activate
-[windows-powershell]
-.venv\Scripts\Activate
-```
-in your Terminal or add it in VS Code using the command palette (Ctrl+Shift+P) and searching for "Python: Select Interpreter".
+    ```
+    [linux-bash]
+    source .venv/bin/activate
+    [windows-powershell]
+    .venv\Scripts\Activate
+    ```
+    in your Terminal or add it in VS Code using the command palette (Ctrl+Shift+P) and searching for "Python: Select Interpreter".
 
 You don't need to use the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
 
