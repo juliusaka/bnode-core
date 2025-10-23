@@ -4,7 +4,42 @@ import hydra
 import logging
 
 from pathlib import Path
-from config import data_gen_config, convert_cfg_to_dataclass
+from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
+
+def config_dir_auto_recognize() -> Path:
+    msg = ''
+    if Path('.bnode_project').exists():
+        if Path('./config/').exists():
+            return Path('./config/')
+        else: 
+            msg += 'No config directory found in ./config/ despite .bnode_project file existing.\n'
+    else:
+        if Path('resources/config/').exists():
+            return Path('resources/config/')
+        else:
+            msg += 'No .bnode_project file found and no config directory found in resources/config/.\n'
+    msg += 'Please ensure you are in a correct working directory or provide the config path manually.'
+    logging.error(msg)
+    raise ValueError(msg)
+
+def get_cfg_from_cli() -> tuple[str, str]:
+    """Parses sys.argv to find --cfg_path argument and returns cfg_dir and cfg_name. If not found, uses auto recognition (only for cfg_dir, cfg_name is None then)."""
+    cfg_path = None
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith('--cfg_path'):
+            cfg_path = sys.argv.pop(i).split('=')[1]
+            break
+    if cfg_path is None:
+        cfg_dir = config_dir_auto_recognize()
+        cfg_name = None
+    else:
+        if cfg_path.endswith('.yaml') or cfg_path.endswith('.yml'):
+            # if a full config file is given, extract the directory
+            cfg_dir = str(Path(cfg_path).parent)
+            cfg_name = str(Path(cfg_path).stem)
+        else:
+            raise ValueError('cfg_path must point to a .yaml or .yml file.')
+    return cfg_dir, cfg_name 
 
 def create_path(path: Path, log: bool) -> None:
     if not path.exists():

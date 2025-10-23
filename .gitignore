@@ -184,7 +184,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# Boiletplate
+# Boilerplate
 venv/
 env/
 .env/
@@ -194,3 +194,8 @@ env/
 **/__pycache__/
 dist/
 .coverage
+
+# project_specific
+fmu_variable_names.txt
+outputs/*
+multirun/*

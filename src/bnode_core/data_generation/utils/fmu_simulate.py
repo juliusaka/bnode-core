@@ -10,6 +10,7 @@ import shutil
 import sys
 import os
 import io
+from bnode_core.config import get_config_store
 
 class logger_max_rate:
     def __init__(self, logger: logging.Logger, max_rate: float = 30):
@@ -258,15 +259,14 @@ def fmu_simulate(fmu_path,
     return res
 
 from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
-cs = get_config_store()
+import bnode_core.filepaths as filepaths
 from pathlib import Path
 import numpy as np
 import hydra
 import os
 from pathlib import Path
 
-@hydra.main(config_path=str(Path('resources/config/data_generation').absolute()), config_name='data_gen', version_base=None)
-def main(cfg: data_gen_config) -> None:
+def main(cfg: data_gen_config, plot: bool = False, return_res: bool = False) -> None:
     """
     test the fmu_simulate function
     """
@@ -320,38 +320,41 @@ def main(cfg: data_gen_config) -> None:
     outputs, states, states_der, controls_from_model = res['outputs'], res['states'], res['states_der'], res['controls_from_model']
     logging.info('simulation successful: ' + str(res['success']))
 
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(5,1, sharex=True)
-    # turn grid on
-    for i in range(4):
-        ax[i].grid()
-    x = np.arange(cfg.pModel.RawData.Solver.simulationStartTime, cfg.pModel.RawData.Solver.simulationEndTime + cfg.pModel.RawData.Solver.timestep, cfg.pModel.RawData.Solver.timestep)
-    # x, states, states_der, ctrl_values = x[1:], states[:,1:], states_der[:,1:], ctrl_values[:,1:]
-    if cfg.pModel.RawData.outputs is not None:
-        for i in range(len(cfg.pModel.RawData.outputs)):
-            ax[0].plot(x, outputs[i,:], label=cfg.pModel.RawData.outputs[i])
-    ax[0].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-    ax[0].set_title('outputs')
-    for i in range(len(cfg.pModel.RawData.states.keys())):
-        ax[1].plot(x, states[i,:], label=list(cfg.pModel.RawData.states.keys())[i])
-    ax[1].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-    ax[1].set_title('states')
-    if cfg.pModel.RawData.states_der_include:
+    if plot:
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(5,1, sharex=True)
+        # turn grid on
+        for i in range(4):
+            ax[i].grid()
+        x = np.arange(cfg.pModel.RawData.Solver.simulationStartTime, cfg.pModel.RawData.Solver.simulationEndTime + cfg.pModel.RawData.Solver.timestep, cfg.pModel.RawData.Solver.timestep)
+        # x, states, states_der, ctrl_values = x[1:], states[:,1:], states_der[:,1:], ctrl_values[:,1:]
+        if cfg.pModel.RawData.outputs is not None:
+            for i in range(len(cfg.pModel.RawData.outputs)):
+                ax[0].plot(x, outputs[i,:], label=cfg.pModel.RawData.outputs[i])
+        ax[0].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
+        ax[0].set_title('outputs')
         for i in range(len(cfg.pModel.RawData.states.keys())):
-            ax[2].plot(x, states_der[i,:], label=list(cfg.pModel.RawData.states.keys())[i])
-        ax[2].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-        ax[2].set_title('state derivatives')
-    if cfg.pModel.RawData.controls_include:
-        for i in range(len(cfg.pModel.RawData.controls.keys())):
-            ax[3].plot(x, ctrl_values[i,:], label=list(cfg.pModel.RawData.controls.keys())[i])
-        ax[3].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-        ax[3].set_title('controls')
-    if cfg.pModel.RawData.controls_only_for_sampling_extract_actual_from_model:
-        for i in range(len(cfg.pModel.RawData.controls_from_model)):
-            ax[4].plot(x, controls_from_model[i,:], label=cfg.pModel.RawData.controls_from_model[i])
-        ax[4].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-        ax[4].set_title('controls from model')
-    plt.show()
+            ax[1].plot(x, states[i,:], label=list(cfg.pModel.RawData.states.keys())[i])
+        ax[1].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
+        ax[1].set_title('states')
+        if cfg.pModel.RawData.states_der_include:
+            for i in range(len(cfg.pModel.RawData.states.keys())):
+                ax[2].plot(x, states_der[i,:], label=list(cfg.pModel.RawData.states.keys())[i])
+            ax[2].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
+            ax[2].set_title('state derivatives')
+        if cfg.pModel.RawData.controls_include:
+            for i in range(len(cfg.pModel.RawData.controls.keys())):
+                ax[3].plot(x, ctrl_values[i,:], label=list(cfg.pModel.RawData.controls.keys())[i])
+            ax[3].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
+            ax[3].set_title('controls')
+        if cfg.pModel.RawData.controls_only_for_sampling_extract_actual_from_model:
+            for i in range(len(cfg.pModel.RawData.controls_from_model)):
+                ax[4].plot(x, controls_from_model[i,:], label=cfg.pModel.RawData.controls_from_model[i])
+            ax[4].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
+            ax[4].set_title('controls from model')
+        plt.show()
+    if return_res:
+        return res
 
 if __name__ == '__main__':
     """
@@ -362,4 +365,7 @@ if __name__ == '__main__':
     """
     # sys.argv += ['pModel.RawData.Solver.simulationEndTime=10']
     # sys.argv += ['pModel=PowerPlant']
-    main()
+    cs = get_config_store()
+    cfg_dir, cfg_name = filepaths.get_cfg_from_cli()
+    cfg_name = 'data_generation' if cfg_name is None else cfg_name
+    hydra.main(config_path=str(Path(cfg_dir).absolute()), config_name=cfg_name, version_base=None)(lambda cfg: main(cfg, plot=True))()
