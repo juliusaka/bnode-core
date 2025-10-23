@@ -2,8 +2,8 @@
 This file contains all the dataclass definitions for the config files
 and the config store.
 """
-from pydantic.dataclasses import dataclass, Field
-from dataclasses import asdict
+from pydantic.dataclasses import dataclass
+from dataclasses import asdict, field
 from pydantic import ValidationInfo
 from pydantic.functional_validators import field_validator
 from hydra.core.config_store import ConfigStore
@@ -29,16 +29,16 @@ class SolverClass:
     simulationEndTime: float = 1.0
     timestep: float = 0.1
     tolerance: float = 1e-6
-    sequence_length: int = 0
+    sequence_length: int = None
     timeout: Optional[float] = None # in seconds, if None, no timeout is set
     
-    @field_validator('sequence_length')
-    @classmethod
-    def check_sequence_length(cls, v, info: ValidationInfo):
+    @model_validator(mode='after')
+    def calculate_sequence_length(self):
         # +1 because of the initial state, ceil to make sure that the last timestep is included
-        v = np.ceil((info.data['simulationEndTime'] - info.data['simulationStartTime']) / info.data['timestep']) + 1 
+        v = np.ceil((self.simulationEndTime - self.simulationStartTime) / self.timestep) + 1 
         logging.info(f'sequence_length has been set to {int(v)}')
-        return int(v)
+        self.sequence_length = int(v)
+        return self
 
 @dataclass
 class RawDataClass:
@@ -49,7 +49,7 @@ class RawDataClass:
     versionName: str = 'v1'
     states_default_lower_value: float = -1000.0
     states_default_upper_value: float = 1000.0
-    states: Optional[Dict] = Field(default_factory=dict)
+    states: Optional[Dict] = field(default_factory=dict)
     initial_states_include: bool = False
     states_der_include: bool = True
     initial_states_sampling_strategy: str = 'R'
@@ -60,7 +60,7 @@ class RawDataClass:
     parameters_sampling_strategy: str = 'R'
     controls_default_lower_value: float = 0.2
     controls_default_upper_value: float = 5.0
-    controls: Optional[Dict] = Field(default_factory=dict)
+    controls: Optional[Dict] = field(default_factory=dict)
     controls_include: bool = False
     controls_sampling_strategy: str = 'R'
     controls_frequency_min_in_timesteps: Optional[int] = None
@@ -69,7 +69,7 @@ class RawDataClass:
     controls_only_for_sampling_extract_actual_from_model: bool = False
     controls_from_model: Optional[List[str]] = None
     outputs: Optional[List[str]] = None
-    Solver: SolverClass = SolverClass()
+    Solver: SolverClass = field(default_factory=SolverClass)
     n_samples: int = 2048
     creation_date: Optional[str] = None
     @field_validator('fmuPath')
@@ -109,13 +109,10 @@ class RawDataClass:
             if value is None:
                 v[key] = [info.data['controls_default_lower_value'], info.data['controls_default_upper_value']]
                 logging.info(f'control ranges {key} has been set to \t {[round(x, 4) for x in v[key]]}')
-            if not ((len(v[key]) == 2) or (len(v[key]) == 4)):
-                raise ValueError(f'control {key} must be a dictionary of lists with 2 or 4 elements')
+            if not len(v[key]) == 2:
+                raise ValueError(f'control {key} must be a dictionary of lists with 2 elements')
             if v[key][0] > v[key][1]:
                 raise ValueError(f'control {key}: first element must be smaller than second element')
-            if len(v[key]) == 4:
-                if v[key][2] > v[key][3]:
-                    raise ValueError(f'control {key}: clip value lower bound must be smaller than upper bound')
         return v
     @field_validator('states')
     @classmethod
@@ -152,18 +149,18 @@ class RawDataClass:
 @dataclass
 class base_dataset_prep_class:
     dataset_suffix: Optional[str] = None
-    n_samples: List[int] = Field(default_factory=list)
-    filter_trajectories_limits: Optional[Dict[str, List]] = Field(default_factory=dict) 
+    n_samples: List[int] = field(default_factory=list)
+    filter_trajectories_limits: Optional[Dict[str, List]] = field(default_factory=dict) 
     # e.g. stratifiedHeatFlow.partition[1].heatCapacitor.T: [10, 30]. 
-    filter_trajectories_expression: Optional[Dict[str, List[str]]] = Field(default_factory=dict)
+    filter_trajectories_expression: Optional[Dict[str, List[str]]] = field(default_factory=dict)
     # str can be used to define a python expression to be evaluated, 
     # the list can contain multiple expressions that all must hold true for the trajectory to be removed
-    transforms: Optional[Dict[str, str]] = Field(default_factory=dict)
-    states: Optional[List[str]] = Field(default_factory=lambda: ['all'])
-    parameters: Optional[List[str]] = Field(default_factory=lambda: ['all'])
+    transforms: Optional[Dict[str, str]] = field(default_factory=dict)
+    states: Optional[List[str]] = field(default_factory=lambda: ['all'])
+    parameters: Optional[List[str]] = field(default_factory=lambda: ['all'])
     parameters_remove: bool = False
-    controls: Optional[List[str]] = Field(default_factory=lambda: ['all'])
-    outputs: Optional[List[str]] = Field(default_factory=lambda: ['all'])
+    controls: Optional[List[str]] = field(default_factory=lambda: ['all'])
+    outputs: Optional[List[str]] = field(default_factory=lambda: ['all'])
     start_time: float = 0
     end_time: float = float('inf')
     sequence_length: Optional[int] = None
@@ -174,13 +171,13 @@ class base_dataset_prep_class:
 
 @dataclass
 class base_pModel_test_class:
-    plot_variables: List[str] = Field(default_factory=list)
+    plot_variables: List[str] = field(default_factory=list)
 
 @dataclass
 class base_pModelClass:
-    RawData: RawDataClass = RawDataClass()
-    dataset_prep: base_dataset_prep_class = base_dataset_prep_class()
-    test_nn_model: Optional[base_pModel_test_class] = base_pModel_test_class()
+    RawData: RawDataClass = field(default_factory=RawDataClass)
+    dataset_prep: base_dataset_prep_class = field(default_factory=base_dataset_prep_class)
+    test_nn_model: Optional[base_pModel_test_class] = field(default_factory=base_pModel_test_class)
 
     @field_validator('dataset_prep')
     @classmethod
@@ -228,8 +225,8 @@ class abstract_nn_model_class:
 
 @dataclass
 class base_nn_model_class(abstract_nn_model_class):
-    network: base_network_class = base_network_class()
-    training: base_training_settings_class = base_training_settings_class()
+    network: base_network_class = field(default_factory=base_network_class)
+    training: base_training_settings_class = field(default_factory=base_training_settings_class)
 
 """pels vae config dataclass definitions"""
 @dataclass
@@ -302,7 +299,6 @@ class latent_ode_network_class(base_network_class):
     params_to_state_encoder: bool = False
     params_to_control_encoder: bool = False
     params_to_decoder: bool = False
-    controls_to_state_encoder: bool = False
     
     lat_state_mu_independent: bool = False
 
@@ -328,12 +324,11 @@ class latent_ode_network_class(base_network_class):
         return v
     
     @model_validator(mode='after')
-    @classmethod
-    def model_validate_linear_mode(cls, data):
+    def model_validate_linear_mode(self):
         # This method will be called after field validation for the whole model
         # It should be registered as a model_validator in the class
-        v = data.linear_mode
-        koopman_mpc_mode = data.koopman_mpc_mode
+        v = self.linear_mode
+        koopman_mpc_mode = self.koopman_mpc_mode
         if koopman_mpc_mode is not None:
             logging.warning('koopman_mpc_mode is deprecated, please use linear_mode instead')
             logging.warning('overwriting linear_mode with koopman_mpc_mode')
@@ -341,43 +336,30 @@ class latent_ode_network_class(base_network_class):
                 raise ValueError('linear_mode must be None if koopman_mpc_mode is True')
             elif koopman_mpc_mode is True and v is None:
                 v = 'mpc_mode'
-                data['linear_mode'] = v
+                self['linear_mode'] = v
         if v is not None:
             if v == 'mpc_mode':
-                data.state_encoder_linear = False
-                data.control_encoder_linear = True
-                data.parameter_encoder_linear = True
-                data.ode_linear = True
-                data.decoder_linear = True
+                self.state_encoder_linear = False
+                self.control_encoder_linear = True
+                self.parameter_encoder_linear = True
+                self.ode_linear = True
+                self.decoder_linear = True
                 logging.info('Setting all linear modes to True except state_encoder for mpc_mode')
             elif v == 'mpc_mode_for_controls':
-                data.state_encoder_linear = False
-                data.control_encoder_linear = True
-                data.parameter_encoder_linear = False
-                data.ode_linear = True
-                data.decoder_linear = True
+                self.state_encoder_linear = False
+                self.control_encoder_linear = True
+                self.parameter_encoder_linear = False
+                self.ode_linear = True
+                self.decoder_linear = True
                 logging.info('Setting all linear modes to True except state_encoder and parameter_encoder for mpc_mode_for_controls')
             elif v == 'deep_koopman':
-                data.state_encoder_linear = False
-                data.control_encoder_linear = False
-                data.parameter_encoder_linear = False
-                data.ode_linear = True
-                data.decoder_linear = False
+                self.state_encoder_linear = False
+                self.control_encoder_linear = False
+                self.parameter_encoder_linear = False
+                self.ode_linear = True
+                self.decoder_linear = False
                 logging.info('Setting only ODE to linear for deep_koopman')
-        return data
-
-    # # set linear modes depending on koopman_mpc_mode
-    # @field_validator('koopman_mpc_mode')
-    # @classmethod
-    # def set_linear_modes(cls, v, info: ValidationInfo):
-    #     if v:
-    #         info.data['state_encoder_linear'] = False
-    #         info.data['control_encoder_linear'] = True
-    #         info.data['parameter_encoder_linear'] = True
-    #         info.data['ode_linear'] = True
-    #         info.data['decoder_linear'] = True
-    #         logging.info('Setting all linear modes to True except state_encoder for koopman_mpc_mode')
-    #     return v
+        return self
 
 @dataclass
 class base_neural_ode_pretraining_settings_class(base_training_settings_class):
@@ -413,7 +395,6 @@ class base_time_stepper_training_settings(base_training_settings_class):
     break_after_loss_of: Optional[float] = None
     reload_model_if_loss_nan: bool = True # should be always True, only set to false e.g. for writing iclr paper
     activate_deterministic_mode_after_this_phase: bool = False # is only used for B-NODE, but for compatibility reasons it is included here
-    deterministic_mode_from_state0: bool = False # if True, the deterministic mode will be activated based on the latent state at time 0, otherwise based on the latent states over the whole trajectory
 
     seq_len_epoch_start: Optional[int] = None # only used internally, does not need to be set. But this can be set
     @field_validator('seq_len_train')
@@ -475,10 +456,8 @@ class base_neural_ode_training_settings_class():
     solver_atol_override: Optional[float] = None
     solver_step_size_override: Optional[float] = None
     solver_norm_override: Optional[str] = None
-    # no override for break_after_loss_of as this should only used for one training phase
-
-    pre_training: base_neural_ode_pretraining_settings_class = base_neural_ode_pretraining_settings_class()
-    main_training: List[base_time_stepper_training_settings] = Field(default= [base_time_stepper_training_settings()])
+    # no override for break_after_loss_of as this should only used for one training phase    pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
+    main_training: List[base_time_stepper_training_settings] = field(default_factory=lambda: [base_time_stepper_training_settings()])
 
     @field_validator('main_training')
     @classmethod
@@ -500,8 +479,8 @@ class base_neural_ode_training_settings_class():
 
 @dataclass
 class base_ode_nn_model_class(abstract_nn_model_class):
-    network: base_network_class = base_network_class()
-    training: base_neural_ode_training_settings_class = base_neural_ode_training_settings_class()
+    network: base_network_class = field(default_factory=base_network_class)
+    training: base_neural_ode_training_settings_class = field(default_factory=base_neural_ode_training_settings_class)
 
 #latent ode
 @dataclass
@@ -520,7 +499,7 @@ class latent_timestepper_training_settings(base_time_stepper_training_settings):
     multi_shooting_condition_multiplier: float = 0.0 # 10.0 seems like a good value
 
 @dataclass
-class base_latent_ode_training_settings_class():
+class base_latent_ode_training_settings_class:
     pre_train: bool = False
     load_pretrained_model: bool = False
     load_trained_model_for_test: bool = False
@@ -577,8 +556,10 @@ class base_latent_ode_training_settings_class():
     include_outputs_grad_loss_override: Optional[bool] = None
     multi_shooting_condition_multiplier_override: Optional[float] = None
 
-    pre_training: base_neural_ode_pretraining_settings_class = base_neural_ode_pretraining_settings_class()
-    main_training: List[latent_timestepper_training_settings] = Field(default=[latent_timestepper_training_settings()])
+    pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
+    main_training: List[latent_timestepper_training_settings] = field(
+        default_factory=lambda: [latent_timestepper_training_settings()]
+    )
 
     @field_validator('main_training')
     @classmethod
@@ -621,47 +602,8 @@ class base_latent_ode_training_settings_class():
 
 @dataclass
 class base_latent_ode_nn_model_class(abstract_nn_model_class):
-    network: latent_ode_network_class = latent_ode_network_class()
-    training: base_latent_ode_training_settings_class = base_latent_ode_training_settings_class()
-
-"""dmd config dataclass definitions"""
-
-@dataclass
-class observable_class:
-    pass
-
-@dataclass
-class rbf_observable_class(observable_class):
-    rbf_type='thinplate'
-    centers_lower_bound: float = -2.0
-    centers_upper_bound: float = 2.0
-    n_centers_lower_bound: int = 3
-    n_centers_upper_bound: int = 200
-    kernel_width_lower_bound: float = 0.001
-    kernel_width_upper_bound: float = 10.0
-
-@dataclass
-class dmd_training_class:
-    """this is the base class, in case other dmd methods are added"""
-    n_samples_train: Optional[int] = None
-    pass
-
-@dataclass
-class edmdc_training_class(dmd_training_class):
-    n_samples_train: int = 256
-    observable: observable_class = rbf_observable_class()
-    max_epochs: int = 60
-    popsize: int = 4
-    tol: float = 1e-4
-    pass
-
-@dataclass
-class dmdc_training_class(dmd_training_class):
-    max_rank: Optional[int] = None
-    min_rank: int = 1
-    ignore_parameters: bool = False
-    ignore_outputs: bool = False
-    pass
+    network: latent_ode_network_class = field(default_factory=latent_ode_network_class)
+    training: base_latent_ode_training_settings_class = field(default_factory=base_latent_ode_training_settings_class)
 
 
 """train config dataclass definition"""
@@ -682,19 +624,6 @@ class train_test_config_class:
     n_workers_train_loader: int = 5
     n_workers_other_loaders: int = 1
     prefetch_factor: int = 2
-
-'''train edmdc config dataclass definition'''
-
-@dataclass
-class train_test_dmd_config_class:
-    dataset_name: str = MISSING
-    dmd_training: dmd_training_class = MISSING
-
-    mlflow_experiment_name: str = 'Default'
-    mlflow_tracking_uri: str = 'http://127.0.0.1:5000'
-
-    n_workers: Optional[int] = None # None is all cpus available
-    raise_exception: bool = True
 
 '''ONNX export dataclass definition'''
 @dataclass
@@ -724,51 +653,42 @@ class onnx_export_config_class(load_latent_ode_config_class):
 ########################################################################################################################
 # Config Store
 ########################################################################################################################
+def get_config_store():
+    cs = ConfigStore.instance()
+    cs.store(name='base_data_gen', node=data_gen_config)
+    cs.store(group='pModel', name='base_pModel', node=base_pModelClass)
 
-cs = ConfigStore.instance()
-cs.store(name='base_data_gen', node=data_gen_config)
-cs.store(group='pModel', name='base_pModel', node=base_pModelClass)
-
-cs.store(name='base_train_test', node=train_test_config_class)
-cs.store(group='nn_model', name='base_nn_model', node=base_nn_model_class)
-#pels_vae_linear
-cs.store(group='nn_model', name='pels_vae', 
-         node = base_nn_model_class(
-            network=pels_vae_network_class(), 
-            training=pels_vae_training_settings_class()
-        ),
-    )
-# neural_ode
-cs.store(group='nn_model', name='neural_ode_base',
-            node = base_ode_nn_model_class(
-                network=neural_ode_network_class(),
-                training=base_neural_ode_training_settings_class()
+    cs.store(name='base_train_test', node=train_test_config_class)
+    cs.store(group='nn_model', name='base_nn_model', node=base_nn_model_class)
+    #pels_vae_linear
+    cs.store(group='nn_model', name='pels_vae', 
+            node = base_nn_model_class(
+                network=pels_vae_network_class(), 
+                training=pels_vae_training_settings_class()
             ),
         )
-cs.store(group='nn_model', name='latent_ode_base',
-            node = base_latent_ode_nn_model_class(
-                network=latent_ode_network_class(),
-                training=base_latent_ode_training_settings_class()
-            ),
-        )
+    # neural_ode
+    cs.store(group='nn_model', name='neural_ode_base',
+                node = base_ode_nn_model_class(
+                    network=neural_ode_network_class(),
+                    training=base_neural_ode_training_settings_class()
+                ),
+            )
+    cs.store(group='nn_model', name='latent_ode_base',
+                node = base_latent_ode_nn_model_class(
+                    network=latent_ode_network_class(),
+                    training=base_latent_ode_training_settings_class()
+                ),
+            )
 
-# dmd
-cs.store(name='base_train_test_dmd', node=train_test_dmd_config_class)
-cs.store(group='dmd_training', name='base_edmdc_training', node=edmdc_training_class())
-cs.store(group='dmd_training', name='base_dmdc_training', node=dmdc_training_class())
-
-# onnx export
-cs.store(name='base_onnx_export', node=onnx_export_config_class)
+    # onnx export
+    cs.store(name='base_onnx_export', node=onnx_export_config_class)
+    return cs
 
 ########################################################################################################################
-# Test
-########################################################################################################################
+# Config utility functions
+#########################################################################################################################
 
-# hydra returns a 'omegaconf.dictconfig.DictConfig' object.
-# This can be converted to the associated dataclass above
-# using the 'OmegaConf.to_object' method.
-# To convert this to a a dictionary, use the 'asdict' 
-# method from the 'dataclasses' module.
 
 def convert_cfg_to_dataclass(cfg: DictConfig):
     '''
@@ -796,44 +716,3 @@ def save_dataclass_as_yaml(cfg: dataclass, path: str):
     with open(path, 'w') as f:
         yaml.dump(asdict(cfg), f)
     
-
-@hydra.main(config_path='conf', config_name='_data_gen', version_base=None)
-def test_DataGenConfig(cfg: data_gen_config):
-    print('\nTesting DataGen config:')
-    cfg = convert_cfg_to_dataclass(cfg)
-    print(cfg)
-    print('')
-
-@hydra.main(config_path='conf', config_name='_train', version_base=None)
-def test_train_config(cfg: train_test_config_class):
-    cfg = convert_cfg_to_dataclass(cfg)
-    print(cfg)
-    print('')
-
-@hydra.main(config_path='conf', config_name='data_gen_graybox', version_base=None)
-def test_DataGenConfigGrayBox(cfg: data_gen_config):
-    print('\nTesting DataGen config GrayBoxModel:')
-    cfg = convert_cfg_to_dataclass(cfg)
-    print(cfg)
-    print('')
-
-@hydra.main(config_path='conf', config_name='train_test_pels_vae_linear', version_base=None)
-def test_train_pels_vae_linear(cfg: train_test_config_class):
-    print('\nTesting train config pels_vae_linear:')
-    cfg = convert_cfg_to_dataclass(cfg)
-    print(cfg)
-    print('')
-
-@hydra.main(config_path='conf', config_name='train_test_dmd', version_base=None)
-def test_train_edmdc(cfg: train_test_dmd_config_class):
-    print('\nTesting train config edmdc:')
-    cfg = convert_cfg_to_dataclass(cfg)
-    print(cfg)
-    print('')
-
-if __name__ == "__main__":
-    # test_DataGenConfig()
-    # test_train_config()
-    test_train_edmdc()
-    # test_DataGenConfigGrayBox()
-    # test_train_pels_vae_linear()
