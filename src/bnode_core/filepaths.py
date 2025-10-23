@@ -35,8 +35,8 @@ def get_cfg_from_cli() -> tuple[str, str]:
     else:
         if cfg_path.endswith('.yaml') or cfg_path.endswith('.yml'):
             # if a full config file is given, extract the directory
-            cfg_dir = str(Path(cfg_path).parent)
-            cfg_name = str(Path(cfg_path).stem)
+            cfg_dir = Path(cfg_path).parent
+            cfg_name = Path(cfg_path).stem
         else:
             raise ValueError('cfg_path must point to a .yaml or .yml file.')
     return cfg_dir, cfg_name 
@@ -75,14 +75,22 @@ def dataset_name(cfg: data_gen_config, n_samples: int):
         name = name + '_' + cfg.pModel.dataset_prep.dataset_suffix
     return name
 
+def dir_data(log: bool = False):
+    if Path('.bnode_project').exists():
+        path = Path('./data')
+    else:
+        path = Path('./resources/data')
+    create_path(path, log)
+    return path
+
 def dir_raw_data(cfg: data_gen_config, log: bool = False):
-    path = Path('data') / 'raw_data' / raw_data_name(cfg)
+    path = dir_data() / 'raw_data' / raw_data_name(cfg)
     create_path(path, log)
     return path
 
 def filepath_raw_data(cfg: data_gen_config):
     if cfg.pModel.RawData.raw_data_from_external_source:
-        file = Path('data') / 'raw_data' /  cfg.pModel.RawData.raw_data_path
+        file = dir_raw_data(cfg) / cfg.pModel.RawData.raw_data_path
     else:
         file = dir_raw_data(cfg) / (raw_data_name(cfg) + '_raw_data.hdf5')
     return file
@@ -92,7 +100,7 @@ def filepath_raw_data_config(cfg: data_gen_config):
     return file
 
 def dir_datasets(log=False):
-    path = Path('data') / 'datasets'
+    path = dir_data() / 'datasets'
     create_path(path, log)
     return path
 

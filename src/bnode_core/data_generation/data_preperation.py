@@ -11,8 +11,8 @@ from omegaconf import OmegaConf
 import scipy
 import tqdm
 
-from config import data_gen_config, cs, convert_cfg_to_dataclass, RawDataClass
-from filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, filepath_dataset, filepath_dataset_config
+from bnode_core.config import data_gen_config, convert_cfg_to_dataclass, RawDataClass, get_config_store
+from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, filepath_dataset, filepath_dataset_config, get_cfg_from_cli
 
 def load_and_validate_raw_data(cfg):
     """
@@ -166,8 +166,7 @@ def replace_hdf5_dataset(dataset_name: str, raw_data: h5py.File, data: np.ndarra
         else:
             raw_data[dataset_name][...] = data
 
-@hydra.main(config_path=str(Path('conf').absolute()), config_name='data_gen', version_base=None)
-def main(cfg: data_gen_config):
+def run_data_preperation(cfg: data_gen_config):
     cfg = convert_cfg_to_dataclass(cfg)
     
     # load and validate raw data, copy data to temp file
@@ -389,6 +388,16 @@ def main(cfg: data_gen_config):
     temp_raw_data.close()
     os.remove(temp_raw_data_path)
     pass
+
+def main():
+    if '--help' in sys.argv or '-h' in sys.argv:
+        print('Usage: data_preperation [--cfg_path <path_to_config_file>]')
+        print('If --cfg_path is not provided, the default config file "data_generation.yaml in the "conf" directory is used.')
+        print('The remainder of the command line arguments are passed to and provided by Hydra.')
+    cs = get_config_store()
+    config_dir, config_name = get_cfg_from_cli()
+    config_name = 'data_generation' if config_name is None else config_name
+    hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(run_data_preperation)()
 
 if __name__ == '__main__':
     main()

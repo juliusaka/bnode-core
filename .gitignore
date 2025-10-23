@@ -199,3 +199,5 @@ dist/
 fmu_variable_names.txt
 outputs/*
 multirun/*
+resources/data/raw_data/*
+resources/data/datasets/*

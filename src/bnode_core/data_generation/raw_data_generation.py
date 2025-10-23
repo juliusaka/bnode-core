@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from scipy.interpolate import CubicSpline, Akima1DInterpolator
 
 from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
-from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config
+from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, get_cfg_from_cli
 
 def random_sampling_parameters(cfg: data_gen_config):
     bounds = [[cfg.pModel.RawData.parameters[key][0], cfg.pModel.RawData.parameters[key][1]] for key in cfg.pModel.RawData.parameters.keys()]
@@ -265,7 +265,7 @@ def data_generation(cfg: data_gen_config,
                     initial_state_values: np.ndarray = None,
                     param_values: np.ndarray = None,
                     ctrl_values: np.ndarray = None):
-    from data_generation.src.fmu_simulate import fmu_simulate # import here to avoid circular import
+    from bnode_core.data_generation.utils.fmu_simulate import fmu_simulate # import here to avoid circular import
     
     # wrap fmu_simulate to include idx and catch exceptions. Time out simulations by using ThreadPoolExecutor.
     def fmu_simulate_wrapped(idx, *args, **kwargs): 
@@ -329,12 +329,12 @@ def data_generation(cfg: data_gen_config,
     raw_data.create_dataset('logs/processing_time', (cfg.pModel.RawData.n_samples,))
 
     step_tasks_i = min(10000, cfg.pModel.RawData.n_samples)
-    max_submission_rounds = cfg.pModel.RawData.n_samples // step_tasks_i + 1
+    max_submission_rounds = cfg.pModel.RawData.n_samples // step_tasks_i 
     for submission_round, max_submission_i in enumerate(range(0, cfg.pModel.RawData.n_samples, step_tasks_i)):
         # submit simulation as futures to dask client (the computation does not block the main thread)
         min_tasks_i = max_submission_i
         max_tasks_i = max_submission_i + step_tasks_i
-        logging.info('submission round {}/{}: submitting and computing tasks {}-{} of {}'.format(submission_round, max_submission_rounds, min_tasks_i, max_tasks_i, cfg.pModel.RawData.n_samples))
+        logging.info('submission round {}/{}: submitting and computing tasks {}-{} of {}'.format(submission_round +1, max_submission_rounds, min_tasks_i, max_tasks_i, cfg.pModel.RawData.n_samples))
         for i in range(min_tasks_i, max_tasks_i):
             futures.append(client.submit(fmu_simulate_wrapped, i,
                     fmu_path = str(Path(cfg.pModel.RawData.fmuPath).resolve()),
@@ -523,9 +523,7 @@ def sample_all_values(cfg):
         
     return initial_state_values, param_values, ctrl_values
     
-
-@hydra.main(config_path=str(Path('conf').absolute()), config_name='data_gen', version_base=None)
-def main(cfg: data_gen_config):
+def run_data_generation(cfg: data_gen_config):
     cfg = convert_cfg_to_dataclass(cfg)
 
     # added np.seed for reproducibility on 23.11.2024 (databases generated before this date are not exactly reproducible)
@@ -589,6 +587,15 @@ def main(cfg: data_gen_config):
     log_overwriting_file(filepath_raw_data_config(cfg))
     OmegaConf.save(cfg.pModel.RawData, filepath_raw_data_config(cfg))
 
-if __name__ == '__main__':
+def main():
+    if '--help' in sys.argv or '-h' in sys.argv:
+        print('Usage: data_preperation [--cfg_path <path_to_config_file>]')
+        print('If --cfg_path is not provided, the default config file "data_generation.yaml in the "conf" directory is used.')
+        print('The remainder of the command line arguments are passed to and provided by Hydra.')
     cs = get_config_store()
+    config_dir, config_name = get_cfg_from_cli()
+    config_name = 'data_generation' if config_name is None else config_name
+    hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(run_data_generation)()
+
+if __name__ == '__main__':
     main()
