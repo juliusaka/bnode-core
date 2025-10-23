@@ -17,8 +17,8 @@ from dask.diagnostics import ProgressBar
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from scipy.interpolate import CubicSpline, Akima1DInterpolator
 
-from config import data_gen_config, cs, convert_cfg_to_dataclass
-from filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config
+from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
+from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config
 
 def random_sampling_parameters(cfg: data_gen_config):
     bounds = [[cfg.pModel.RawData.parameters[key][0], cfg.pModel.RawData.parameters[key][1]] for key in cfg.pModel.RawData.parameters.keys()]
@@ -590,4 +590,5 @@ def main(cfg: data_gen_config):
     OmegaConf.save(cfg.pModel.RawData, filepath_raw_data_config(cfg))
 
 if __name__ == '__main__':
+    cs = get_config_store()
     main()
