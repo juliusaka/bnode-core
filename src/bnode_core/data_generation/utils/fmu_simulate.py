@@ -266,7 +266,7 @@ import hydra
 import os
 from pathlib import Path
 
-def main(cfg: data_gen_config, plot: bool = False, return_res: bool = False) -> None:
+def simulate_and_plot(cfg: data_gen_config, plot: bool = False, return_res: bool = False) -> None:
     """
     test the fmu_simulate function
     """
@@ -356,7 +356,7 @@ def main(cfg: data_gen_config, plot: bool = False, return_res: bool = False) -> 
     if return_res:
         return res
 
-if __name__ == '__main__':
+def main():
     """
     you can run this script with e.g. to set parameters
     python data_generation/src/fmu_simulate.py pModel.RawData.parameters.u_wall=1.8
@@ -368,4 +368,7 @@ if __name__ == '__main__':
     cs = get_config_store()
     cfg_dir, cfg_name = filepaths.get_cfg_from_cli()
     cfg_name = 'data_generation' if cfg_name is None else cfg_name
-    hydra.main(config_path=str(Path(cfg_dir).absolute()), config_name=cfg_name, version_base=None)(lambda cfg: main(cfg, plot=True))()
+    hydra.main(config_path=str(Path(cfg_dir).absolute()), config_name=cfg_name, version_base=None)(lambda cfg: simulate_and_plot(cfg, plot=True))()
+
+if __name__ == '__main__':
+    main()
