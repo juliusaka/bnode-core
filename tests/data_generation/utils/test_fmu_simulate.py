@@ -38,6 +38,15 @@ def test_only_controls():
                  ]
     test_fmu_simulate_basic(overrides=overrides)
 
+def test_only_controls_RS():
+    overrides = ['pModel=SHF', 
+                 'pModel.RawData.initial_states_include=false', 
+                 'pModel.RawData.parameters_include=false',
+                 'pModel.RawData.controls_include=true',
+                 'pModel.RawData.controls_sampling_strategy=RS',
+                 ]
+    test_fmu_simulate_basic(overrides=overrides)
+
 def test_all_inputs():
     overrides = ['pModel=SHF', 
                  'pModel.RawData.initial_states_include=true', 
