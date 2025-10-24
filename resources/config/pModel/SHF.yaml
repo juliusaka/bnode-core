@@ -102,5 +102,5 @@ dataset_prep:
   outputs: 
     - all
   test_fraction: 0.12
-  start_time: 0.2
+  start_time: 0.0
   validation_fraction: 0.12
