@@ -8,16 +8,16 @@ from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
 
 def config_dir_auto_recognize() -> Path:
     msg = ''
-    if Path('.bnode_project').exists():
-        if Path('./config/').exists():
-            return Path('./config/')
-        else: 
-            msg += 'No config directory found in ./config/ despite .bnode_project file existing.\n'
-    else:
+    if Path('.bnode_package_repo').exists():
         if Path('resources/config/').exists():
             return Path('resources/config/')
         else:
             msg += 'No .bnode_project file found and no config directory found in resources/config/.\n'
+    else:
+        if Path('./config/').exists():
+            return Path('./config/')
+        else: 
+            msg += 'No config directory found in ./config/ despite .bnode_project file existing.\n'
     msg += 'Please ensure you are in a correct working directory or provide the config path manually.'
     logging.error(msg)
     raise ValueError(msg)
