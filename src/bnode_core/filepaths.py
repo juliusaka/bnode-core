@@ -76,10 +76,10 @@ def dataset_name(cfg: data_gen_config, n_samples: int):
     return name
 
 def dir_data(log: bool = False):
-    if Path('.bnode_project').exists():
-        path = Path('./data')
-    else:
+    if Path('.bnode_package_repo').exists():
         path = Path('./resources/data')
+    else:
+        path = Path('./data')
     create_path(path, log)
     return path
 
