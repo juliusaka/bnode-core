@@ -2,7 +2,6 @@ import sys
 import os 
 
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass, get_config_store
-cs = get_config_store()
 import bnode_core.filepaths as filepaths
 from pathlib import Path
 import hydra
@@ -96,10 +95,7 @@ def print_variable_names(fmu_path: Path):
     for name in get_parameter_names(fmu_path):
         print(name + ':')
 
-def return_fmu_path_from_config(cfg: data_gen_config):
-    return Path(cfg.pModel.RawData.fmuPath)
-
-if __name__ == '__main__':
+def main():
     if '--help' in sys.argv or '-h' in sys.argv:
         print('Usage: python print_fmu_variable_names.py [--cfg_path=path_to_config.yaml | --fmu_path=path_to_fmu]')
         print('If both is not provided, the script will try to auto-recognize the config file location.')
@@ -120,6 +116,14 @@ if __name__ == '__main__':
     else:
         cfg_dir, cfg_name = filepaths.get_cfg_from_cli()
         cfg_name = 'data_generation' if cfg_name is None else cfg_name
-        fmu_path = hydra.main(config_path=str(Path(cfg_dir).absolute()), config_name=cfg_name, version_base=None)(return_fmu_path_from_config)()
+        cs = get_config_store()
+        # programmatically load the config and get the fmu path
+        with hydra.initialize_config_dir(config_dir=str(Path(cfg_dir).absolute()), version_base=None):
+            print("setting overrides:", sys.argv[1:])
+            cfg = hydra.compose(config_name=cfg_name, overrides=sys.argv[1:])
+        fmu_path = Path(cfg.pModel.RawData.fmuPath)
 
     print_variable_names(fmu_path)
+
+if __name__ == '__main__':
+    main()
