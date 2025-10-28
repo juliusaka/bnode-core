@@ -7,39 +7,39 @@ from pathlib import Path
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
 
 def config_dir_auto_recognize() -> Path:
+    if '--help' in sys.argv or '-h' in sys.argv:
+        print('The config directory is auto-recognized based on the current working directory.')
+        print('You can override this behavior by providing the config path via --config-path or --config-dir CLI arguments.')
+        return None
     msg = ''
     if Path('.bnode_package_repo').exists():
         if Path('resources/config/').exists():
             return Path('resources/config/')
         else:
             msg += 'No .bnode_project file found and no config directory found in resources/config/.\n'
+    elif Path('.surrogate_test_data_repo').exists():
+        if Path('packages/bnode-core/config/').exists():
+            return Path('packages/bnode-core/config/')
+        else:
+            msg += 'No .bnode_project file found and no config directory found in config/.\n'
     else:
         if Path('./config/').exists():
             return Path('./config/')
         else: 
             msg += 'No config directory found in ./config/ despite .bnode_project file existing.\n'
-    msg += 'Please ensure you are in a correct working directory or provide the config path manually.'
-    logging.error(msg)
-    raise ValueError(msg)
-
-def get_cfg_from_cli() -> tuple[str, str]:
-    """Parses sys.argv to find --cfg_path argument and returns cfg_dir and cfg_name. If not found, uses auto recognition (only for cfg_dir, cfg_name is None then)."""
-    cfg_path = None
-    for i, arg in enumerate(sys.argv):
-        if arg.startswith('--cfg_path'):
-            cfg_path = sys.argv.pop(i).split('=')[1]
-            break
-    if cfg_path is None:
-        cfg_dir = config_dir_auto_recognize()
-        cfg_name = None
+    # Check if user provided config path via CLI args
+    raise_error = True
+    if '-cp' in sys.argv or '--config-path' in sys.argv:
+        raise_error = False
+    elif '--config-dir' in sys.argv or '-cd' in sys.argv:
+        # we assume that the user provided also a config name in this case
+        raise_error = False
+    if raise_error:
+        msg += 'Please ensure you are in a correct working directory or provide the config path manually.'
+        logging.error(msg)
+        raise ValueError(msg)
     else:
-        if cfg_path.endswith('.yaml') or cfg_path.endswith('.yml'):
-            # if a full config file is given, extract the directory
-            cfg_dir = Path(cfg_path).parent
-            cfg_name = Path(cfg_path).stem
-        else:
-            raise ValueError('cfg_path must point to a .yaml or .yml file.')
-    return cfg_dir, cfg_name 
+        return None
 
 def create_path(path: Path, log: bool) -> None:
     if not path.exists():

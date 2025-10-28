@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from scipy.interpolate import CubicSpline, Akima1DInterpolator
 
 from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
-from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, get_cfg_from_cli
+from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, config_dir_auto_recognize
 
 def random_sampling_parameters(cfg: data_gen_config):
     bounds = [[cfg.pModel.RawData.parameters[key][0], cfg.pModel.RawData.parameters[key][1]] for key in cfg.pModel.RawData.parameters.keys()]
@@ -588,13 +588,9 @@ def run_data_generation(cfg: data_gen_config):
     OmegaConf.save(cfg.pModel.RawData, filepath_raw_data_config(cfg))
 
 def main():
-    if '--help' in sys.argv or '-h' in sys.argv:
-        print('Usage: data_preperation [--cfg_path <path_to_config_file>]')
-        print('If --cfg_path is not provided, the default config file "data_generation.yaml in the "conf" directory is used.')
-        print('The remainder of the command line arguments are passed to and provided by Hydra.')
     cs = get_config_store()
-    config_dir, config_name = get_cfg_from_cli()
-    config_name = 'data_generation' if config_name is None else config_name
+    config_dir = config_dir_auto_recognize()
+    config_name = 'data_generation' 
     hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(run_data_generation)()
 
 if __name__ == '__main__':

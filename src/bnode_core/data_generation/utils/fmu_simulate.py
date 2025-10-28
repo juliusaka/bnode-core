@@ -1,7 +1,6 @@
 import uuid
 import logging
 import time
-
 from fmpy import read_model_description, extract
 from fmpy.fmi2 import FMU2Slave
 import fmpy
@@ -10,7 +9,15 @@ import shutil
 import sys
 import os
 import io
-from bnode_core.config import get_config_store
+from pathlib import Path
+import numpy as np
+import hydra
+import os
+from pathlib import Path
+
+from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
+import bnode_core.filepaths as filepaths
+
 
 class logger_max_rate:
     def __init__(self, logger: logging.Logger, max_rate: float = 30):
@@ -258,14 +265,6 @@ def fmu_simulate(fmu_path,
     res = {'success': sim_succesful, 'outputs': outputs, 'states': states, 'states_der': states_der, 'controls_from_model': controls_from_model, 'error_messages': error_messages, 'time': processing_time}
     return res
 
-from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
-import bnode_core.filepaths as filepaths
-from pathlib import Path
-import numpy as np
-import hydra
-import os
-from pathlib import Path
-
 def simulate_and_plot(cfg: data_gen_config, plot: bool = False, return_res: bool = False) -> None:
     """
     test the fmu_simulate function
@@ -357,18 +356,10 @@ def simulate_and_plot(cfg: data_gen_config, plot: bool = False, return_res: bool
         return res
 
 def main():
-    """
-    you can run this script with e.g. to set parameters
-    python data_generation/src/fmu_simulate.py pModel.RawData.parameters.u_wall=1.8
-    or for multirun
-    python data_generation/src/fmu_simulate.py pModel.RawData.parameters.u_wall=1.8,2.0,2.2 --multirun
-    """
-    # sys.argv += ['pModel.RawData.Solver.simulationEndTime=10']
-    # sys.argv += ['pModel=PowerPlant']
     cs = get_config_store()
-    cfg_dir, cfg_name = filepaths.get_cfg_from_cli()
-    cfg_name = 'data_generation' if cfg_name is None else cfg_name
-    hydra.main(config_path=str(Path(cfg_dir).absolute()), config_name=cfg_name, version_base=None)(lambda cfg: simulate_and_plot(cfg, plot=True))()
+    config_dir = filepaths.config_dir_auto_recognize()
+    config_name = 'data_generation' 
+    hydra.main(config_path=str(Path(config_dir).absolute()), config_name=config_name, version_base=None)(lambda cfg: simulate_and_plot(cfg, plot=True))()
 
 if __name__ == '__main__':
     main()

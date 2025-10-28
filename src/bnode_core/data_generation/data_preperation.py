@@ -12,7 +12,7 @@ import scipy
 import tqdm
 
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass, RawDataClass, get_config_store
-from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, filepath_dataset, filepath_dataset_config, get_cfg_from_cli
+from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, filepath_dataset, filepath_dataset_config, config_dir_auto_recognize
 
 def load_and_validate_raw_data(cfg):
     """
@@ -395,8 +395,8 @@ def main():
         print('If --cfg_path is not provided, the default config file "data_generation.yaml in the "conf" directory is used.')
         print('The remainder of the command line arguments are passed to and provided by Hydra.')
     cs = get_config_store()
-    config_dir, config_name = get_cfg_from_cli()
-    config_name = 'data_generation' if config_name is None else config_name
+    config_dir = config_dir_auto_recognize()
+    config_name = 'data_generation'
     hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(run_data_preperation)()
 
 if __name__ == '__main__':

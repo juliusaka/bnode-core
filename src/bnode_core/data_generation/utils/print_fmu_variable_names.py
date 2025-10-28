@@ -97,7 +97,7 @@ def print_variable_names(fmu_path: Path):
 
 def main():
     if '--help' in sys.argv or '-h' in sys.argv:
-        print('Usage: python print_fmu_variable_names.py [--cfg_path=path_to_config.yaml | --fmu_path=path_to_fmu]')
+        print('Usage: python print_fmu_variable_names.py [--config-path | --fmu_path=path_to_fmu]')
         print('If both is not provided, the script will try to auto-recognize the config file location.')
         print('Hint: Filepaths need to be provided using forward slashes (/) on Windows.')
         sys.exit(0)
@@ -115,13 +115,13 @@ def main():
     if fmu_path is not None:
         fmu_path = Path(fmu_path)
     else:
-        cfg_dir, cfg_name = filepaths.get_cfg_from_cli()
-        cfg_name = 'data_generation' if cfg_name is None else cfg_name
         cs = get_config_store()
+        config_dir = filepaths.config_dir_auto_recognize()
+        config_name = 'data_generation' 
         # programmatically load the config and get the fmu path
-        with hydra.initialize_config_dir(config_dir=str(Path(cfg_dir).absolute()), version_base=None):
+        with hydra.initialize_config_dir(config_dir=str(Path(config_dir).absolute()), version_base=None):
             print("setting overrides:", sys.argv[1:])
-            cfg = hydra.compose(config_name=cfg_name, overrides=sys.argv[1:])
+            cfg = hydra.compose(config_name=config_name, overrides=sys.argv[1:])
         fmu_path = Path(cfg.pModel.RawData.fmuPath)
 
     print_variable_names(fmu_path)
