@@ -18,8 +18,8 @@ def config_dir_auto_recognize() -> Path:
         else:
             msg += 'Even though .bnode_package_repo file exists, no config directory found in resources/config/.\n'
     elif Path('.surrogate_test_data_repo').exists():
-        if Path('packages/bnode-core/config/').exists():
-            return Path('packages/bnode-core/config/')
+        if Path('packages/surrogate-test-models/config/').exists():
+            return Path('packages/surrogate-test-models/config/')
         else:
             msg += 'Even though .surrogate_test_data_repo file exists, no config directory found in packages/bnode-core/config/.\n'
     else:
