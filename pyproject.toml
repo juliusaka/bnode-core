@@ -61,6 +61,7 @@ fmu_simulate = "bnode_core.data_generation.utils.fmu_simulate:main"
 fmu_variable_names = "bnode_core.data_generation.utils.print_fmu_variable_names:main"
 data_generation = "bnode_core.data_generation.raw_data_generation:main"
 data_preperation = "bnode_core.data_generation.data_preperation:main"
+visualize_data = "bnode_core.data_generation.utils.visualize_data:main"
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]

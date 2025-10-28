@@ -152,7 +152,18 @@ def plot_variable(class_name, var_name, raw_data, output_dir, n_bins, limits=Non
     print(f"\t\tSaved plot to {path}")
     plt.close()
 
-def main(args):
+def main():
+    # Argument parser
+    parser = argparse.ArgumentParser(description="Plot HDF5 variables with histograms and trajectories.")
+    parser.add_argument("--dataset", type=str, required=True, help="Path to HDF5 dataset file.")
+    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file. If not provided, will look for 'config.yaml' in the dataset directory.")
+    parser.add_argument("--figsize", type=str, default="15,6", help="Figure size, e.g., '12,6'")
+    parser.add_argument("--output_dir", type=str, default=None, help="Output directory for plots. Defaults to the dataset directory.")
+    parser.add_argument("--print_limits", type=str, default="controls,parameters", help="Comma-separated list of classes to print limits for. Defaults to 'controls,parameters'.")
+    parser.add_argument("--bins", type=int, default=80, help="Number of bins for histograms. Defaults to 20.")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
+    args = parser.parse_args()
+    
     # Parse arguments
     dataset_path = args.dataset
     dataset_path = Path(dataset_path).resolve()
@@ -232,13 +243,4 @@ def main(args):
                 plot_variable(class_name, name, raw_data, output_dir, n_bins, limits=limits, time=time, figsize=figsize, verbose=verbose)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plot HDF5 variables with histograms and trajectories.")
-    parser.add_argument("--dataset", type=str, required=True, help="Path to HDF5 dataset file.")
-    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file. If not provided, will look for 'config.yaml' in the dataset directory.")
-    parser.add_argument("--figsize", type=str, default="15,6", help="Figure size, e.g., '12,6'")
-    parser.add_argument("--output_dir", type=str, default=None, help="Output directory for plots. Defaults to the dataset directory.")
-    parser.add_argument("--print_limits", type=str, default="controls,parameters", help="Comma-separated list of classes to print limits for. Defaults to 'controls,parameters'.")
-    parser.add_argument("--bins", type=int, default=80, help="Number of bins for histograms. Defaults to 20.")
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
-    args = parser.parse_args()
-    main(args)
+    main()
