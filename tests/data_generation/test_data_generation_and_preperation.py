@@ -36,9 +36,9 @@ def test_02_data_preperation():
                     'pModel.RawData.versionName=test',
                     ]
     main()
-    sys.argv = orig_argv
     GlobalHydra.instance().clear()
     hydra.initialize_config_dir(config_dir=str(Path('resources/config').absolute()), version_base=None)
     cfg = hydra.compose(config_name='data_generation', overrides=sys.argv[3:])
-    assert filepaths.filepath_dataset(cfg).exists()
-    assert filepaths.filepath_dataset_config(cfg).exists()
+    assert filepaths.filepath_dataset(cfg, 12).exists()
+    assert filepaths.filepath_dataset_config(cfg, 12).exists()
+    sys.argv = orig_argv

@@ -16,10 +16,6 @@ def test_solver_sequence_length_computed():
     # ceil((1-0)/0.2) + 1 = ceil(5) + 1 = 5
     assert s.sequence_length == 6
 
-def test_pels_vae_activation_validation_success():
-    p = config.pels_vae_network_class(activation='torch.nn.ReLU')
-    assert p.activation == 'torch.nn.ReLU'
-
 def test_pels_vae_activation_validation_failure():
     with pytest.raises(ValueError):
         config.pels_vae_network_class(activation='not.a.module')

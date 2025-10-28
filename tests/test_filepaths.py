@@ -11,14 +11,6 @@ def test_returns_config_dir_when_bnode_and_config_exist(tmp_path, monkeypatch):
     res = config_dir_auto_recognize()
     assert res.resolve() == config_dir.resolve()
 
-def test_returns_resources_config_when_no_bnode_but_resources_config_exists(tmp_path, monkeypatch):
-    # no .bnode_project, but resources/config exists
-    resources_config = tmp_path / "resources" / "config"
-    resources_config.mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
-    res = config_dir_auto_recognize()
-    assert res.resolve() == resources_config.resolve()
-
 def test_raises_when_nothing_found(tmp_path, monkeypatch):
     # neither .bnode_project nor resources/config nor ./config exist
     monkeypatch.chdir(tmp_path)

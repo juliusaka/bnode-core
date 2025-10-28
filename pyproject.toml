@@ -27,10 +27,10 @@ dependencies = [
 
 
 [project.urls]
-Homepage = " "
-Documentation = " "
-Repository = " "
-Issues = " "
+Homepage = "https://no.com"
+Documentation = "https://no.com"
+Repository = "https://no.com"
+Issues = "https://no.com"
 
 [dependency-groups]
 dev = [
