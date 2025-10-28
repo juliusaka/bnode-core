@@ -1,6 +1,32 @@
 """
-This file contains all the dataclass definitions for the config files
-and the config store.
+bnode_core.config module
+========================
+Summary
+-------
+Defines Pydantic dataclass-based configuration schema for dataset generation
+and neural network training used by the B-NODE project. The module provides:
+
+- Typed dataclasses for solver, raw data, dataset preparation, and multiple neural
+    network model families (base, VAE, neural-ODE, latent-ODE).
+- Field- and model-level validation logic using pydantic validators to ensure
+    consistent and safe configuration values.
+
+- Registration helpers to store these dataclasses in Hydra's ConfigStore so they
+    can be composed/loaded using Hydra.
+- Small utility functions to convert OmegaConf DictConfig objects into the
+    corresponding Python dataclass objects and to persist dataclasses as YAML.
+
+The dataclasses are designed to be used with Hydra + OmegaConf and validated
+via pydantic functional validators. 
+
+Attention:
+    Use get_config_store() at program startup to
+    register the configuration schemas with Hydra (for example in your main script).
+    ```
+    from bnode_core.config import get_config_store
+    cs = get_config_store()
+    ```
+
 """
 from pydantic.dataclasses import dataclass
 from dataclasses import asdict, field
@@ -16,6 +42,7 @@ from pathlib import Path
 import yaml
 import logging
 from pydantic import model_validator
+from bnode_core.config import get_config_store
 
 ########################################################################################################################
 # Dataclasses
@@ -24,6 +51,9 @@ from pydantic import model_validator
 """pModel config dataclass definitions"""
 @dataclass
 class SolverClass:
+    """
+    Solver configuration class.
+    """
     simulationStartTime: float = 0.0
     simulationEndTime: float = 1.0
     timestep: float = 0.1
@@ -689,7 +719,7 @@ def get_config_store():
 #########################################################################################################################
 
 
-def convert_cfg_to_dataclass(cfg: DictConfig):
+def convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass:
     '''
     Converts a hydra config object to a dataclass
     
@@ -697,7 +727,7 @@ def convert_cfg_to_dataclass(cfg: DictConfig):
         cfg: hydra config object / that is omegaconf.dictconfig.DictConfig
     
     Returns:
-        cfg1: dataclass
+        cfg: dataclass
     '''
     logging.info('Validating config...')
     cfg = OmegaConf.to_object(cfg)
@@ -714,4 +744,3 @@ def save_dataclass_as_yaml(cfg: dataclass, path: str):
     '''
     with open(path, 'w') as f:
         yaml.dump(asdict(cfg), f)
-    

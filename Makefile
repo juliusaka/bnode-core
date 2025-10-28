@@ -38,7 +38,7 @@ type:
 	uv run ty check $$(git diff --name-only --cached -- '*.py')
 
 doc:
-	uvx --with mkdocstrings  --with mkdocs-material --with mkdocstrings-python --with mkdocs-include-markdown-plugin mkdocs serve
+	uvx --with mkdocstrings  --with mkdocs-material --with mkdocstrings-python --with mkdocs-include-markdown-plugin mkdocs serve --livereload
 
 build:
 	uv build

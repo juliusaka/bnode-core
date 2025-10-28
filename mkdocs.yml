@@ -41,6 +41,8 @@ plugins:
           options:
             annotations_path: brief
             docstring_style: google
+            show_docstring_examples: true
+            show_signature_annotations: true
   - include-markdown:
       preserve_includer_indent: true
 nav:
@@ -76,3 +78,5 @@ extra:
       link: https://github.com/juliusaka
 watch:
   - README.md
+  - src/bnode_core/
+  - docs/

@@ -7,6 +7,35 @@ from pathlib import Path
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
 
 def config_dir_auto_recognize() -> Path:
+    """Auto-recognize and return the project's configuration directory.
+
+    The function checks the current working directory for known configuration
+    locations and inspects command-line arguments to allow overrides.
+
+    Returns:
+        pathlib.Path or None: Path to the discovered configuration directory, or
+            None when help is requested or when a config path is expected to be
+            provided via CLI options.
+
+    Raises:
+        ValueError: If no configuration directory could be found and no CLI
+            argument indicates a manual config path.
+
+    Side effects:
+        - Prints help text to stdout if '-h' or '--help' is present in sys.argv.
+        - Reads sys.argv to detect help or CLI overrides.
+        - Logs an error message before raising ValueError.
+
+    Notes:
+        Search order:
+
+        1. If '--help' or '-h' present, print help and return None.
+        2. If '.bnode_package_repo' exists and 'resources/config/' exists, return it.
+        3. If './config/' exists, return it.
+        4. If neither exists but '-cp'/'--config-path' or '-cd'/'--config-dir'
+            are present, return None to allow Hydra to handle the path.
+        5. Otherwise, log an error and raise ValueError.
+    """
     if '--help' in sys.argv or '-h' in sys.argv:
         print('The config directory is auto-recognized based on the current working directory.')
         print('You can override this behavior by providing the config path via --config-path or --config-dir CLI arguments.')
