@@ -16,17 +16,17 @@ def config_dir_auto_recognize() -> Path:
         if Path('resources/config/').exists():
             return Path('resources/config/')
         else:
-            msg += 'No .bnode_project file found and no config directory found in resources/config/.\n'
+            msg += 'Even though .bnode_package_repo file exists, no config directory found in resources/config/.\n'
     elif Path('.surrogate_test_data_repo').exists():
         if Path('packages/bnode-core/config/').exists():
             return Path('packages/bnode-core/config/')
         else:
-            msg += 'No .bnode_project file found and no config directory found in config/.\n'
+            msg += 'Even though .surrogate_test_data_repo file exists, no config directory found in packages/bnode-core/config/.\n'
     else:
         if Path('./config/').exists():
             return Path('./config/')
         else: 
-            msg += 'No config directory found in ./config/ despite .bnode_project file existing.\n'
+            msg += 'No config directory found in the standard ./config/ location.\n'
     # Check if user provided config path via CLI args
     raise_error = True
     if '-cp' in sys.argv or '--config-path' in sys.argv:
