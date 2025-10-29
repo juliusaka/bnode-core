@@ -30,6 +30,8 @@ The main features of the package this repository implements are:
 - **Model training**: Architecture implementation of BNODEs and state space NeuralODEs using [PyTorch](https://pytorch.org/) and [torchdiffeq](https://github.com/rtqichen/torchdiffeq). Both models can be trained using the same trainer, facilitating a lot of special considerations needed for training Neural ODEs.
 - Various utilties for enabling an efficient workflow, e.g. logging with [mlflow](https://mlflow.org/), configuration management with [hydra](https://hydra.cc/) and a simple GUI for visualizing training results.
 
+## Using in your project
+To only use the package for data generation, you can install it with uv without extra ```bnode-core```. If you want to use the training features, install torch (see below) first. Then add it with the ```bnode-core[torch]``` extra.
 
 ## Installation
 e.g. for running the examples in the `examples/` folder.
