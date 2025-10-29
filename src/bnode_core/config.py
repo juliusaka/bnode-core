@@ -1,6 +1,4 @@
 """
-bnode_core.config module
-========================
 Summary
 -------
 Defines Pydantic dataclass-based configuration schema for dataset generation
@@ -27,6 +25,9 @@ Attention:
     cs = get_config_store()
     ```
 
+Usage:
+    Refer to individual dataclass definitions to get details of the configuration options.
+    In doubt, please refer to the source code of each dataclass for validation logic.
 """
 from pydantic.dataclasses import dataclass
 from dataclasses import asdict, field
@@ -42,7 +43,6 @@ from pathlib import Path
 import yaml
 import logging
 from pydantic import model_validator
-from bnode_core.config import get_config_store
 
 ########################################################################################################################
 # Dataclasses
@@ -52,7 +52,13 @@ from bnode_core.config import get_config_store
 @dataclass
 class SolverClass:
     """
-    Solver configuration class.
+    Configuration for simulation timing and solver behavior.
+
+    Notes:
+    - sequence_length is auto-computed from start/end/timestep during model validation.
+    - Changing simulationStartTime, simulationEndTime, or timestep will recompute sequence_length.
+    - all times are in seconds
+    - the timeout variable aborts the simulation if it runs longer than the specified time (in seconds) in the raw data generation. If its None, no timeout is set.
     """
     simulationStartTime: float = 0.0
     simulationEndTime: float = 1.0
@@ -71,6 +77,21 @@ class SolverClass:
 
 @dataclass
 class RawDataClass:
+    """
+    Raw model and sampling configuration used to generate datasets.
+
+    Gotchas:
+
+    - fmuPath is required (and must end with .fmu) when raw_data_from_external_source is False.
+    - parameters entries must be length-3 lists [min, max, default]; if scalar/len-1, bounds are auto-derived
+      using parameters_default_lower_factor/parameters_default_upper_factor and default must lie within bounds.
+    - states/controls entries must be length-2 lists [min, max]; if None, class defaults are injected; lower <= upper.
+    - When controls_sampling_strategy is ROCS/RROCS, both controls_frequency_min_in_timesteps and
+      controls_frequency_max_in_timesteps are required and min <= max.
+    - When controls_sampling_strategy is 'file' or 'constantInput', controls_file_path must exist; otherwise it is ignored.
+    - If initial_states_include is True, dataset_prep.start_time must equal Solver.simulationStartTime (checked in base_pModelClass). 
+        This is because initial states are sampled at the simulation start time, and excluding these times would not make sense.
+    """
     raw_data_from_external_source: bool = False # this sets the code to not use anything else from this class
     raw_data_path: Optional[str] = None # give path to raw data file in raw_data
     modelName: str = MISSING
@@ -177,6 +198,20 @@ class RawDataClass:
     
 @dataclass
 class base_dataset_prep_class:
+    """
+    Dataset preparation settings for slicing, filtering, transforming, and splitting data.
+
+    Gotchas:
+
+    - The lists for states/parameters/controls/outputs accept the sentinel value ['all'] to include all available items.
+    - filter_trajectories_limits is a dictionary where keys are variable names and values are [min, max] lists to filter out trajectories
+      that have variable values outside these limits.
+    - filter_trajectories_expression contains Python expressions as strings; all expressions in a list must evaluate to True
+      to filter out a trajectory. WARNING: This is is not tested yet, debug carefully before use.
+    - transforms is a dictionary where keys are variable names and values are strings representing Python expressions to transform the data. 
+        example: var1: 'np.log(# + 1)' where # is replaced by the variable data.
+    - validation_fraction and test_fraction control split sizes; sequence_length can remain None to use model defaults.
+    """
     dataset_suffix: Optional[str] = None
     n_samples: List[int] = field(default_factory=list)
     filter_trajectories_limits: Optional[Dict[str, List]] = field(default_factory=dict) 
@@ -198,15 +233,19 @@ class base_dataset_prep_class:
     validation_idx_start: Optional[int] = None
     test_idx_start: Optional[int] = None
 
-@dataclass
-class base_pModel_test_class:
-    plot_variables: List[str] = field(default_factory=list)
+
 
 @dataclass
 class base_pModelClass:
+    """
+    Composite configuration that couples raw data settings and dataset preparation for a physical model.
+
+    Gotchas:
+
+    - If RawData.initial_states_include is True, dataset_prep.start_time must equal RawData.Solver.simulationStartTime.
+    """
     RawData: RawDataClass = field(default_factory=RawDataClass)
     dataset_prep: base_dataset_prep_class = field(default_factory=base_dataset_prep_class)
-    test_nn_model: Optional[base_pModel_test_class] = field(default_factory=base_pModel_test_class)
 
     @field_validator('dataset_prep')
     @classmethod
@@ -220,6 +259,14 @@ class base_pModelClass:
 """data_gen config dataclass definitions"""
 @dataclass
 class data_gen_config:
+    """
+    Top-level configuration for dataset generation and worker setup.
+
+    Notes:
+
+    - memory_limit_per_worker expects strings like '2GiB'. A worker is restricted to this memory limit and restarts if exceeded, see https://distributed.dask.org/en/latest/api.html#distributed.LocalCluster.
+    - setting multiprocessing_processes to None lets the backend decide on the number of processes.
+    """
     pModel: base_pModelClass = MISSING
     multiprocessing_processes: Optional[int] = None
     memory_limit_per_worker: str = "2GiB" # specifiy as 2GiB, or auto. see https://distributed.dask.org/en/latest/api.html#distributed.LocalCluster
@@ -230,12 +277,18 @@ class data_gen_config:
 """base nn_model config dataclass definitions"""
 @dataclass 
 class base_network_class:
+    """
+    Common MLP backbone configuration shared by multiple models.
+    """
     n_linear_layers: int = 1
     linear_hidden_dim: int = 128
     activation: str = 'torch.nn.ReLU'
 
 @dataclass
 class base_training_settings_class:
+    """
+    Generic optimization and early-stopping hyperparameters.
+    """
     batch_size: int = 64
     max_epochs: int = 30000
     lr_start: float = 0.001
@@ -250,16 +303,29 @@ class base_training_settings_class:
 
 @dataclass
 class abstract_nn_model_class:
+    """
+    Marker base class for neural-network configuration objects.
+    """
     pass
 
 @dataclass
 class base_nn_model_class(abstract_nn_model_class):
+    """
+    Configuration for a simple feed-forward model with network and training settings.
+    """
     network: base_network_class = field(default_factory=base_network_class)
     training: base_training_settings_class = field(default_factory=base_training_settings_class)
 
 """pels vae config dataclass definitions"""
 @dataclass
 class pels_vae_network_class(base_network_class):
+    """
+    Network configuration for the PELS-VAE encoder/decoder.
+
+    Gotchas:
+
+    - activation must be the string of a valid torch.nn module (e.g., 'torch.nn.ReLU'); validation will fail otherwise.
+    """
     n_latent: int = 64
     n_linear_layers: int = 3
     linear_hidden_dim: int = 128
@@ -280,6 +346,13 @@ class pels_vae_network_class(base_network_class):
 
 @dataclass
 class pels_vae_training_settings_class(base_training_settings_class):
+    """
+    Training hyperparameters for the PELS-VAE model.
+
+    Notes:
+
+    - Capacity terms (capacity_*) are applied only when use_capacity is True.
+    """
     batch_size: int = 64
     lr_start: float = 1e-5
     lr_min: float = 1e-5
@@ -309,6 +382,9 @@ class pels_vae_training_settings_class(base_training_settings_class):
 
 @dataclass
 class neural_ode_network_class(base_network_class):
+    """
+    Network configuration for the neural ODE model.
+    """
     linear_hidden_dim: int = 128
     hidden_dim_output_nn: int = 12
     n_layers_output_nn: int = 4
@@ -317,6 +393,17 @@ class neural_ode_network_class(base_network_class):
 
 @dataclass
 class latent_ode_network_class(base_network_class):
+    """
+    Network configuration and linearization modes for the latent ODE model.
+
+    Gotchas:
+
+    - lat_ode_type must be one of ['variance_constant', 'variance_dynamic', 'vanilla'].
+    - linear_mode must be one of [None, 'mpc_mode', 'mpc_mode_for_controls', 'deep_koopman'].
+    - linear_mode choices set the *_linear flags as follows:
+      'mpc_mode' -> all linear except state encoder; 'mpc_mode_for_controls' -> linear ODE/decoder and control encoder;
+      'deep_koopman' -> only ODE linear.
+    """
     n_linear_layers: int = 4
     linear_hidden_dim: int = 128
     hidden_dim_output_nn: int = 12
@@ -331,7 +418,6 @@ class latent_ode_network_class(base_network_class):
     
     lat_state_mu_independent: bool = False
 
-    koopman_mpc_mode: Optional[bool] = None
     linear_mode: Optional[str] = None # must be one of None, 'mpc_mode', 'mpc_mode_for_controls', 'deep_koopman'
     state_encoder_linear: bool = False
     control_encoder_linear: bool = False
@@ -357,15 +443,6 @@ class latent_ode_network_class(base_network_class):
         # This method will be called after field validation for the whole model
         # It should be registered as a model_validator in the class
         v = self.linear_mode
-        koopman_mpc_mode = self.koopman_mpc_mode
-        if koopman_mpc_mode is not None:
-            logging.warning('koopman_mpc_mode is deprecated, please use linear_mode instead')
-            logging.warning('overwriting linear_mode with koopman_mpc_mode')
-            if koopman_mpc_mode is True and v is not None:
-                raise ValueError('linear_mode must be None if koopman_mpc_mode is True')
-            elif koopman_mpc_mode is True and v is None:
-                v = 'mpc_mode'
-                self['linear_mode'] = v
         if v is not None:
             if v == 'mpc_mode':
                 self.state_encoder_linear = False
@@ -392,6 +469,9 @@ class latent_ode_network_class(base_network_class):
 
 @dataclass
 class base_neural_ode_pretraining_settings_class(base_training_settings_class):
+    """
+    Pretraining settings for neural ODE components prior to main training.
+    """
     method: str = 'collocation'
     batch_size: int = 1024
     batches_per_epoch: int = 12
@@ -406,8 +486,15 @@ class base_neural_ode_pretraining_settings_class(base_training_settings_class):
 
 @dataclass
 class base_time_stepper_training_settings(base_training_settings_class):
-    # as this is loaded as a list in neural_ode_training_settings_class, 
-    # the type must be Optional for proper validation
+    """
+    Per-phase training settings for time-stepped training with ODE solvers.
+
+    Gotchas:
+
+    - If load_seq_len is not None (and not 0), then seq_len_train must be <= load_seq_len.
+    - solver_norm must be either 'max' or 'mixed'; other values raise validation errors.
+    - solver_step_size None means the solver uses its internal default step size.
+    """
     evaluate_at_control_times: Optional[bool] = False
     batches_per_epoch: Optional[int] = 12
     reload_optimizer: Optional[bool] = False
@@ -446,6 +533,15 @@ class base_time_stepper_training_settings(base_training_settings_class):
 
 @dataclass
 class base_neural_ode_training_settings_class():
+    """
+    High-level training configuration and per-phase override mechanism for ODE models.
+
+    Gotchas:
+
+    - Any *_override set here is propagated into each phase in main_training and may override non-defaults (a warning is logged).
+    - There is no override for fields that are intended to apply to single phases only (e.g., break_after_loss_of).
+    - main_training holds a sequence of phases executed in order. These are validated by the dataclass "base_time_stepper_training_settings".
+    """
     pre_train: bool = False
     load_pretrained_model: bool = False
     load_trained_model_for_test: bool = False
@@ -508,12 +604,22 @@ class base_neural_ode_training_settings_class():
 
 @dataclass
 class base_ode_nn_model_class(abstract_nn_model_class):
+    """
+    Wrapper that binds a network definition to neural ODE training settings.
+    """
     network: base_network_class = field(default_factory=base_network_class)
     training: base_neural_ode_training_settings_class = field(default_factory=base_neural_ode_training_settings_class)
 
 #latent ode
 @dataclass
 class latent_timestepper_training_settings(base_time_stepper_training_settings):
+    """
+    Time-stepper training settings extended with latent-ODE-specific losses and counters.
+
+    Notes:
+
+    - multi_shooting_condition_multiplier controls the strength of multi-shooting consistency; 10.0 - 1.0 is a typical value.
+    """
     beta_start: float = 0.001
     alpha_mu: float = 1.0
     alpha_sigma: float = 0.001
@@ -529,6 +635,16 @@ class latent_timestepper_training_settings(base_time_stepper_training_settings):
 
 @dataclass
 class base_latent_ode_training_settings_class:
+    """
+    Training configuration and overrides for latent ODE models with multiple training phases.
+
+    Gotchas:
+
+    - Overrides (e.g., beta_start_override, n_passes_override, solver_*) are copied into each phase of main_training. A warning is logged if
+      the override changes a non-default value. Variables that are intended to apply to single phases only (e.g., break_after_loss_of) do not have overrides.
+    - At most one phase may set activate_deterministic_mode_after_this_phase=True (enforced in validation);
+      consider using alpha_mu >= 1.0 when enabling deterministic mode.
+    """
     pre_train: bool = False
     load_pretrained_model: bool = False
     load_trained_model_for_test: bool = False
@@ -631,6 +747,9 @@ class base_latent_ode_training_settings_class:
 
 @dataclass
 class base_latent_ode_nn_model_class(abstract_nn_model_class):
+    """
+    Wrapper that binds the latent ODE network to its training configuration.
+    """
     network: latent_ode_network_class = field(default_factory=latent_ode_network_class)
     training: base_latent_ode_training_settings_class = field(default_factory=base_latent_ode_training_settings_class)
 
@@ -638,6 +757,9 @@ class base_latent_ode_nn_model_class(abstract_nn_model_class):
 """train config dataclass definition"""
 @dataclass
 class train_test_config_class:
+    """
+    Runtime configuration for training/testing, hardware usage, and MLflow tracking.
+    """
     nn_model: abstract_nn_model_class = MISSING
     dataset_name: str = MISSING
         
@@ -657,6 +779,13 @@ class train_test_config_class:
 '''ONNX export dataclass definition'''
 @dataclass
 class load_latent_ode_config_class:
+    """
+    Configuration for loading a trained latent ODE model and its associated artifacts.
+
+    Gotchas:
+
+    - Provide either mlflow_run_id or model_directory; at least one must be set.
+    """
     mlflow_tracking_uri: str = "http://localhost:5000"
     model_directory: Optional[str] = None
     mlflow_run_id: Optional[str] = None
@@ -674,15 +803,24 @@ class load_latent_ode_config_class:
 
 @dataclass
 class onnx_export_config_class(load_latent_ode_config_class):
+    """
+    Settings for exporting a latent ODE model to ONNX format.
+    """
     output_dir: Optional[str] = None
     pass
+
+
+def get_config_store() -> ConfigStore:
+    """
+    Registers all configuration dataclasses with Hydra's ConfigStore.
     
-    
-    
-########################################################################################################################
-# Config Store
-########################################################################################################################
-def get_config_store():
+    Args: 
+        None
+
+    Returns:
+
+        cs: ConfigStore instance with registered configurations.    
+    """
     cs = ConfigStore.instance()
     cs.store(name='base_data_gen', node=data_gen_config)
     cs.store(group='pModel', name='base_pModel', node=base_pModelClass)
