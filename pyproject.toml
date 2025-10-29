@@ -43,6 +43,18 @@ dev = [
     "pre-commit",
     "rich",
 ]
+# torch is define here and in optiona dependencies. The dependency groups hera are only for development.
+torch =[
+    "mlflow>=3.5.0",
+    "onnx>=1.19.1",
+    "torch>=2.7.0",
+    "torchaudio>=2.8.0",
+    "torchdiffeq>=0.2.5",
+    "torchvision>=0.22.0",
+]
+
+[project.optional-dependencies]
+# torch is defined here and in dependency gropus
 torch =[
     "mlflow>=3.5.0",
     "onnx>=1.19.1",
