@@ -1,33 +1,61 @@
 """
-Summary
--------
-Defines Pydantic dataclass-based configuration schema for dataset generation
-and neural network training used by the B-NODE project. The module provides:
 
-- Typed dataclasses for solver, raw data, dataset preparation, and multiple neural
-    network model families (base, VAE, neural-ODE, latent-ODE).
-- Field- and model-level validation logic using pydantic validators to ensure
-    consistent and safe configuration values.
+Pydantic dataclass configuration schema used by the B-NODE project.
 
-- Registration helpers to store these dataclasses in Hydra's ConfigStore so they
-    can be composed/loaded using Hydra.
-- Small utility functions to convert OmegaConf DictConfig objects into the
-    corresponding Python dataclass objects and to persist dataclasses as YAML.
+This module provides:
 
-The dataclasses are designed to be used with Hydra + OmegaConf and validated
-via pydantic functional validators. 
+- Typed, validated dataclasses for solver settings, raw-data generation,
+    dataset preparation and multiple neural-network model families (base, VAE,
+    neural-ODE, latent-ODE).
+- Field- and model-level validation via pydantic functional and model validators.
+- Helpers to register all config dataclasses with Hydra's ConfigStore.
+- Small utilities to convert an OmegaConf DictConfig into the corresponding
+    Python dataclass and to persist dataclasses as YAML.
 
-Attention:
-    Use get_config_store() at program startup to
-    register the configuration schemas with Hydra (for example in your main script).
-    ```
-    from bnode_core.config import get_config_store
-    cs = get_config_store()
-    ```
+Notes
+-----
+- Use get_config_store() at program startup to register the configuration
+    schemas with Hydra. Example:
+    
+            from bnode_core.config import get_config_store
+            cs = get_config_store()
 
-Usage:
-    Refer to individual dataclass definitions to get details of the configuration options.
-    In doubt, please refer to the source code of each dataclass for validation logic.
+- The dataclasses are intended to be composed/loaded via Hydra + OmegaConf and
+    validated through pydantic validators. See each dataclass docstring for
+    details about available fields and validation behaviour.
+
+ConfigStore layout (high level)
+-------------------------------
+```
+base_data_gen: data_gen_config(
+        pModel = base_pModelClass(
+                RawData = RawDataClass,
+                dataset_prep = base_dataset_prep_class
+        )
+)
+
+base_train_test: train_test_config_class(
+        nn_model = one of:
+            - base_nn_model: base_nn_model_class
+            - pels_vae: base_nn_model_class(network=pels_vae_network_class, training=pels_vae_training_settings_class)
+            - neural_ode_base: base_ode_nn_model_class(network=neural_ode_network_class, training=base_neural_ode_training_settings_class)
+            - latent_ode_base: base_latent_ode_nn_model_class(network=latent_ode_network_class, training=base_latent_ode_training_settings_class)
+)
+
+base_onnx_export: onnx_export_config_class  (inherits load_latent_ode_config_class)
+```
+
+Utilities
+---------
+- ```convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass```
+    Convert an OmegaConf DictConfig (Hydra config) into the corresponding
+    validated Python dataclass (uses OmegaConf.to_object and pydantic validation).
+
+- ```save_dataclass_as_yaml(cfg: dataclass, path: str)```
+    Persist a dataclass to a YAML file (uses pydantic/dataclasses.asdict then yaml.dump).
+
+See individual dataclass definitions below for field-level documentation,
+validation rules and "gotchas".
 """
 from pydantic.dataclasses import dataclass
 from dataclasses import asdict, field
