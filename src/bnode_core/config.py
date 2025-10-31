@@ -1107,9 +1107,6 @@ class onnx_export_config_class(load_latent_ode_config_class):
 def get_config_store() -> ConfigStore:
     """
     Registers all configuration dataclasses with Hydra's ConfigStore.
-    
-    Args: 
-        None
 
     Returns:
 
