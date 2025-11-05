@@ -184,8 +184,6 @@ def dir_data(log: bool = False) -> Path:
     """
     if Path('.bnode_package_repo').exists():
         path = Path('./resources/data')
-    elif Path('../../.surrogate_test_data_repo').exists():
-        path = Path('../../data')
     else:
         path = Path('./data')
     create_path(path, log)
