@@ -590,7 +590,7 @@ def run_data_generation(cfg: data_gen_config):
 def main():
     cs = get_config_store()
     config_dir = config_dir_auto_recognize()
-    config_name = 'data_generation' 
+    config_name = 'data_generation'
     hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(run_data_generation)()
 
 if __name__ == '__main__':

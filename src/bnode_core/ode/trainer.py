@@ -2,29 +2,29 @@ import torch
 import hydra
 from pathlib import Path
 import numpy as np
-import sys
 import os
 import mlflow
 import logging
 import shutil
 import h5py
-import filepaths
 import time as pyTime
 import copy
-import traceback
 
-from pydantic.dataclasses import dataclass as pydantic_dataclass
 from h5py import Dataset as hdf5_dataset_class
-
 from torch.nn.utils import clip_grad_norm_
 
-from networks.neural_ode.neural_ode_architecture import NeuralODE
-from networks.neural_ode.latent_ode_architecture import BalancedNeuralODE
-from config import train_test_config_class, neural_ode_network_class, base_training_settings_class, convert_cfg_to_dataclass, latent_ode_network_class
-from networks.src.load_data import load_dataset_and_config, make_stacked_dataset, TimeSeriesDataset
-from networks.src.early_stopping import EarlyStopping
-from networks.src.capacity_scheduler import capacity_scheduler as CapacityScheduler
-from utils.hydra_mlflow_decorator import log_hydra_to_mlflow
+import bnode_core.filepaths as filepaths
+from bnode_core.ode.node.node_architecture import NeuralODE
+from bnode_core.ode.bnode.bnode_architecture import BalancedNeuralODE
+
+from bnode_core.nn.nn_utils.load_data import load_dataset_and_config, make_stacked_dataset, TimeSeriesDataset
+from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from bnode_core.config import train_test_config_class, base_training_settings_class, get_config_store
+
+from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
+
 
 torch.backends.cudnn.benchmark = True
 
@@ -32,6 +32,7 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
                      initialize_normalization=True, model_type: str = None):
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     # create model (insert specific creations here)
+    from bnode_core.config import neural_ode_network_class, latent_ode_network_class
     if model_type == None:
         if type(cfg.nn_model.network) is neural_ode_network_class:
             model_type='node'
@@ -616,12 +617,11 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
         mlflow.log_metric('job_{}_final_epoch'.format(job_idx), value=epoch)
     return epoch + 1
 
-        
-        
-
-@hydra.main(config_path=str(Path('conf').absolute()), config_name='train_test_neural_ode', version_base=None)
-def main(cfg: train_test_config_class):
-    train_all_phases(cfg)
+def main():
+    cs = get_config_store()
+    config_dir = filepaths.config_dir_auto_recognize()
+    config_name = 'train_test_ode'
+    hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(train_all_phases)()
 
 if __name__ == '__main__':
     main()

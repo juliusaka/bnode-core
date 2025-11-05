@@ -1,4 +1,3 @@
-import argparse
 import hydra
 from pathlib import Path
 import logging
@@ -6,13 +5,12 @@ import mlflow
 import yaml
 import h5py
 import torch
-
-import filepaths
-from networks.neural_ode.trainer import initialize_model
-from networks.src.load_data import make_stacked_dataset
-from config import onnx_export_config_class
-from config import train_test_config_class
 from omegaconf import OmegaConf
+
+import bnode_core.filepaths as filepaths
+from bnode_core.ode.trainer import initialize_model
+from bnode_core.nn.nn_utils.load_data import make_stacked_dataset
+from bnode_core.config import onnx_export_config_class
 
 # How should this work?
 
@@ -29,7 +27,6 @@ from omegaconf import OmegaConf
 
 # then export from with a for loop over a dict ['encoder': self.xxx, 'decoder']
 
-'''I should read about onnx model restrictions to do this properly'''
 
 def load_trained_latent_ode(cfg_export):
     # get artifacts directory

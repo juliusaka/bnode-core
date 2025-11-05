@@ -201,3 +201,5 @@ outputs/*
 multirun/*
 resources/data/raw_data/*
 resources/data/datasets/*
+mlruns/*
+mlruns/*
