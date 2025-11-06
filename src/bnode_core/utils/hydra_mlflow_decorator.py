@@ -21,7 +21,10 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     from bnode_core.config import convert_cfg_to_dataclass, train_test_config_class
 
     # set mlflow tracking uri and experiment name from config
-    mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
+    if cfg.mlflow_tracking_uri is not None:
+      mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
+    else:
+      logging.warning('mlflow_tracking_uri is None, using default mlflow tracking uri')
     mlflow.set_experiment(cfg.mlflow_experiment_name)
     mlflow.start_run(log_system_metrics=True)
 

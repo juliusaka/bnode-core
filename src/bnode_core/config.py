@@ -1036,7 +1036,7 @@ class train_test_config_class:
     Attributes:
         nn_model (abstract_nn_model_class): Model configuration (network + training) to run.
         dataset_name (str): Name of the dataset configuration to use.
-        mlflow_tracking_uri (str): MLflow tracking server URI. Defaults to localhost.
+        mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
         use_cuda (bool): Use CUDA if available.
@@ -1051,7 +1051,7 @@ class train_test_config_class:
     dataset_path: Optional[str] = None
     dataset_name: Optional[str] = None
         
-    mlflow_tracking_uri: str = 'http://127.0.0.1:5000'
+    mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'
     
     use_amp: bool = False
@@ -1094,14 +1094,14 @@ class load_latent_ode_config_class:
     - Provide either mlflow_run_id or model_directory; at least one must be set.
 
     Attributes:
-        mlflow_tracking_uri (str): MLflow tracking server URI. Defaults to localhost.
+        mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         model_directory (Optional[str]): Local directory containing a model to load.
         mlflow_run_id (Optional[str]): MLflow run ID to fetch the model from tracking.
         model_checkpoint_path (Optional[str]): Direct path to a model checkpoint file.
         config_path (Optional[str]): Path to a saved Hydra config to reproduce settings.
         dataset_path (Optional[str]): Path to a dataset used during export/evaluation.
     """
-    mlflow_tracking_uri: str = "http://localhost:5000"
+    mlflow_tracking_uri: Optional[str] = None
     model_directory: Optional[str] = None
     mlflow_run_id: Optional[str] = None
     model_checkpoint_path: Optional[str] = None

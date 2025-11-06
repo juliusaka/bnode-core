@@ -49,9 +49,9 @@ nav:
   - Home: index.md
   - API Reference: 
     - reference.md
-    - Configuration:
-      - bnode_core/config.md
     - bnode_core/filepaths.md
+  - Config:
+    - bnode_core/config.md
   # - Configuration Reference: bnode_core/config.md
   - License: LICENSE.md
 markdown_extensions:

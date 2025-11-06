@@ -203,3 +203,5 @@ resources/data/raw_data/*
 resources/data/datasets/*
 mlruns/*
 mlruns/*
+mlflow/*
+.vscode/*

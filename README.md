@@ -90,6 +90,8 @@ TODO: add examples
 You don't need to use the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
 
 ## Usage
+
+### Documentation
 To see the documentation, run:
 
 ```
@@ -105,6 +107,30 @@ uvx --with mkdocstrings  --with mkdocs-material --with mkdocstrings-python --wit
 and open the website shown in the terminal.
 
 (When deploying this on GitHub, the github action will automatically build and publish the documentation to GitHub pages.)
+
+### MLflow Tracking
+For training, you don't need to start a MLflow tracking server, as the training scripts will automatically create a local folder `mlruns/` to log the training data.
+
+If you want to access the training data from other machines, you can run:
+```bash
+uvx --from 'mlflow>3.5.0,<3.6.0' mlflow ui
+```
+and access the server at `http://localhost:5000`.
+
+To start a dedicated MLflow tracking server, run:
+
+```bash
+mkdir -p mlflow
+uvx --from 'mlflow>3.5.0,<3.6.0' mlflow server --port 5001 --backend-store-uri sqlite:///mlflow/mlruns.db --artifacts-destination ./mlflow/mlartifacts --serve-artifacts
+```
+This will start a MLflow tracking server at `http://localhost:5001`, storing the experiment and run metadata in an sqlite database located at `./mlflow/mlruns.db` and the artifacts (e.g. model files) in `./mlflow/mlartifacts`.
+
+For better performance, an sqlite database is recommended for the backend store uri, e.g. `--backend-store-uri sqlite:///mlflow.db`. 
+You don't need to do this for smaller projects, but for larger projects with many experiments and runs, this improves mlflow's performance significantly.
+
+For migrating existing data from a local `mlruns/` folder to the tracking server, you would need to write your own script.
+
+Environment variables of the tracking server are listed on the [MLflow documentation](https://mlflow.org/docs/latest/api_reference/cli.html#mlflow-server).
 
 ## Package Structure
 The package is structured as follows:
