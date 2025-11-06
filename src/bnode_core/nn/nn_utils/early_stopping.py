@@ -28,7 +28,7 @@ class EarlyStopping:
         self.best_score = None
         self.corresponding_score = None
         self.early_stop = False
-        self.score_last_save = np.Inf
+        self.score_last_save = np.inf
         self.threshold = threshold
         self.threshold_mode = threshold_mode
         self.path = path
@@ -42,7 +42,7 @@ class EarlyStopping:
         self.best_score = None
         self.corresponding_score = None
         self.early_stop = False
-        self.score_last_save = np.Inf
+        self.score_last_save = np.inf
 
     def reset_counter(self):
         self.counter = 0
@@ -57,7 +57,7 @@ class EarlyStopping:
         '''
         # if loss is not a number
         if np.isnan(loss):
-            loss = np.Inf
+            loss = np.inf
             logging.warning('EarlyStopping: loss is NaN. Setting to Inf for early stopping update.')
         score = loss
         
