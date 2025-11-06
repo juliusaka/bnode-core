@@ -1,15 +1,20 @@
 import h5py
-import mlflow
 import torch
 from pathlib import Path
 import logging
 from omegaconf import OmegaConf
-from typing import Dict, List, Tuple
-from config import base_pModelClass, train_test_config_class
-from filepaths import filepath_dataset_config_from_name, filepath_dataset_from_name
-import numpy as np
+from bnode_core.config import base_pModelClass, train_test_config_class
+from bnode_core.filepaths import filepath_dataset_config_from_name, filepath_dataset_from_name
 
 def load_validate_dataset_config(path: Path):
+    """ Load and validate dataset configuration from given path.
+
+    Args:
+        path (Path): Path to the dataset configuration file.
+    Returns:
+        dataset_config (base_pModelClass): Loaded and validated dataset configuration.
+    """
+    
     if not path.exists():
         raise FileNotFoundError('Dataset config file not found: {}'.format(path))
 
@@ -21,11 +26,22 @@ def load_validate_dataset_config(path: Path):
     return dataset_config
 
 
-def load_dataset_and_config(cfg: train_test_config_class):
-    _path = filepath_dataset_from_name(cfg.dataset_name)
+def load_dataset_and_config(dataset_name: str):
+    """ Load dataset and its configuration from given dataset name.
+    
+    Args:
+        dataset_name (str): Name of the dataset. If it is a file path, the dataset is loaded from that path.
+    Returns:
+        dataset (h5py.File): Loaded HDF5 dataset.
+        dataset_config (base_pModelClass or None): Loaded and validated dataset configuration, or None if no config file is found.
+    
+    """
+    _path = filepath_dataset_from_name(dataset_name)
+
     dataset = h5py.File(_path, 'r')
     logging.info('Loaded dataset from file: {}'.format(_path))
-    _path = filepath_dataset_config_from_name(cfg.dataset_name)
+
+    _path = filepath_dataset_config_from_name(dataset_name)
     if not _path.exists():
         logging.info('No dataset config file found, using information from dataset file')
         dataset_config = None
@@ -38,7 +54,6 @@ def make_stacked_dataset(dataset: h5py.File, context: str, seq_len_from_file: in
     returns toch.utils.data.StackDataset Dataset, which returns a dict when iterated
 
     Args:
-        cfg (base_pModelClass): config for dataset
         dataset (h5py.File): dataset
         context (str): context for dataset, either 'train', 'test', 'validation', 'common_test', 'common_validation'
         seq_len (int): sequence length for dataset, if None, use dataset_config.RawData.seq_len. Else, Data will be reduced to seq_len
