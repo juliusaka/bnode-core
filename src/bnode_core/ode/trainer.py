@@ -20,8 +20,7 @@ from bnode_core.ode.bnode.bnode_architecture import BalancedNeuralODE
 from bnode_core.nn.nn_utils.load_data import load_dataset_and_config, make_stacked_dataset, TimeSeriesDataset
 from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from bnode_core.config import train_test_config_class, base_training_settings_class, get_config_store
+from bnode_core.config import train_test_config_class, base_training_settings_class, get_config_store
 
 from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 
@@ -30,6 +29,13 @@ torch.backends.cudnn.benchmark = True
 
 def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesDataset, hdf5_dataset: hdf5_dataset_class, 
                      initialize_normalization=True, model_type: str = None):
+    _cuda_available = torch.cuda.is_available()
+    logging.info('CUDA available: {} | cfg.use_cuda: {}'.format(_cuda_available, cfg.use_cuda))
+    if _cuda_available and cfg.use_cuda:
+        cfg.use_cuda = True
+    else:
+        cfg.use_cuda = False
+    logging.info("---> Training with cuda: {}".format(cfg.use_cuda))
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     # create model (insert specific creations here)
     from bnode_core.config import neural_ode_network_class, latent_ode_network_class
@@ -106,7 +112,7 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Using device: {}'.format(device))
     
     # load hdf5 dataset
-    hdf5_dataset, dataset_config = load_dataset_and_config(cfg)
+    hdf5_dataset, _ = load_dataset_and_config(cfg.dataset_name)
     mlflow.log_param('dataset_name', cfg.dataset_name)
     
     # collect jobs
@@ -198,6 +204,12 @@ def train_all_phases(cfg: train_test_config_class):
                                                                                     pin_memory=True, drop_last=_drop_last, prefetch_factor=cfg.prefetch_factor)
                         _created_datasets_and_loaders = True
                         _loaded_batch_size = _batch_size
+                        # update seq_len train for this job to the actual seq_len of the dataset
+                        if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (wiht map)
+                            job['train_cfg'].seq_len_train = datasets['train'].seq_len
+                        else:
+                            job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
+
                     
                     _created_model_this_job = False	
                     # initialize model
@@ -347,11 +359,13 @@ def train_one_epoch(model, optimizer, train_loader, scaler, train_cfg, pre_train
         _flag_break_cuda_memory = False
         if use_cuda:
             mlflow.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024^3), step=epoch)
-            if torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory and epoch_this_phase == 0:
-                _flag_break_cuda_memory = True
+            if epoch_this_phase == 0:
+                if torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory:
+                    _flag_break_cuda_memory = True
         if pre_train is False and use_cuda:
-            if (train_cfg.seq_len_train/_seq_len_now) * torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory and epoch_this_phase == 0:
-                _flag_break_cuda_memory = True
+            if epoch_this_phase == 0:
+                if (train_cfg.seq_len_train/_seq_len_now) * torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory:
+                    _flag_break_cuda_memory = True
             if torch.cuda.memory_reserved() > 0.98 * torch.cuda.get_device_properties(0).total_memory:
                 _flag_break_cuda_memory = True
         if _flag_break_cuda_memory is True:
@@ -376,11 +390,14 @@ def train_one_epoch(model, optimizer, train_loader, scaler, train_cfg, pre_train
             _total_time = _time_forward + _time_backward + _time_step + _time_loader
             _total_time = _total_time
             _ode_calls_forward = ret_vals_train['ode_calls_forward'] if 'ode_calls_forward' in ret_vals_train.keys() else 0 
-            logging.info('Train Epoch: {} [{}/{} ({:.0f}%) tot.: {}] Loss: {:.6f}, avg. time per batch: {:.3f} [load. {:.1f}%, forw. {:.1f}%, backw. {:.1f}%, step {:.1f}%], ODE calls forw/backw {}/{}'.format(
-                epoch+1, batch_idx+1, batches_per_epoch,
-                100. * batch_idx / batches_per_epoch, len(train_loader),
-                loss.item(), _total_time/(batch_idx+1),_time_loader/_total_time*100, _time_forward/_total_time*100, _time_backward/_total_time*100, _time_step/_total_time*100,
-                _ode_calls_forward, _ode_calls_backward))
+            try:
+                logging.info('Train Epoch: {} [{}/{} ({:.0f}%) tot.: {}] Loss: {:.6f}, avg. time per batch: {:.3f} [load. {:.1f}%, forw. {:.1f}%, backw. {:.1f}%, step {:.1f}%], ODE calls forw/backw {}/{}'.format(
+                    epoch+1, batch_idx+1, batches_per_epoch,
+                    100. * batch_idx / batches_per_epoch, len(train_loader),
+                    loss.item(), _total_time/(batch_idx+1),_time_loader/_total_time*100, _time_forward/_total_time*100, _time_backward/_total_time*100, _time_step/_total_time*100,
+                    _ode_calls_forward, _ode_calls_backward))
+            except Exception as e:
+                logging.info('error in logging train epoch info: {}'.format(e))
         _time_l = pyTime.time()
     ret_vals_train = dict({key: value.item() if type(value)==torch.Tensor else value for key, value in ret_vals_train.items()})
     ret_vals_train['grad_norm'] = _norm
