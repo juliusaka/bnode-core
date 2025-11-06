@@ -408,13 +408,13 @@ class base_training_settings_class:
     batch_size: int = 64
     max_epochs: int = 30000
     lr_start: float = 0.001
-    beta1_adam: float = 0.9
-    beta2_adam: float = 0.999
+    beta1_adam: Optional[float] = 0.9
+    beta2_adam: Optional[float] = 0.999
     weight_decay: float = 0.0
-    clip_grad_norm: float = 1.0
-    early_stopping_patience: int = 2000
-    early_stopping_threshold: float = 0.001
-    early_stopping_threshold_mode: str = 'rel'
+    clip_grad_norm: float = 100.0
+    early_stopping_patience: int = 1000
+    early_stopping_threshold: float = 0.000
+    early_stopping_threshold_mode: str = 'abs'
     initialization_type: Optional[str] = None
 
 @dataclass
@@ -575,6 +575,7 @@ class latent_ode_network_class(base_network_class):
         params_to_state_encoder (bool): Feed parameters to state encoder.
         params_to_control_encoder (bool): Feed parameters to control encoder.
         params_to_decoder (bool): Feed latent parameters to decoder.
+        controls_to_state_encoder (bool): Feed controls to state encoder.
         lat_state_mu_independent (bool): If True, state mean is independent from variance path. Only applicable for 'variance_dynamic' lat_ode_type.
         linear_mode (Optional[str]): Linearization preset; updates *_linear flags accordingly. Available options: None, 'mpc_mode', 'mpc_mode_for_controls', 'deep_koopman'. (see above)
         state_encoder_linear (bool): Force state encoder to be linear. Can be overridden by linear_mode.
@@ -596,6 +597,7 @@ class latent_ode_network_class(base_network_class):
     params_to_state_encoder: bool = False
     params_to_control_encoder: bool = False
     params_to_decoder: bool = False
+    controls_to_state_encoder: bool = False
     
     lat_state_mu_independent: bool = False
 
@@ -706,16 +708,17 @@ class base_time_stepper_training_settings(base_training_settings_class):
         break_after_loss_of (Optional[float]): Early break threshold on loss value.
         reload_model_if_loss_nan (bool): Reload last checkpoint if loss becomes NaN.
         activate_deterministic_mode_after_this_phase (bool): Activate deterministic latent dynamics after this phase.
+        deterministic_mode_from_state0 (bool): If True, deterministic mode is based on latent state at time 0; otherwise based on full trajectory.
         seq_len_epoch_start (Optional[int]): Internal tracker for the starting sequence length of this phase.
     """
     evaluate_at_control_times: Optional[bool] = False
     batches_per_epoch: Optional[int] = 12
-    reload_optimizer: Optional[bool] = False
+    reload_optimizer: Optional[bool] = True
     load_seq_len: Optional[int] = None
     seq_len_train: Optional[int] = None
     seq_len_increase_in_batches: Optional[int] = 0
     seq_len_increase_abort_after_n_stable_epochs: Optional[int] = 10
-    use_adjoint: Optional[bool] = True
+    use_adjoint: Optional[bool] = False
     solver: Optional[str] = 'dopri5'
     solver_rtol: Optional[float] = 1e-3
     solver_atol: Optional[float] = 1e-4
@@ -724,6 +727,7 @@ class base_time_stepper_training_settings(base_training_settings_class):
     break_after_loss_of: Optional[float] = None
     reload_model_if_loss_nan: bool = True # should be always True, only set to false e.g. for writing iclr paper
     activate_deterministic_mode_after_this_phase: bool = False # is only used for B-NODE, but for compatibility reasons it is included here
+    deterministic_mode_from_state0: bool = False # if True, the deterministic mode will be activated based on the latent state at time 0, otherwise based on the latent states over the whole trajectory
 
     seq_len_epoch_start: Optional[int] = None # only used internally, does not need to be set. But this can be set
     @field_validator('seq_len_train')
@@ -875,7 +879,7 @@ class latent_timestepper_training_settings(base_time_stepper_training_settings):
     include_reconstruction_loss_state0: bool = False
     include_reconstruction_loss_outputs0: bool = False
     include_reconstruction_loss_state_der: bool = False
-    include_states_grad_loss: bool = True
+    include_states_grad_loss: bool = False
     include_outputs_grad_loss: bool = False
     multi_shooting_condition_multiplier: float = 0.0 # 10.0 seems like a good value
 
