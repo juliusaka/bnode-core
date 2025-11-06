@@ -4,13 +4,14 @@ import logging
 import warnings
 import h5py
 from pathlib import Path
-from networks.src.initialize_w_b import initialize_weights_biases
-from networks.src.normalization import NormalizationLayerTimeSeries, NormalizationLayer1D
-from networks.src.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
 import time as pyTime
-
 from torchdiffeq import odeint, odeint_adjoint
 import torchdiffeq as torchdiffeq
+
+
+from bnode_core.ode.ode_utils.initialize_model import initialize_weights_biases
+from bnode_core.nn.nn_utils.normalization import NormalizationLayer1D
+from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
 
 class NeuralODEFunc(nn.Module):
     
