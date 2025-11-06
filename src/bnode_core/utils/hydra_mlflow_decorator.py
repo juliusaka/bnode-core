@@ -17,6 +17,9 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
   '''
   @wraps(func)
   def inner_decorator(cfg: DictConfig):
+    
+    from bnode_core.config import convert_cfg_to_dataclass, train_test_config_class
+
     # set mlflow tracking uri and experiment name from config
     mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
     mlflow.set_experiment(cfg.mlflow_experiment_name)
@@ -33,8 +36,6 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     def convert_to_dict(cfg):
       json_str = json.dumps(cfg, default=lambda o: o.__dict__, indent=4) # adapted with chatgpt
       return json.loads(json_str)
-    
-    from bnode_core.config import convert_cfg_to_dataclass, train_test_config_class, train_test_dmd_config_class, edmdc_training_class
 
     # log Network config to mlflow
     if type(cfg) == train_test_config_class:
@@ -47,10 +48,6 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
         for i, settings in enumerate(cfg.nn_model.training.main_training):
           # append main_training to keys:
           mlflow.log_params({'main_training_' + str(i) + '_' + k: v for k,v in convert_to_dict(settings).items()})
-    elif type(cfg) == train_test_dmd_config_class:
-      mlflow.log_params(convert_to_dict(cfg.dmd_training))
-      if type(cfg.dmd_training) == edmdc_training_class:
-        mlflow.log_params({'observable_' + k : v for k,v in convert_to_dict(cfg.dmd_training.observable).items()})
 
     mlflow.log_param('dataset_name', cfg.dataset_name)  
     
