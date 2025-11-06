@@ -4,7 +4,7 @@ from pathlib import Path
 import logging
 from omegaconf import OmegaConf
 from bnode_core.config import base_pModelClass, train_test_config_class
-from bnode_core.filepaths import filepath_dataset_config_from_name, filepath_dataset_from_name
+from bnode_core.filepaths import filepath_dataset_config_from_name, filepath_dataset_from_config
 
 def load_validate_dataset_config(path: Path):
     """ Load and validate dataset configuration from given path.
@@ -14,7 +14,7 @@ def load_validate_dataset_config(path: Path):
     Returns:
         dataset_config (base_pModelClass): Loaded and validated dataset configuration.
     """
-    
+
     if not path.exists():
         raise FileNotFoundError('Dataset config file not found: {}'.format(path))
 
@@ -26,7 +26,7 @@ def load_validate_dataset_config(path: Path):
     return dataset_config
 
 
-def load_dataset_and_config(dataset_name: str):
+def load_dataset_and_config(dataset_name: str, dataset_path: str ):
     """ Load dataset and its configuration from given dataset name.
     
     Args:
@@ -36,7 +36,7 @@ def load_dataset_and_config(dataset_name: str):
         dataset_config (base_pModelClass or None): Loaded and validated dataset configuration, or None if no config file is found.
     
     """
-    _path = filepath_dataset_from_name(dataset_name)
+    _path = filepath_dataset_from_config(dataset_name, dataset_path)
 
     dataset = h5py.File(_path, 'r')
     logging.info('Loaded dataset from file: {}'.format(_path))

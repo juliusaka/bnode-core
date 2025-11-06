@@ -112,7 +112,7 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Using device: {}'.format(device))
     
     # load hdf5 dataset
-    hdf5_dataset, _ = load_dataset_and_config(cfg.dataset_name)
+    hdf5_dataset, _ = load_dataset_and_config(cfg.dataset_name, cfg.dataset_path)
     mlflow.log_param('dataset_name', cfg.dataset_name)
     
     # collect jobs
@@ -253,7 +253,7 @@ def train_all_phases(cfg: train_test_config_class):
                         _save_predictions = cfg.nn_model.training.save_predictions_in_dataset
                         if _save_predictions is True:
                             _path = filepaths.filepath_dataset_current_hydra_output()
-                            shutil.copy(filepaths.filepath_dataset_from_name(cfg.dataset_name), _path)
+                            shutil.copy(filepaths.filepath_dataset_from_config(cfg.dataset_name, cfg.dataset_path), _path)
                             logging.info('Adding predictions to dataset')
                             logging.info('copied dataset to file: {}'.format(_path))
                             hdf5_dataset = h5py.File(_path, 'r+')

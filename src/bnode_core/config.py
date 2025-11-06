@@ -1048,7 +1048,8 @@ class train_test_config_class:
         prefetch_factor (int): Prefetch factor for dataloaders.
     """
     nn_model: abstract_nn_model_class = MISSING
-    dataset_name: str = MISSING
+    dataset_path: Optional[str] = None
+    dataset_name: Optional[str] = None
         
     mlflow_tracking_uri: str = 'http://127.0.0.1:5000'
     mlflow_experiment_name: str = 'Default'
@@ -1062,6 +1063,25 @@ class train_test_config_class:
     n_workers_train_loader: int = 5
     n_workers_other_loaders: int = 1
     prefetch_factor: int = 2
+
+    @field_validator('dataset_path')
+    @classmethod
+    def check_dataset_path_and_name(cls, dataset_path, info: ValidationInfo):
+        if dataset_path is not None and info.data.get('dataset_name') is not None:
+            raise ValueError('Only one of dataset_path or dataset_name can be provided, not both')
+        return dataset_path
+
+    @field_validator('dataset_name')
+    @classmethod
+    def set_dataset_name_from_path(cls, v, info: ValidationInfo):
+        dataset_path = info.data.get('dataset_path')
+        if dataset_path is not None:
+            path = Path(dataset_path)
+            if not path.exists():
+                raise ValueError(f'dataset_path does not exist: {dataset_path}')
+            # Extract filename without extension as dataset_name
+            return path.stem
+        return v
 
 '''ONNX export dataclass definition'''
 @dataclass

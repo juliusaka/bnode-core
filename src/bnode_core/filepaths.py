@@ -316,8 +316,8 @@ def filepath_dataset_config(cfg: data_gen_config, n_samples: int) -> Path:
 
 
 def filepath_dataset_from_name(name: str) -> Path:
-    """Return the HDF5 dataset file path for a given dataset name.
-    If the name is already a file path, it is returned as a Path object.
+    """Return the HDF5 dataset file path for a given dataset name. Assumes that the dataset is located
+    in the standard dataset directory structure of this package.
 
     Args:
         name (str): Dataset name.
@@ -325,14 +325,25 @@ def filepath_dataset_from_name(name: str) -> Path:
     Returns:
         Path: HDF5 dataset file path.
     """
-    if Path(name) .is_file():
-        file = Path(name)
+    return dir_specific_dataset_from_name(name) / (name + '_dataset.hdf5')
+
+def filepath_dataset_from_config(dataset_name: str, dataset_path: str) -> Path:
+    """Return the HDF5 dataset file path for a given dataset name or explicit path.
+
+    If ``dataset_path`` is provided, it is used directly. Otherwise, the path is
+    constructed based on the standard dataset directory structure.
+
+    Args:
+        dataset_name (str): Dataset name.
+        dataset_path (str | None): Optional explicit dataset file path.
+
+    Returns:
+        Path : HDF5 dataset file path.
+    """
+    if dataset_path is not None:
+        return Path(dataset_path)
     else:
-        try: 
-            file = dir_specific_dataset_from_name(name) / (name + '_dataset.hdf5')
-        except Exception as e:
-            raise FileNotFoundError('Dataset file not found for dataset_name: {}. Tried to load file directly and from dataset filepaths.'.format(cfg.dataset_name)) from e
-    return file
+        return filepath_dataset_from_name(dataset_name)
 
 
 def filepath_dataset_config_from_name(name: str) -> Path:

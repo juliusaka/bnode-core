@@ -3,7 +3,8 @@ defaults:
   - nn_model: bnode_pytest
   - _self_
 
-dataset_name: resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest_dataset.hdf5
+dataset_name: null
+dataset_path: resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest_dataset.hdf5
 
 mlflow_experiment_name: test_umzug
 
