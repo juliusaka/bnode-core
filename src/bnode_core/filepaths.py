@@ -49,9 +49,10 @@ def config_dir_auto_recognize() -> Path:
            return None to allow Hydra to handle the path.
         5. Otherwise, log an error and raise ValueError.
     """
-    if '--help' in sys.argv or '-h' in sys.argv:
+    if '--help' in sys.argv or '-h' in sys.argv or '--hydra-help' in sys.argv:
         print('The config directory is auto-recognized based on the current working directory.')
         print('You can override this behavior by providing the config path via --config-path or --config-dir CLI arguments.')
+        print('To access hydra help, use --hydra-help.')
         return None
     msg = ''
     if Path('.bnode_package_repo').exists():
