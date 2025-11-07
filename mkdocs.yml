@@ -50,6 +50,7 @@ nav:
   - API Reference: 
     - reference.md
     - bnode_core/filepaths.md
+    - bnode_core/ode/trainer_utils/test_from_mlflow.md
   - Config:
     - bnode_core/config.md
   # - Configuration Reference: bnode_core/config.md
