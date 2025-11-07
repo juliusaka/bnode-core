@@ -1,4 +1,161 @@
-""" Trainer for (B)NODE models
+"""Neural ODE and Balanced Neural ODE Training Module.
+
+This module provides the main training pipeline for Neural ODE (NODE) and Balanced
+Neural ODE (BNODE) models. It handles model initialization, multi-phase training,
+validation, testing, and MLflow experiment tracking.
+
+Architecture Support
+--------------------
+The trainer automatically detects and supports two model architectures:
+
+- **Neural ODE (NODE)**: Direct neural differential equation models.
+- **Balanced Neural ODE (BNODE)**: Latent-space ODE models with encoder-decoder
+  architecture for improved training stability and representation learning.
+
+Training Pipeline Overview
+--------------------------
+The training process follows these stages:
+
+1. **Model Instantiation**
+    - Automatically detects NODE vs BNODE from config
+    - Initializes normalization layers using dataset statistics
+    - Sets up device (CPU/CUDA) based on availability and config
+
+2. **Pre-training (Optional, NODE only)**
+    - Can be enabled in config: ``nn_model.training.pre_train=true``
+    - Trains on state derivatives (``state_der``) if present in dataset
+    - Uses collocation method for initial parameter estimation
+    - **Not supported for BNODE models** (No latent states gradients available, 
+      but you can mock this behavior by using a short main training phase with 
+      states_grad_loss)
+
+3. **Multi-Phase Main Training**
+    - Configured as a list in ``nn_model.training.main_training``
+    - Each phase can have different hyperparameters:
+        - Solver type (euler, rk4, dopri5, etc.)
+        - Learning rate, batch size, sequence length
+        - Early stopping patience and threshold
+    - See ``resources/config/nn_model/bnode_pytest.yaml`` for an example
+
+4. **Final Testing**
+    - Evaluates model on all dataset splits (train/val/test)
+    - Optionally saves predictions and internal variables to dataset
+    - Logs final metrics to MLflow
+
+Key Training Features
+---------------------
+
+***Compatibility with NODE and BNODE***
+
+- Trainer auto-detects model type from config
+- Both models provide a consistent training interface with 
+  e.g. the `model_and_loss_evaluation` method.
+
+**Adaptive Batch Processing**
+
+Each epoch processes a specified number of batches (not entire dataset).
+Configured via ``nn_model.training.main_training[i].batches_per_epoch``.
+
+**NaN Recovery**
+
+- If NaN loss detected, automatically reloads last checkpoint
+- Reduces gradient clipping norm to stabilize training
+- Note: LR scheduling might be a better long-term solution
+
+**Reparameterization Control (BNODE)**
+
+- Training uses active reparameterization (variational inference)
+- When evaluating (validation/test, or at final test for all datasets), 
+  reparameterization is disabled. Also for deterministic mode.
+- Ensures consistent evaluation metrics
+
+**Progressive Sequence Length Increase**
+
+- When switching phases, sequence length gradually increases
+- Initial test with final sequence length to assess extrapolation
+- Training sequence length increases gradually (controlled by
+    ``seq_len_increase_in_batches``)
+- Validation/test always use full sequence length to monitor extrapolation performance
+- Early abort if stable extrapolation achieved:
+    ``loss_train < 2 * loss_validation`` for N consecutive epochs
+    (``seq_len_increase_abort_after_n_stable_epochs``)
+
+**MLflow Integration**
+
+- Logs metrics at end of each phase: ``{metric}_{context}_job{phase}_final``
+- Final test metrics logged as: ``{metric}_final``
+- All Hydra outputs and trained models saved as artifacts
+- Experiment tracking with run name, parameters, and tags
+
+Typical Usage Examples
+----------------------
+
+As other modules of the ``bnode_core`` package, we use Hydra for configuration management.
+
+Basic training with default config:
+
+    uv run trainer nn_model=latent_ode_base dataset_name=myDataset
+
+Training with custom model configuration:
+
+    uv run trainer nn_model=myCustomModel dataset_name=myDataset \\
+        mlflow_experiment_name=my_experiment \\
+        nn_model.network.lat_states_dim=1024 \\
+
+Hyperparameter sweep (multi-run mode):
+
+    uv run trainer \\
+        nn_model=latent_ode_base \\
+        dataset_name=myDataset \\
+        nn_model.training.beta_start_override=0.1,0.01,0.001 \\
+        -m
+
+Override specific training parameters:
+
+    uv run trainer \\
+        nn_model=latent_ode_base \\
+        dataset_name=myDataset \\
+        nn_model.training.lr_start_override=1e-4 \\
+        nn_model.training.batch_size_override=512 \\
+        use_cuda=false
+
+View available configuration options (from Hydra):
+
+    uv run trainer --help
+
+Configuration
+-------------
+For detailed configuration options, see:
+
+- **Config Documentation**: Consult the Config section of the documentation
+- **Config Files**: examples in ``resources/config/nn_model/`` directory
+- **Config Schema**: ``bnode_core.config`` module for all available parameters
+- **Search Tip**: Use Ctrl+F in config files to find specific parameter behavior
+
+Command Line Interface
+----------------------
+The trainer is registered as a UV script in ``pyproject.toml``, enabling direct
+execution via ``uv run trainer``. All Hydra config parameters can be overridden
+via command line using dot notation.
+
+Notes
+-----
+- CUDA is automatically used if available (override with ``use_cuda=false``)
+- Model checkpoints saved after each phase: ``model_phase_{i}.pt``
+- Failed artifact logging tracked in ``could_not_log_artifacts.txt``
+- Supports mixed precision training (AMP) when enabled
+- Early stopping based on validation loss with configurable patience
+
+See Also
+--------
+
+bnode_core.config : Configuration schemas and validation
+bnode_core.ode.node.node_architecture : Neural ODE model implementation
+bnode_core.ode.bnode.bnode_architecture : Balanced Neural ODE model implementation
+bnode_core.nn.nn_utils.load_data : Dataset loading utilities
+
+
+
 
 """
 import torch
@@ -32,6 +189,35 @@ torch.backends.cudnn.benchmark = True
 
 def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesDataset, hdf5_dataset: hdf5_dataset_class, 
                      initialize_normalization=True, model_type: str = None):
+    """Initialize and configure NODE or BNODE model with dataset statistics.
+    
+    Automatically detects model type from config and initializes normalization
+    layers using training dataset statistics. Handles device placement (CPU/CUDA)
+    and copies model architecture file to Hydra output directory.
+    
+    Args:
+        cfg (train_test_config_class): Validated Hydra configuration.
+        train_dataset (TimeSeriesDataset): Training dataset for normalization.
+        hdf5_dataset (hdf5_dataset_class): HDF5 dataset handle for statistics.
+        initialize_normalization (bool, optional): Whether to initialize normalization
+            layers from dataset statistics. Defaults to True.
+        model_type (str, optional): Force specific model type ('node' or 'bnode').
+            If None, auto-detects from config. Defaults to None.
+    
+    Returns:
+        torch.nn.Module: Initialized model (NeuralODE or BalancedNeuralODE) moved
+            to appropriate device.
+    
+    Side Effects:
+        - Modifies cfg.use_cuda based on availability
+        - Copies model architecture source file to Hydra output directory
+        - Logs device and parameter count information
+    
+    Notes:
+        - CUDA is used if available and cfg.use_cuda=True
+        - Normalization uses training set statistics only
+        - Model type detection based on network class in config
+    """
     _cuda_available = torch.cuda.is_available()
     logging.info('CUDA available: {} | cfg.use_cuda: {}'.format(_cuda_available, cfg.use_cuda))
     if _cuda_available and cfg.use_cuda:
@@ -110,6 +296,61 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
 
 @log_hydra_to_mlflow
 def train_all_phases(cfg: train_test_config_class):
+    """Execute complete multi-phase training pipeline with MLflow tracking.
+    
+    Main orchestration function that coordinates:
+
+    - Dataset loading
+    - Model initialization  
+    - Optional pre-training (NODE only)
+    - Multi-phase main training
+    - Final testing and evaluation
+    - MLflow artifact logging
+    
+    The function processes a job list consisting of optional pre-training,
+    multiple main training phases, and final testing. Each phase can have
+    different hyperparameters and training strategies.
+    
+    Args:
+        cfg (train_test_config_class): Validated Hydra configuration containing:
+            - dataset_path, dataset_name: Dataset location and identifier
+            - nn_model.training.pre_train: Enable pre-training (NODE only)
+            - nn_model.training.main_training: List of training phase configs
+            - nn_model.training.test: Enable final testing
+            - use_cuda: Device preference
+            - mlflow_experiment_name: MLflow experiment name
+    
+    Side Effects:
+        - Creates/updates model checkpoints: model_phase_{i}.pt
+        - Logs metrics, parameters, and artifacts to MLflow
+        - Saves predictions to dataset if configured
+        - Copies Hydra outputs to MLflow artifacts
+        - Creates could_not_log_artifacts.txt on logging failures
+    
+    Training Flow:
+        1. Load HDF5 dataset and log to MLflow
+        2. Build job list (pre-train, main phases, test)
+        3. For each job:
+           - Initialize/reload dataloaders if needed
+           - Initialize/load model if needed
+           - Execute training or testing
+           - Save checkpoint and log metrics
+        4. Copy all outputs to MLflow artifacts
+    
+    Raises:
+        RuntimeError: If CUDA memory errors occur repeatedly
+        FileNotFoundError: If dataset or checkpoint files missing
+        
+    Notes:
+        - Decorated with @log_hydra_to_mlflow for automatic config logging
+        - Memory errors trigger dataloader recreation with adjusted settings
+        - NaN losses trigger checkpoint reload and gradient clipping adjustment
+        - Progressive sequence length increase during phase transitions
+    
+    See Also:
+        train_one_phase : Single training phase execution
+        initialize_model : Model instantiation and initialization
+    """
     logging.info('Start training all phases....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     logging.info('Using device: {}'.format(device))
@@ -638,6 +879,25 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
     return epoch + 1
 
 def main():
+    """Entry point for (B)NODE training via Hydra CLI.
+    
+    Initializes Hydra configuration system and launches train_all_phases with
+    validated config. Auto-detects config directory and uses 'train_test_ode'
+    as the default config name.
+    
+    This function is registered as 'trainer' in pyproject.toml, enabling
+    command-line execution via::
+    
+        uv run trainer [config_overrides]
+    
+    Examples:
+        See module docstring for usage examples.
+    
+    Side Effects:
+        - Registers config store with Hydra
+        - Auto-detects config directory from filepaths
+        - Launches Hydra-decorated train_all_phases
+    """
     cs = get_config_store()
     config_dir = filepaths.config_dir_auto_recognize()
     config_name = 'train_test_ode'

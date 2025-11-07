@@ -50,10 +50,14 @@ nav:
   - Home: index.md
   - API Reference: 
     - reference.md
-    - bnode_core/filepaths.md
-    - (B)NODE Models:
+    - (B)NODE Module:
+      - bnode_core/ode/trainer.md
+      - bnode_core/ode/bnode.md
+      - bnode_core/ode/node.md
       - Utilities:
         - bnode_core/ode/trainer_utils/test_from_mlflow.md
+    - bnode_core/filepaths.md
+
   - Config:
     - bnode_core/config.md
   # - Configuration Reference: bnode_core/config.md

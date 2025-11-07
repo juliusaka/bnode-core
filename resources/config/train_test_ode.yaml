@@ -6,7 +6,7 @@ defaults:
 dataset_name: null
 dataset_path: resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest_dataset.hdf5
 
-mlflow_experiment_name: test_umzug
+mlflow_experiment_name: Default
 
 use_amp: false 
 use_cuda: true
