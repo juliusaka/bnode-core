@@ -4,17 +4,34 @@ defaults:
 
 training:
   main_training:
-    # Use this as a placeholder for phase 0
-    - activate_deterministic_mode_after_this_phase: false
-    # Override phase 1 to activate deterministic mode
-    - activate_deterministic_mode_after_this_phase: true
-    # Add phase 2
-    - batch_size: 400
-      solver: rk4
-      lr_start: 1e-3
-      max_epochs: 100
-      early_stopping_patience: 10
-      seq_len_train: null
-      seq_len_increase_in_batches: 100
-      seq_len_increase_abort_after_n_stable_epochs: 10
-      evaluate_at_control_times: false
+
+  # pre training with 3 steps
+  - batch_size: 800
+    solver: euler
+    lr_start: 1e-3
+    max_epochs: 100
+    early_stopping_patience: 80
+    load_seq_len: null
+    seq_len_train: 3
+
+  # increase seq len to 10 steps
+  - batch_size: 400
+    solver: rk4
+    lr_start: 1e-3
+    max_epochs: 100
+    early_stopping_patience: 10
+    seq_len_train: null
+    seq_len_increase_in_batches: 100
+    seq_len_increase_abort_after_n_stable_epochs: 10
+    evaluate_at_control_times: false
+    activate_deterministic_mode_after_this_phase: true
+
+  - batch_size: 400
+    solver: rk4
+    lr_start: 1e-3
+    max_epochs: 100
+    early_stopping_patience: 10
+    seq_len_train: null
+    seq_len_increase_in_batches: 100
+    seq_len_increase_abort_after_n_stable_epochs: 10
+    evaluate_at_control_times: false

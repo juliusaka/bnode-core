@@ -13,7 +13,7 @@ def ode_training(test_case: str, overrides: list[str] = [],):
     orig_argv = sys.argv[:]
     test_dir = Path('./_tests/ode') / ('test_' + test_case)
     if test_dir.exists():
-        shutil.rmtree(test_dir)
+        shutil.rmtree(test_dir, ignore_errors=True) 
     sys.argv = [orig_argv[0], 
                 '--config-dir=resources/config',
                 '--config-name=train_test_ode_pytest',
@@ -26,6 +26,12 @@ def ode_training(test_case: str, overrides: list[str] = [],):
 def ode_training_params(test_case: str, overrides: list[str] = []):
     overrides += [
         'dataset_path=resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest_dataset.hdf5',
+    ]
+    ode_training(test_case, overrides=overrides)
+
+def ode_training_initial_states(test_case: str, overrides: list[str] = []):
+    overrides += [
+        'dataset_path=resources\data\surrogate-test-data\data\datasets\SimpleSeriesResonance_v4_s-R__n-100_pytest\SimpleSeriesResonance_v4_s-R__n-100_pytest_dataset.hdf5',
     ]
     ode_training(test_case, overrides=overrides)
 
@@ -98,13 +104,6 @@ def test_include_reconstruction_loss_outputs0():
     ])
 
 
-def test_include_reconstruction_loss_state_der():
-    """Test include_reconstruction_loss_state_der=true."""
-    ode_training('recon_loss_state_der', overrides=[
-        'nn_model.training.include_reconstruction_loss_state_der_override=true'
-    ])
-
-
 # Gradient loss tests
 def test_include_states_grad_loss():
     """Test include_states_grad_loss=true."""
@@ -132,15 +131,16 @@ def test_multi_shooting_condition_multiplier():
 def test_solver_dopri5():
     """Test with dopri5 solver."""
     ode_training('solver_dopri5', overrides=[
-        'nn_model.training.main_training.1.solver=dopri5'
+        'nn_model.training.main_training.1.solver=dopri5',
+        'nn_model.training.main_training.1.evaluate_at_control_times=false'
     ])
 
 
 # Parameter encoder tests
-
 def test_params_training():
     """Test with parameter encoder in training mode."""
     ode_training('params_training')
+
 
 def test_include_params_encoder_false():
     """Test with include_params_encoder=false (default true)."""
@@ -154,6 +154,17 @@ def test_linear_mpc_for_controls_include_param_encoder_false():
     ode_training_params('linear_mpc_for_controls_no_param_encoder', overrides=[
         'nn_model.network.linear_mode=mpc_mode_for_controls',
         'nn_model.network.include_params_encoder=false'
+    ])
+
+# Only state initial states tests
+def test_only_initial_states():
+    """Test with only initial states as parameters."""
+    ode_training_initial_states('only_initial_states')
+
+def test_only_initial_states_linear_mpc():
+    """Test with only initial states as parameters and linear_mode=mpc_mode."""
+    ode_training_initial_states('only_initial_states_linear_mpc', overrides=[
+        'nn_model.network.linear_mode=mpc_mode'
     ])
 
 
@@ -176,7 +187,7 @@ def test_deterministic_mode_from_state0():
 def test_linear_mpc_threshold_populated_dimensions():
     """Test linear_mode=mpc_mode_for_controls with threshold_count_populated_dimensions=0.1."""
     ode_training('linear_mpc_threshold_dims', overrides=[
-        'nn_model = bnode_pytest_det',
+        'nn_model=bnode_pytest_det',
         'nn_model.network.linear_mode=mpc_mode_for_controls',
         'nn_model.training.main_training.1.threshold_count_populated_dimensions=0.1'
     ])

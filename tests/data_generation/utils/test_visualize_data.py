@@ -9,6 +9,8 @@ import types
 
 import importlib.util
 
+import bnode_core.filepaths
+
 def _load_module():
     # Ensure matplotlib uses non-interactive backend before module import
     os.environ.setdefault("MPLBACKEND", "Agg")
@@ -53,38 +55,27 @@ def test_main_creates_plots(tmp_path, monkeypatch):
     # prevent interactive show
     monkeypatch.setattr("matplotlib.pyplot.show", lambda *a, **k: None)
 
-    h5_path = tmp_path / "test_raw_data.h5"
-    _create_raw_h5(h5_path)
+    outdir = Path('./_tests/visualization/')
+    
+    dataset_path = Path(r"resources\data\surrogate-test-data\data\raw_data\StratifiedHeatFlowModel_v3_c-RROCS\StratifiedHeatFlowModel_v3_c-RROCS_raw_data.hdf5").absolute()
+    config_path = Path(r"resources\data\surrogate-test-data\data\raw_data\StratifiedHeatFlowModel_v3_c-RROCS\StratifiedHeatFlowModel_v3_c-RROCS_RawData_config.yaml").absolute()
 
-    # create config file matching expected structure for raw dataset
-    cfg = {
-        "controls": {"v1": [-1, 1], "v2": [-2, 2]},
-        "outputs": {"v1": [-1, 1], "v2": [-2, 2]},
-        "states": {"v1": [-1, 1], "v2": [-2, 2]},
-        "parameters": {"v1": [-1, 1], "v2": [-2, 2]},
-    }
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(yaml.safe_dump(cfg))
-
-    outdir = tmp_path / "visualization"
-    args = argparse.Namespace(
-        dataset=str(h5_path),
-        config=str(cfg_file),
-        figsize="6,3",
-        output_dir=str(outdir),
-        print_limits="controls,parameters",
-        bins=10,
-        verbose=False,
-    )
+    # Mock sys.argv for argparse
+    import sys
+    monkeypatch.setattr(sys, "argv", [
+        "visualize_data.py",
+        "--dataset", str(dataset_path),
+        "--config", str(config_path),
+        # "--figsize", "6,3",
+        "--output_dir", str(outdir),
+        "--print_limits", "controls,parameters",
+        "--bins", "10",
+    ])
 
     # run main
-    mod.main(args)
+    mod.main()
 
-    # check that pngs were created for each variable
-    expected = []
-    for cls in ["controls", "outputs", "states", "parameters"]:
-        for name in ["v1", "v2"]:
-            expected.append(outdir / f"{cls}_{name}.png")
-
-    for p in expected:
-        assert p.exists() and p.stat().st_size > 0
+    # Check that some pngs were created (at least one per class that exists)
+    # Don't hardcode variable names since they depend on the actual dataset
+    created_files = list(outdir.glob("*.png"))
+    assert len(created_files) > 0, f"No plots were created in {outdir}"

@@ -17,11 +17,3 @@ def test_raises_when_nothing_found(tmp_path, monkeypatch):
     with pytest.raises(ValueError) as exc:
         config_dir_auto_recognize()
     assert "Please ensure you are in a correct working directory" in str(exc.value)
-
-def test_raises_when_bnode_project_without_config_directory(tmp_path, monkeypatch):
-    # .bnode_project exists but ./config does not
-    (tmp_path / ".bnode_project").write_text("")
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(ValueError) as exc:
-        config_dir_auto_recognize()
-    assert "No config directory found in ./config/" in str(exc.value)

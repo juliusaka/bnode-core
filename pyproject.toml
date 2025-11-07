@@ -42,6 +42,7 @@ dev = [
     "build",
     "pre-commit",
     "rich",
+    "pytest-xdist>=3.8.0",
 ]
 # torch is define here and in optiona dependencies. The dependency groups hera are only for development.
 torch =[
@@ -85,3 +86,7 @@ target-version = "py313"
 
 [tool.coverage.run]
 omit = ["tests/*"]
+
+[tool.pytest.ini_options]
+# this enables pytest to automatically use all available cores.
+addopts = "-n auto"

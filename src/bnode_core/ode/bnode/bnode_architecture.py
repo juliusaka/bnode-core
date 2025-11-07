@@ -11,6 +11,7 @@ import torchdiffeq as torchdiffeq
 from bnode_core.nn.nn_utils.kullback_leibler import kullback_leibler, count_populated_dimensions
 from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
 from bnode_core.ode.bnode.bnode_modules import LatentODEFunc, GeneralEncoder, Decoder
+import warnings
     
 class BalancedNeuralODE(nn.Module): 
     
@@ -559,9 +560,10 @@ class BalancedNeuralODE(nn.Module):
                 ms_loss = torch.mean(torch.square(lat_states_mu[:,:,-1] - lat_state_last_mu))
             elif self.lat_ode_type == 'variance_dynamic':
                 ms_loss = torch.mean(torch.square(lat_states_mu[:,:,-1] - lat_state_last_mu))
-                raise NotImplementedError('Multi shooting loss for variance_dynamic: tune the loss function')
                 if not deterministic_mode_active:
                     ms_loss += torch.mean(torch.square(lat_states_logvar[:,:,-1] - lat_state_last_logvar))
+                if train_cfg.multi_shooting_condition_multiplier is not None:
+                    warnings.warn('Multi-shooting not tested yet for lat_ode_type variance_dynamic', UserWarning)
             elif self.lat_ode_type == 'vanilla':
                 ms_loss = 0
             
@@ -601,7 +603,8 @@ class BalancedNeuralODE(nn.Module):
                 kl_loss += kl_lat_state_0
 
             loss = reconstruction_loss_scaler * reconstruction_loss 
-            loss += train_cfg.multi_shooting_condition_multiplier * ms_loss
+            if train_cfg.multi_shooting_condition_multiplier is not None:
+                loss += train_cfg.multi_shooting_condition_multiplier * ms_loss
             if not deterministic_mode_active:
                 loss += train_cfg.beta_start * kl_loss_scaler * kl_loss
             
