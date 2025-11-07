@@ -1,4 +1,36 @@
 """
+# B-NODE Project Configuration Module
+This module defines the configuration schemas for the B-NODE project using Pydantic dataclasses. It encompasses various settings related to solver configurations, raw data generation, dataset preparation, and multiple neural network model families.
+
+## Overview
+The module provides:
+
+- Typed, validated dataclasses for solver settings, raw-data generation, dataset preparation, and various neural network model families (base, VAE, neural-ODE, latent-ODE).
+- Field- and model-level validation through Pydantic's functional and model validators.
+- Utilities for registering configuration dataclasses with Hydra's ConfigStore.
+- Functions to convert OmegaConf DictConfig into corresponding validated Python dataclasses and to persist dataclasses as YAML files.
+
+## Configuration Structure
+The configuration is organized into several key components:
+
+- **base_data_gen**: Configuration for data generation, including model and dataset preparation settings.
+- **base_train_test**: Configuration for training and testing neural network models, allowing for various model types.
+- **base_onnx_export**: Configuration for exporting models to ONNX format.
+
+## Utilities
+The module includes the following utility functions:
+
+- `convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass`: Converts an OmegaConf DictConfig into the corresponding validated Python dataclass.
+- `save_dataclass_as_yaml(cfg: dataclass, path: str)`: Persists a dataclass to a YAML file.
+
+## Dataclass Definitions
+The following dataclasses are defined in this module:
+
+- `SolverClass`: Configuration for simulation timing and solver behavior.
+- `RawDataClass`: Configuration for raw model and sampling settings used to generate datasets.
+- `base_dataset_prep_class`: Settings for dataset preparation, including slicing, filtering, and transforming data.
+
+Each dataclass includes detailed attributes and validation rules to ensure proper configuration and usage.
 
 Pydantic dataclass configuration schema used by the B-NODE project.
 
@@ -1084,6 +1116,7 @@ class train_test_config_class:
         return v
 
 '''ONNX export dataclass definition'''
+
 @dataclass
 class load_latent_ode_config_class:
     """

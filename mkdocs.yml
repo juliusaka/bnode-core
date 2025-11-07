@@ -43,6 +43,7 @@ plugins:
             docstring_style: google
             show_docstring_examples: true
             show_signature_annotations: true
+            members_order: source
   - include-markdown:
       preserve_includer_indent: true
 nav:
@@ -50,7 +51,9 @@ nav:
   - API Reference: 
     - reference.md
     - bnode_core/filepaths.md
-    - bnode_core/ode/trainer_utils/test_from_mlflow.md
+    - (B)NODE Models:
+      - Utilities:
+        - bnode_core/ode/trainer_utils/test_from_mlflow.md
   - Config:
     - bnode_core/config.md
   # - Configuration Reference: bnode_core/config.md

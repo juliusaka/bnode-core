@@ -1,3 +1,6 @@
+""" Trainer for (B)NODE models
+
+"""
 import torch
 import hydra
 from pathlib import Path
