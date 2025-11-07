@@ -271,7 +271,7 @@ def train_all_phases(cfg: train_test_config_class):
                                 # log stats with logging
                                 logging.info('Stats for context {}: {}'.format(context, ret_vals))
                                 # log stats with mlflow
-                                mlflow.log_metrics(append_context_to_dict_keys(ret_vals, context), step=0) # TODO: this should be removed in the future
+                                mlflow.log_metrics(append_context_to_dict_keys(ret_vals, context), step=_epoch_0+1) 
                                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals, '{}_final'.format(context)), step=_epoch_0+1)
                                 # save loss function values
                                 if _save_predictions is True:

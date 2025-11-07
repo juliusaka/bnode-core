@@ -881,7 +881,7 @@ class latent_timestepper_training_settings(base_time_stepper_training_settings):
     include_reconstruction_loss_state_der: bool = False
     include_states_grad_loss: bool = False
     include_outputs_grad_loss: bool = False
-    multi_shooting_condition_multiplier: float = 0.0 # 10.0 seems like a good value
+    multi_shooting_condition_multiplier: Optional[float] = None # 10.0 seems like a good value
 
 @dataclass
 class base_latent_ode_training_settings_class:
