@@ -32,7 +32,7 @@ training:
   - batch_size: 800
     solver: euler
     lr_start: 1e-3
-    max_epochs: 300
+    max_epochs: 100
     early_stopping_patience: 80
     load_seq_len: null
     seq_len_train: 3
@@ -41,8 +41,8 @@ training:
   - batch_size: 400
     solver: rk4
     lr_start: 1e-3
-    max_epochs: 2000
-    early_stopping_patience: 500
+    max_epochs: 100
+    early_stopping_patience: 10
     seq_len_train: null
     seq_len_increase_in_batches: 100
     seq_len_increase_abort_after_n_stable_epochs: 10

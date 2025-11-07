@@ -1,0 +1,20 @@
+defaults:
+  - base_train_test
+  - nn_model: bnode_pytest
+  - _self_
+
+dataset_name: null
+dataset_path: resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest_dataset.hdf5
+
+mlflow_experiment_name: pytest
+
+use_amp: false 
+use_cuda: true
+raise_exception: true
+verbose: true
+batch_print_interval: 6
+
+# data loader settings
+n_workers_train_loader: 1
+prefetch_factor: 4
+n_workers_other_loaders: 1
