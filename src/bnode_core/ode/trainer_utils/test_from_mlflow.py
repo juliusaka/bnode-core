@@ -30,12 +30,12 @@ import sys
 import logging
 import tempfile
 import shutil
-import filepaths
+import bnode_core.filepaths
 import yaml
 import pathlib
 import subprocess
 import hydra
-from networks.neural_ode.trainer import train_all_phases
+from bnode_core.ode.trainer import train_all_phases
 from multiprocessing import Pool
 
 def parse_command_line_args(sys_argv):
