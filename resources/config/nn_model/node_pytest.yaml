@@ -1,0 +1,53 @@
+defaults:
+  - neural_ode_base
+  - _self_
+
+network:
+  n_linear_layers: 4
+  linear_hidden_dim: 16
+  hidden_dim_output_nn: 16
+  n_layers_output_nn: 4
+  activation: torch.nn.ELU
+  controls_to_output_nn: true
+  
+training:
+  pre_train: false
+  
+  # load pretrained model before training
+  load_pretrained_model: false
+  pre_trained_model_seq_len: null
+  path_pretrained_model: ''
+  # load trained model for testing
+  load_trained_model_for_test: false
+  path_trained_model: ''
+
+  weight_decay_override: 1e-5
+
+
+  pre_training:
+
+    batch_size: 100
+    max_epochs: 100
+    method: collocation
+
+  main_training:
+
+  # pre training with 3 steps
+  - batch_size: 800
+    solver: euler
+    lr_start: 1e-3
+    max_epochs: 100
+    early_stopping_patience: 80
+    load_seq_len: null
+    seq_len_train: 3
+
+  # increase seq len to 10 steps
+  - batch_size: 400
+    solver: rk4
+    lr_start: 1e-3
+    max_epochs: 100
+    early_stopping_patience: 10
+    seq_len_train: null
+    seq_len_increase_in_batches: 100
+    seq_len_increase_abort_after_n_stable_epochs: 10
+    evaluate_at_control_times: false

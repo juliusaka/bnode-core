@@ -252,9 +252,6 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
         # initialize normalizations
         if initialize_normalization:
             model.normalization_init(hdf5_dataset)
-        # save model file to hydra output directory
-        shutil.copy(Path(NeuralODE.__module__.replace('.', os.sep)+'.py'), filepaths.dir_current_hydra_output())
-        logging.info('copied file to file: {}'.format(filepaths.dir_current_hydra_output()))
     elif model_type == 'bnode':
         model = BalancedNeuralODE(
                         states_dim=train_dataset[0]['states'].shape[0],
@@ -818,7 +815,10 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         model.save(path=_path_current_model)
                         torch.save(optimizer.state_dict(), _path_current_optimizer)
                 else: # if we are in the first epoch of this phase, or break after this epoch, just do evaluation
-                    _activate_deterministic_mode = train_cfg.activate_deterministic_mode_after_this_phase and _flag_break_after_epoch
+                    if pre_train is False:
+                        _activate_deterministic_mode = train_cfg.activate_deterministic_mode_after_this_phase and _flag_break_after_epoch
+                    else:
+                        _activate_deterministic_mode = False
                     ret_vals_train = test_or_validate_one_epoch(model, dataloaders['train'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False, 
                                                                 activate_deterministic_mode=_activate_deterministic_mode)
                     if _activate_deterministic_mode:

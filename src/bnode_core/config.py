@@ -699,6 +699,7 @@ class base_neural_ode_pretraining_settings_class(base_training_settings_class):
         early_stopping_threshold_mode (str): Threshold mode ('rel' or 'abs').
         load_seq_len (Optional[int]): If provided, sequence length to load from dataset.
         seq_len_train (int): Sequence length used during pretraining.
+        break_after_loss_of (Optional[float]): Early break threshold on loss value.
     """
     method: str = 'collocation'
     batch_size: int = 1024
@@ -711,6 +712,7 @@ class base_neural_ode_pretraining_settings_class(base_training_settings_class):
     early_stopping_threshold_mode: str = 'rel'
     load_seq_len: Optional[int] = None
     seq_len_train: int = 10
+    break_after_loss_of: Optional[float] = None
 
 @dataclass
 class base_time_stepper_training_settings(base_training_settings_class):
@@ -806,6 +808,7 @@ class base_neural_ode_training_settings_class():
         initialization_type (Optional[str]): Weight initialization scheme for NN. Options: 'xavier', none.
         initialization_type_ode (Optional[str]): Initialization scheme for ODE-specific components. Options: 'xavier', none.
         ***_override (various): Overrides for training hyperparameters applied to all phases in main_training.
+        pre_training (base_neural_ode_pretraining_settings_class): Pretraining settings.
         main_training (List[base_time_stepper_training_settings]): Sequence of per-phase settings.
     """
     pre_train: bool = False
@@ -848,6 +851,8 @@ class base_neural_ode_training_settings_class():
     solver_step_size_override: Optional[float] = None
     solver_norm_override: Optional[str] = None
     # no override for break_after_loss_of as this should only used for one training phase    pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
+    
+    pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
     main_training: List[base_time_stepper_training_settings] = field(default_factory=lambda: [base_time_stepper_training_settings()])
 
     @field_validator('main_training')
