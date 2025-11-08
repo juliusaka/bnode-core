@@ -1,6 +1,6 @@
-# BNODE Module
+# BNODE Export
 
-::: bnode_core.ode.bnode
+::: bnode_core.ode.bnode.bnode_export
     handler: python
     options:
       show_root_heading: true

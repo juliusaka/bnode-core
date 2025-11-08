@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "numpy>=2.3.4",
     "omegaconf>=2.3.0",
+    "onnxscript>=0.5.6",
     "pandas>=2.3.3",
     "pydantic>=2.12.3",
     "pyyaml>=6.0.2",
@@ -43,6 +44,7 @@ dev = [
     "pre-commit",
     "rich",
     "pytest-xdist>=3.8.0",
+    "pytest-html>=4.1.1",
 ]
 # torch is define here and in optiona dependencies. The dependency groups hera are only for development.
 torch =[
@@ -76,6 +78,7 @@ data_generation = "bnode_core.data_generation.raw_data_generation:main"
 data_preperation = "bnode_core.data_generation.data_preperation:main"
 visualize_data = "bnode_core.data_generation.utils.visualize_data:main"
 trainer = "bnode_core.ode.trainer:main"
+bnode_export = "bnode_core.ode.bnode.bnode_export:main"
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]

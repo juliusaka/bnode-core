@@ -1,6 +1,14 @@
 {
     "python.testing.pytestArgs": [
-        "tests"
+        "tests",
+        "-v", // verbose output 
+        "-s", // show print statements
+        "--cov=src/bnode_core",
+        "--cov-report=term",
+        "--cov-report=html:tests/_results/coverage",
+        "-rA", // show summary of ALL tests at end
+        "--html=./tests/_results/_test_report.html", // generate HTML report
+        "--self-contained-html" // make HTML report self-contained
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true

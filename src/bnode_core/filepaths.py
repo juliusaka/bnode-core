@@ -37,8 +37,7 @@ def config_dir_auto_recognize() -> Path:
         path will be provided externally (so Hydra may handle it).
 
     Raises:
-        ValueError: If no configuration directory can be found and no CLI flag
-        suggests that the path will be provided manually.
+        ValueError: If no configuration directory can be found and no CLI flag suggests that the path will be provided manually.
 
     Notes:
         Search order:

@@ -12,7 +12,7 @@ Test a single run on a new dataset:
 
 ```python
     python test_from_mlflow.py \\
-        experiment=myModel \ # or experiment id 
+        experiment=myModel # or experiment id \\
         run_name=bemused-hen-59 \\
         # or run_id=8c2c32b9407a4e20946f72cd1c714776
         dataset_name=myTestData \\
@@ -126,7 +126,7 @@ def parse_command_line_args(sys_argv):
                 - Override: 'override key=value'
     
     Returns:
-        tuple[dict, dict]: A tuple containing:
+        tuple (tuple[dict, dict]): A tuple containing:
             - command_line_args (dict): Regular arguments with values as lists.
             - overrides (dict): Override arguments with values as strings.
     
@@ -189,7 +189,7 @@ def get_run_ids(command_line_args):
             - 'mlflow_tracking_uri': MLflow server URI.
     
     Returns:
-        list[str]: List of MLflow run IDs to test.
+        list (list[str]): List of MLflow run IDs to test.
     
     Raises:
         ValueError: If incompatible argument combinations are provided

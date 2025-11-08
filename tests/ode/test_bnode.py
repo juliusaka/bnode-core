@@ -11,7 +11,7 @@ def ode_training(test_case: str, overrides: list[str] = [],):
     cs = get_config_store()
     # avoid passing pytest's CLI args into the called main()
     orig_argv = sys.argv[:]
-    test_dir = Path('./_tests/ode') / ('test_' + test_case)
+    test_dir = Path('./tests/_results/ode') / ('test_' + test_case)
     if test_dir.exists():
         shutil.rmtree(test_dir, ignore_errors=True) 
     sys.argv = [orig_argv[0], 
@@ -22,6 +22,7 @@ def ode_training(test_case: str, overrides: list[str] = [],):
     sys.argv += overrides
     trainer.main()
     sys.argv = orig_argv
+    return test_dir
 
 def ode_training_params(test_case: str, overrides: list[str] = []):
     overrides += [

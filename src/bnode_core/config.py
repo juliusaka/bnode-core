@@ -1156,10 +1156,24 @@ class onnx_export_config_class(load_latent_ode_config_class):
 
     Attributes:
         output_dir (Optional[str]): Output directory for the exported ONNX model and assets.
+        model_directory (Optional[str]): Local directory containing a model to load.
+        mlflow_run_id (Optional[str]): MLflow run ID to fetch the model from tracking
+        model_checkpoint_path (Optional[str]): Direct path to a model checkpoint file.
+        config_path (Optional[str]): Path to a saved Hydra config to reproduce settings.
+        dataset_path (Optional[str]): Path to a dataset used during export/evaluation.
     """
     output_dir: Optional[str] = None
-    pass
+    model_directory: Optional[str] = None
+    mlflow_run_id: Optional[str] = None # which model checkpoint to load
+    model_checkpoint_path: Optional[str] = None
+    config_path: Optional[str] = None
+    dataset_path: Optional[str] = None
 
+    @model_validator(mode='after')
+    def _check_exclusive_model_source(self):
+        if self.model_directory is not None and self.mlflow_run_id is not None:
+            raise ValueError('Only one of model_directory or mlflow_run_id can be provided, not both')
+        return self
 
 def get_config_store() -> ConfigStore:
     """

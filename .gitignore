@@ -205,4 +205,12 @@ mlruns/*
 mlruns/*
 mlflow/*
 .vscode/*
+
+# Coverage reports
+tests/_results/*
+
+# I should not need these
 _tests/*
+_tests_results/*
+tests/results*
+

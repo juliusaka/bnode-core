@@ -205,7 +205,7 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
             If None, auto-detects from config. Defaults to None.
     
     Returns:
-        torch.nn.Module: Initialized model (NeuralODE or BalancedNeuralODE) moved
+        model (torch.nn.Module): Initialized model (NeuralODE or BalancedNeuralODE) moved
             to appropriate device.
     
     Side Effects:

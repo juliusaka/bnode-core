@@ -52,7 +52,9 @@ nav:
     - reference.md
     - (B)NODE Module:
       - bnode_core/ode/trainer.md
-      - bnode_core/ode/bnode.md
+      - BNODE:
+        - bnode_core/ode/bnode/bnode.md
+        - bnode_core/ode/bnode/bnode_export.md
       - bnode_core/ode/node.md
       - Utilities:
         - bnode_core/ode/trainer_utils/test_from_mlflow.md
