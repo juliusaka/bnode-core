@@ -204,7 +204,6 @@ resources/data/datasets/*
 mlruns/*
 mlruns/*
 mlflow/*
-.vscode/*
 
 # Coverage reports
 tests/_results/*
