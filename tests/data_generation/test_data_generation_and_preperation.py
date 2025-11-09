@@ -11,7 +11,7 @@ def test_01_raw_data_generation():
     # avoid passing pytest's CLI args into the called main()
     orig_argv = sys.argv[:]
     sys.argv = [orig_argv[0], '--config-dir=resources/config',
-                '--config-name=data_generation',
+                '--config-name=data_generation_pytest',
                 'pModel.RawData.n_samples=12',
                 'pModel.RawData.versionName=test',
                 ]
@@ -32,7 +32,7 @@ def test_02_data_preperation():
     # avoid passing pytest's CLI args into the called main()
     orig_argv = sys.argv[:]
     sys.argv = [orig_argv[0], '--config-dir=resources/config',
-                    '--config-name=data_generation',
+                    '--config-name=data_generation_pytest',
                     'pModel.RawData.versionName=test',
                     ]
     main()

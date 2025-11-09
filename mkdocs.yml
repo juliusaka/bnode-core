@@ -50,6 +50,10 @@ nav:
   - Home: index.md
   - API Reference: 
     - reference.md
+    - Data Generation:
+      - bnode_core/data_generation/introduction.md
+      - bnode_core/data_generation/raw_data_generation.md
+      - bnode_core/data_generation/data_preperation.md
     - (B)NODE Module:
       - bnode_core/ode/trainer.md
       - BNODE:

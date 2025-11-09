@@ -1,3 +1,60 @@
+"""Dataset preparation module for BNODE raw data processing.
+
+### Module Description
+
+This module processes raw FMU simulation data and creates prepared dataset files with 
+train/validation/test splits. It applies transformations, filters trajectories, selects 
+variables, and generates multiple dataset sizes from a single raw data source.
+
+### Command-line Usage
+
+    With uv (recommended):
+        uv run data_preperation [hydra_overrides]
+    
+    In activated (uv) virtual environment:
+        data_preperation [hydra_overrides]
+    
+    Direct Python execution:
+        python -m bnode_core.data_generation.data_preperation [hydra_overrides]
+
+### Example Commands
+
+    # Generate datasets with 128, 512, and 2048 samples
+    uv run data_preperation pModel.dataset_prep.n_samples=[128,512,2048]
+    
+    # Apply temperature conversion transform
+    uv run data_preperation pModel.dataset_prep.transforms.temperature=temperature_k_to_degC
+    
+    # Change validation/test fractions
+    uv run data_preperation pModel.dataset_prep.validation_fraction=0.15 pModel.dataset_prep.test_fraction=0.15
+
+### What This Module Does
+
+    1. Loads raw data HDF5 file and validates configuration
+    2. Removes failed simulation runs and filters trajectories by limits/expressions
+    3. Applies transformations (unit conversions, numerical derivatives, custom operations)
+    4. Selects requested variables (states, controls, outputs, parameters)
+    5. Extracts requested time window from trajectories
+    6. Creates train/validation/test splits with consistent common sets across dataset sizes
+    7. Generates multiple HDF5 dataset files (one per n_samples value)
+    8. Saves dataset-specific YAML configs alongside each HDF5 file
+
+See main() function for entry point and run_data_preperation() for the complete pipeline.
+
+### Key Features
+
+    - Safely modifies data in temporary file before creating final datasets
+    - Common validation/test sets ensure fair comparison across dataset sizes
+    - Incremental dataset creation allows generating multiple sizes efficiently
+    - Comprehensive logging of filtering, transformation, and split statistics
+    - Supports external raw data sources (skip config validation)
+
+### Configuration
+
+    Uses Hydra for configuration management. Config loaded from 'data_generation.yaml'.
+    Key config sections: pModel.RawData (raw data metadata) and pModel.dataset_prep 
+    (preparation settings).
+"""
 import hydra
 import os
 import sys
@@ -15,9 +72,37 @@ from bnode_core.config import data_gen_config, convert_cfg_to_dataclass, RawData
 from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, filepath_dataset, filepath_dataset_config, config_dir_auto_recognize
 
 def load_and_validate_raw_data(cfg):
-    """
-    loads the config file, validates it and compares it to the current config.
-    loads the raw data file
+    """Load raw data HDF5 file and validate its configuration against current config.
+    
+    Loads the raw data file and its companion YAML config, validates the config structure, 
+    and compares it to the current configuration. If differences are found (excluding 
+    creation_date), logs warnings and overwrites the current config with the loaded one 
+    to ensure consistency.
+    
+    For external raw data sources (cfg.pModel.RawData.raw_data_from_external_source=True), 
+    skips config loading and validation.
+    
+    Args:
+        cfg: Data generation configuration containing:
+
+            - pModel.RawData.pModel_name: model identifier for file paths
+            - pModel.RawData.version: dataset version identifier
+            - pModel.RawData.raw_data_from_external_source: if True, skip config validation
+    
+    Returns:
+        Tuple of (raw_data, raw_data_config) where:
+
+            - raw_data: Open h5py.File handle to the raw data HDF5 file
+            - raw_data_config: RawDataClass dataclass instance with validated config, 
+              or None if raw_data_from_external_source is True
+    
+    Raises:
+        FileNotFoundError: If raw data file or config file does not exist (unless external source).
+    
+    Notes:
+        - Config comparison excludes creation_date field to avoid false mismatches.
+        - If config mismatch is detected, logs which keys differ and overwrites cfg.pModel.RawData.
+        - The raw data file is returned open; caller is responsible for closing it.
     """
     path_raw_data = filepath_raw_data(cfg)
     path_raw_data_config = filepath_raw_data_config(cfg)
@@ -61,10 +146,24 @@ def load_and_validate_raw_data(cfg):
     return raw_data, raw_data_config
 
 def get_position_in_raw_data_file(variable: str, temp_raw_data: h5py.File):
-    """
-    returns the position of the variable in the raw data file.
-    raises ValueError if variable is not found or if it is found in multiple datasets.
-    returns [dataset_name, idx] where dataset_name is the name of the dataset and idx is the index of the variable in the dataset.
+    """Find the dataset and index position of a variable in the raw data HDF5 file.
+    
+    Searches all '*_names' datasets in the HDF5 file to locate the specified variable. 
+    Returns the dataset name (without '_names' suffix) and the index within that dataset.
+    
+    Args:
+        variable: Name of the variable to find (e.g., 'temperature', 'control_1').
+        temp_raw_data: Open h5py.File handle to the raw data file.
+    
+    Returns:
+        List [dataset_name, idx] where:
+
+            - dataset_name: Name of the dataset (e.g., 'states', 'controls', 'outputs')
+            - idx: Integer index of the variable within that dataset's second dimension
+    
+    Raises:
+        ValueError: If variable is not found in any dataset, or if found in multiple datasets.
+    
     """
     # returns dataset name and position in dataset
     search_datasets = [key for key in temp_raw_data.keys() if key.endswith('names')]
@@ -82,8 +181,37 @@ def get_position_in_raw_data_file(variable: str, temp_raw_data: h5py.File):
         return temp[0]
 
 def transform_raw_data(cfg: data_gen_config, temp_raw_data: h5py.File, raw_data_config: RawDataClass):
-    """
-    performs transformations on raw data according to the config
+    """Apply configured transformations to variables in the raw data file.
+    
+    Performs in-place transformations on raw data variables according to the transforms 
+    specified in cfg.pModel.dataset_prep.transforms. Each variable can have one transform 
+    applied. The function modifies the data directly in the temp_raw_data HDF5 file.
+    
+    Supported transforms:
+        - 'temperature_k_to_degC': Convert from Kelvin to Celsius (subtract 273.15)
+        - 'power_w_to_kw': Convert from Watts to kilowatts (divide by 1000)
+        - 'differentiate': Compute numerical derivative using Akima interpolation. 
+          Also updates states_der if present. Logs interpolation error statistics.
+        - 'evaluate_python_<command>': Evaluate arbitrary Python expression where '#' is 
+          replaced with the data array reference (e.g., 'evaluate_python_#/100' divides by 100)
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.dataset_prep.transforms is a dict mapping variable names to transform names.
+        temp_raw_data: Open h5py.File handle to the temporary raw data file (modified in-place).
+        raw_data_config: Raw data configuration (used for context, not directly modified).
+    
+    Raises:
+        NotImplementedError: If an unsupported transform name is specified.
+    
+    Notes:
+        - For 'differentiate': Uses scipy.interpolate.Akima1DInterpolator with 'makima' method.
+          Computes 0th, 1st, and optionally 2nd derivatives. Logs mean and max interpolation 
+          errors normalized by standard deviation.
+        - For 'evaluate_python_': The command is split on '#' and reconstructed with 
+          temp_raw_data[dataset_name][:,idx] as the data reference. Use caution with 
+          arbitrary code execution.
+        - Transform operations are logged for each variable.
     """
 
     for variable in cfg.pModel.dataset_prep.transforms.keys():
@@ -152,8 +280,25 @@ def transform_raw_data(cfg: data_gen_config, temp_raw_data: h5py.File, raw_data_
     pass
 
 def replace_hdf5_dataset(dataset_name: str, raw_data: h5py.File, data: np.ndarray, remove: bool = False):
-    """
-    replaces dataset in raw data file with new data
+    """Replace or remove a dataset in an HDF5 file.
+    
+    Updates an existing dataset in the HDF5 file with new data. If the new data has a 
+    different shape than the existing dataset, or if remove=True, deletes the old dataset. 
+    If remove=True, no new dataset is created.
+    
+    Args:
+        dataset_name: Name of the dataset to replace (e.g., 'states', 'controls').
+        raw_data: Open h5py.File handle to the HDF5 file.
+        data: New data array to write (ignored if remove=True).
+        remove: If True, delete the dataset without creating a replacement.
+    
+    Raises:
+        ValueError: If dataset_name does not exist in the HDF5 file.
+    
+    Notes:
+        - If shapes match and remove=False, overwrites data in-place using [...] assignment.
+        - If shapes differ, deletes old dataset and creates new one with the provided data.
+        - If remove=True, only deletes the dataset (used for cleanup).
     """
     if dataset_name not in raw_data.keys():
         raise ValueError(f'Dataset {dataset_name} not found in raw data file.')
@@ -167,6 +312,61 @@ def replace_hdf5_dataset(dataset_name: str, raw_data: h5py.File, data: np.ndarra
             raw_data[dataset_name][...] = data
 
 def run_data_preperation(cfg: data_gen_config):
+    """Main orchestration function for dataset preparation pipeline.
+    
+    Complete dataset preparation workflow:
+
+    1. Load and validate raw data HDF5 file and config
+    2. Copy raw data to temporary file for safe manipulation
+    3. Remove failed simulation runs
+    4. Filter trajectories based on configured limits and expressions
+    5. Apply transformations (unit conversions, derivatives, etc.)
+    6. Select only requested variables (states, controls, outputs, parameters)
+    7. Select requested time window
+    8. Create common validation and test sets
+    9. Generate multiple dataset files with different sample counts
+    10. Save dataset-specific configs and clean up temporary files
+    
+    The function creates one or more dataset HDF5 files (based on cfg.pModel.dataset_prep.n_samples 
+    list) with train/validation/test splits plus common_validation and common_test sets that are 
+    consistent across all dataset sizes.
+    
+    This is the Hydra-decorated entry point called by main().
+    
+    Args:
+        cfg: Data generation configuration (automatically populated by Hydra from YAML + CLI args).
+            Key settings include:
+
+            - pModel.RawData: raw data generation parameters
+            - pModel.dataset_prep.transforms: dict of variable -> transform mappings
+            - pModel.dataset_prep.filter_trajectories_limits: dict of variable -> [min, max] bounds
+            - pModel.dataset_prep.filter_trajectories_expression: dict of variable -> expression list
+            - pModel.dataset_prep.states/controls/outputs/parameters: variable lists to keep
+            - pModel.dataset_prep.parameters_remove: whether to exclude parameters from datasets
+            - pModel.dataset_prep.start_time/end_time: time window for trajectory slicing
+            - pModel.dataset_prep.validation_fraction/test_fraction: split proportions
+            - pModel.dataset_prep.n_samples: list of dataset sizes to generate
+    
+    Workflow details:
+        - Failed runs (from 'failed_idx' or 'logs/completed') are removed.
+        - Filtering can exclude trajectories based on min/max limits or Python expressions.
+        - Transforms are applied in the order specified in the config.
+        - Variables not in the selection lists are removed to reduce file size.
+        - Time window selection adjusts sequence_length accordingly.
+        - Common test/validation sets are created from the full raw data and stored in each 
+          dataset file. Smaller datasets use proportionally fewer train samples but keep the 
+          same validation/test examples.
+        - Each dataset file gets a companion YAML config with the pModel settings and 
+          dataset-specific n_samples.
+        - Temporary HDF5 file is deleted after all datasets are created.
+    
+    Notes:
+        - The temporary file (temp_raw_data.hdf5) is created in the current directory.
+        - Dataset file paths determined by filepath_dataset(cfg, n_samples).
+        - Config paths determined by filepath_dataset_config(cfg, n_samples).
+        - Creation date is recorded in each dataset file's 'creation_date' attribute.
+        - If n_samples in the list exceeds raw data sample count, it's clamped and logged.
+    """
     cfg = convert_cfg_to_dataclass(cfg)
     
     # load and validate raw data, copy data to temp file
@@ -390,6 +590,37 @@ def run_data_preperation(cfg: data_gen_config):
     pass
 
 def main():
+    """CLI entry point for dataset preparation.
+    
+    Sets up Hydra configuration management and launches run_data_preperation(). 
+    Displays help message if --help or -h is provided.
+    
+    Hydra automatically:
+    
+    - Loads the data_generation.yaml config from the auto-detected config directory
+    - Parses command-line overrides
+    - Creates a working directory for outputs
+    - Injects the composed config into run_data_preperation()
+    
+    Usage:
+        ```python data_preperation.py [overrides]```
+
+        ```python data_preperation.py --help```
+
+        ```python data_preperation.py --hydra-help```
+        
+    Examples:
+    
+        python data_preperation.py pModel.dataset_prep.n_samples=[128,512,2048]
+        python data_preperation.py pModel=SHF pModel.dataset_prep.validation_fraction=0.15
+        python data_preperation.py pModel.dataset_prep.transforms.temperature=temperature_k_to_degC
+    
+    Notes:
+        - The standard config file used is 'data_generation.yaml' (same as raw_data_generation.py).
+        - Config directory is auto-detected using config_dir_auto_recognize().
+        - You can override config path and direcotory using Hydra CLI options "-cp"/"--config-path" and/or "-cd"/"--config-dir" 
+        - Hydra overrides can modify any config field from the command line.
+    """
     if '--help' in sys.argv or '-h' in sys.argv:
         print('Usage: data_preperation [--cfg_path <path_to_config_file>]')
         print('If --cfg_path is not provided, the default config file "data_generation.yaml in the "conf" directory is used.')

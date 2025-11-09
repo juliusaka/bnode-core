@@ -44,26 +44,31 @@ def config_dir_auto_recognize() -> Path:
         1. If "--help" or "-h" present, print help and return None.
         2. If ".bnode_package_repo" exists and "resources/config/" exists, return it.
         3. Else if "./config/" exists, return it.
-        4. Else, if "-cp"/"--config-path" or "-cd"/"--config-dir" are present,
+        4. Else, if "-cp"/"--config-path" and / or "-cn/ --config-name" are present,
            return None to allow Hydra to handle the path.
         5. Otherwise, log an error and raise ValueError.
     """
-    if '--help' in sys.argv or '-h' in sys.argv or '--hydra-help' in sys.argv:
-        print('The config directory is auto-recognized based on the current working directory.')
-        print('You can override this behavior by providing the config path via --config-path or --config-dir CLI arguments.')
-        print('To access hydra help, use --hydra-help.')
-        return None
     msg = ''
+    return_path = None
     if Path('.bnode_package_repo').exists():
         if Path('resources/config/').exists():
-            return Path('resources/config/')
+            return_path = Path('resources/config/')
         else:
             msg += 'Even though .bnode_package_repo file exists, no config directory found in resources/config/.\n'
     else:
         if Path('./config/').exists():
-            return Path('./config/')
+            return_path =  Path('./config/')
         else:
             msg += 'No config directory found in the standard ./config/ location.\n'
+    
+    if '--help' in sys.argv or '-h' in sys.argv or '--hydra-help' in sys.argv:
+        print('The config directory is auto-recognized based on the current working directory.')
+        print('You can override this behavior by providing the config path via --config-path or --config-dir CLI arguments.')
+        print('To access hydra help, use --hydra-help.')
+    
+    if return_path is not None:
+        return return_path
+    
     # Check if user provided config path via CLI args
     raise_error = True
     if '-cp' in sys.argv or '--config-path' in sys.argv:
@@ -76,7 +81,7 @@ def config_dir_auto_recognize() -> Path:
         logging.error(msg)
         raise ValueError(msg)
     else:
-        return None
+        return Path("")  # dummy return to satisfy function signature
 
 
 def create_path(path: Path, log: bool) -> None:

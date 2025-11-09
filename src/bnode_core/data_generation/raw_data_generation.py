@@ -1,3 +1,86 @@
+"""Raw data generation module for parallel FMU simulation.
+
+## Module Description
+
+This module generates raw simulation data by running FMU (Functional Mock-up Unit) models 
+in parallel with sampled inputs (initial states, parameters, controls). It uses Dask for 
+distributed computing and writes results to HDF5 files with comprehensive logging.
+
+### Command-line Usage
+
+    With uv (recommended):
+        uv run raw_data_generation [overrides]
+    
+    In activated virtual environment:
+        raw_data_generation [overrides]
+    
+    Direct Python execution:
+        python -m bnode_core.data_generation.raw_data_generation [overrides]
+
+### Example Commands
+
+    # Generate 1000 samples with default config
+    uv run raw_data_generation pModel.RawData.n_samples=1000
+    
+    # Use specific pModel config and allow overwriting
+    uv run raw_data_generation pModel=SHF overwrite=true
+    
+    # Change control sampling strategy to RROCS
+    uv run raw_data_generation pModel.RawData.controls_sampling_strategy=RROCS
+    
+    # Adjust parallel workers and timeout
+    uv run raw_data_generation multiprocessing_processes=8 pModel.RawData.Solver.timeout=120
+
+    # Adjust config path and name
+    uv run raw_data_generation --config-path=resources/config --config-name=data_generation_custom
+
+### What This Module Does
+
+1. Loads and validates configuration (FMU path, sampling strategies, solver settings)
+2. Sets reproducibility seed (np.random.seed(42))
+3. Creates HDF5 raw data file with pre-allocated datasets
+4. Samples input values (initial states, parameters, controls) using configured strategies
+5. Writes sampled inputs and metadata to HDF5 file
+6. Sets up Dask distributed cluster for parallel FMU simulation
+7. Submits simulation tasks in batches with timeout monitoring
+8. Incrementally writes simulation results (states, outputs, derivatives) to HDF5
+9. Logs completion status, failures, timeouts, and processing times per sample
+10. Saves configuration YAML file alongside raw data
+
+See main() function for entry point and run_data_generation() for the complete pipeline.
+
+### Key Features
+
+- Parallel execution using Dask LocalCluster with configurable workers
+- Per-simulation timeout enforcement via ThreadPoolExecutor
+- Automatic worker restart on repeated timeouts
+- Incremental result writing (partial data available if interrupted)
+- Comprehensive logging: completed, failed, timed-out simulations
+- Multiple control sampling strategies (R, RO, ROCS, RROCS, RS, RF, file, Excel)
+- Reproducible sampling (fixed seed since 2024-11-23)
+- Dask dashboard for monitoring: http://localhost:8787
+
+### Sampling Strategies
+
+    Parameters: 'R' (random uniform)
+    Initial states: 'R' (random uniform)
+    Controls: 'R' (random uniform), 'RO' (random with offset), 'ROCS' (cubic splines with 
+              clipping), 'RROCS' (cubic splines with random rescaling), 'RS' (random steps), 
+              'RF' (frequency sweep), 'file' (from CSV), 'constantInput' (from Excel)
+
+### Configuration
+
+    Uses Hydra for configuration management. Config loaded from 'data_generation.yaml'.
+    Key config sections: pModel.RawData (all generation parameters including FMU path, bounds, 
+    solver settings, sampling strategies), multiprocessing_processes (worker count), 
+    memory_limit_per_worker (per-worker memory limit).
+
+### Output Files
+
+    - Raw data HDF5 file: Contains time, states, controls, outputs, parameters, logs
+    - Config YAML file: Snapshot of pModel.RawData configuration used for generation
+    Both file paths determined by bnode_core.filepaths functions.
+"""
 import dask.config
 import dask.config
 import dask.distributed
@@ -21,6 +104,20 @@ from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_
 from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, config_dir_auto_recognize
 
 def random_sampling_parameters(cfg: data_gen_config):
+    """Sample parameter values uniformly within configured bounds.
+    
+    Generates a 2D array of parameter values by sampling uniformly from the bounds 
+    specified in cfg.pModel.RawData.parameters for each parameter.
+    
+    Args:
+        cfg: Data generation configuration containing parameter bounds and n_samples.
+            cfg.pModel.RawData.parameters is a dict where each key maps to [lower_bound, upper_bound].
+            cfg.pModel.RawData.n_samples specifies the number of parameter sets to generate.
+    
+    Returns:
+        np.ndarray: Parameter values with shape (n_samples, n_parameters). Each row is one 
+            sampled parameter set.
+    """
     bounds = [[cfg.pModel.RawData.parameters[key][0], cfg.pModel.RawData.parameters[key][1]] for key in cfg.pModel.RawData.parameters.keys()]
     param_values = np.zeros((cfg.pModel.RawData.n_samples, len(cfg.pModel.RawData.parameters.keys())))
     for i in range(len(cfg.pModel.RawData.parameters.keys())):
@@ -28,6 +125,22 @@ def random_sampling_parameters(cfg: data_gen_config):
     return param_values
 
 def random_sampling_controls(cfg: data_gen_config):
+    """Sample control input values uniformly within configured bounds.
+    
+    Generates a 3D array of control trajectories by sampling uniformly from the bounds 
+    specified in cfg.pModel.RawData.controls for each control variable at each timestep.
+    Each control trajectory is independently sampled (no temporal correlation).
+    
+    Args:
+        cfg: Data generation configuration containing control bounds, n_samples, and sequence_length.
+            cfg.pModel.RawData.controls is a dict where each key maps to [lower_bound, upper_bound].
+            cfg.pModel.RawData.n_samples specifies the number of control trajectories to generate.
+            cfg.pModel.RawData.Solver.sequence_length specifies the number of timesteps.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, sequence_length). 
+            Each element is independently sampled from uniform distributions.
+    """
     bounds = [[cfg.pModel.RawData.controls[key][0], cfg.pModel.RawData.controls[key][1]] for key in cfg.pModel.RawData.controls.keys()]
     ctrl_values = np.zeros((cfg.pModel.RawData.n_samples, len(cfg.pModel.RawData.controls.keys()), cfg.pModel.RawData.Solver.sequence_length))
     for i in range(len(cfg.pModel.RawData.controls.keys())):
@@ -36,6 +149,27 @@ def random_sampling_controls(cfg: data_gen_config):
     return ctrl_values
 
 def random_sampling_controls_w_offset(cfg: data_gen_config, seq_len: int = None, n_samples: int = None):
+    """Sample control trajectories with random offset and bounded amplitude.
+    
+    For each control trajectory, first samples a random offset within the control bounds, 
+    then samples an amplitude that ensures the trajectory stays within bounds. Each timestep 
+    is sampled uniformly within [offset - amplitude_lower, offset + amplitude_upper].
+    
+    This produces control trajectories that vary around a central offset value rather than 
+    exploring the full control space independently at each timestep.
+    
+    Args:
+        cfg: Data generation configuration containing control bounds.
+            cfg.pModel.RawData.controls is a dict where each key maps to [lower_bound, upper_bound].
+            cfg.pModel.RawData.n_samples and cfg.pModel.RawData.Solver.sequence_length are used 
+            as defaults if n_samples or seq_len are not provided.
+        seq_len: Optional sequence length override. If None, uses cfg.pModel.RawData.Solver.sequence_length.
+        n_samples: Optional sample count override. If None, uses cfg.pModel.RawData.n_samples.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, seq_len). Each trajectory 
+            varies around a sampled offset with bounded amplitude.
+    """
     bounds = [[cfg.pModel.RawData.controls[key][0], cfg.pModel.RawData.controls[key][1]] for key in cfg.pModel.RawData.controls.keys()]
     ctrl_values = np.zeros((cfg.pModel.RawData.n_samples if n_samples is None else n_samples, len(cfg.pModel.RawData.controls.keys()), cfg.pModel.RawData.Solver.sequence_length if seq_len is None else seq_len))
     for j in range(ctrl_values.shape[0]):
@@ -52,11 +186,27 @@ def random_sampling_controls_w_offset(cfg: data_gen_config, seq_len: int = None,
     return ctrl_values
 
 def random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg: data_gen_config):
-    '''
-    also known as ROCS
-    ROCS fills out the control space more than RROCS, because after the cubic spline interpolation, which tend to exceeds the bounds, 
-    the values are clipped to the bounds.
-    '''
+    """Sample control trajectories using cubic spline interpolation with manual clipping (ROCS).
+    
+    Also known as ROCS (Random Offset Cubic Splines). Generates smooth control trajectories by:
+
+    1. Sampling control values at random intervals
+    2. Interpolating with cubic splines
+    3. Normalizing to fit within bounds via manual clipping
+    
+    ROCS fills the control space more than RROCS because values exceeding bounds are clipped 
+    to the bounds rather than rescaled.
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.RawData.controls_frequency_min_in_timesteps: minimum interval between samples.
+            cfg.pModel.RawData.controls_frequency_max_in_timesteps: maximum interval between samples.
+            cfg.pModel.RawData.controls: dict of control bounds [lower, upper].
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, sequence_length).
+            Smooth trajectories that fill the control space via clipping.
+    """
     freq_sequence = np.random.choice(np.arange(cfg.pModel.RawData.controls_frequency_min_in_timesteps, cfg.pModel.RawData.controls_frequency_max_in_timesteps + 1), cfg.pModel.RawData.n_samples)
     # find out at which entry we reached the sequence length
     seq_len_sampling = np.where(np.cumsum(freq_sequence) > cfg.pModel.RawData.Solver.sequence_length)[0][0] + 1
@@ -93,12 +243,32 @@ def random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg: data_ge
     return ctrl_values
 
 def random_sampling_controls_w_offset_cubic_splines_clip_random(cfg: data_gen_config):
-    '''
-    also known as RROCS
-    RROCS fills out the control space less than ROCS, because after the cubic spline interpolation, which tend to exceeds the bounds,
-    the values are not just clipped to the bounds, but the base and delta are again randomly sampled.
-    This ensures that on differen levels with differnt degree of variation, the control space is filled out more evenly.
-    '''
+    """Sample control trajectories using cubic spline interpolation with random rescaling (RROCS).
+    
+    Also known as RROCS (Randomly Rescaled Offset Cubic Splines). Generates smooth control 
+    trajectories by:
+
+    1. For each control and sample, sampling values at random intervals (e.g. different frequencies), 
+    with sampled amplitudes and offsets
+    2. Interpolating with cubic splines
+    3. Normalizing to [0, 1] and rescaling with randomly sampled base and delta
+    4. Optionally clipping to tighter bounds if specified
+    
+    RROCS fills the control space less uniformly than ROCS because values are rescaled to fit
+    within bounds rather than clipped. This means, that typically at the sampling bounds, less
+    samples are present.
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.RawData.controls_frequency_min_in_timesteps: minimum interval between samples.
+            cfg.pModel.RawData.controls_frequency_max_in_timesteps: maximum interval between samples.
+            cfg.pModel.RawData.controls: dict where each key maps to [lower, upper] or 
+                [lower, upper, clip_lower, clip_upper] for optional tighter clipping bounds.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, sequence_length).
+            Smooth trajectories with diverse amplitude and offset characteristics.
+    """
     # freq_sequence = np.random.choice(np.arange(cfg.pModel.RawData.controls_frequency_min_in_timesteps, cfg.pModel.RawData.controls_frequency_max_in_timesteps + 1), cfg.pModel.RawData.n_samples)
     # # find out at which entry we reached the sequence length
     # seq_len_sampling = np.where(np.cumsum(freq_sequence) > cfg.pModel.RawData.Solver.sequence_length)[0][0] + 1
@@ -159,6 +329,22 @@ def random_sampling_controls_w_offset_cubic_splines_clip_random(cfg: data_gen_co
     return ctrl_values
 
 def random_steps_sampling_controls(cfg: data_gen_config):
+    """Sample step-change control trajectories for system response testing.
+    
+    Generates control trajectories with a single step change at the midpoint. Each control 
+    starts at a randomly sampled value and steps to another randomly sampled value halfway 
+    through the sequence. Useful for testing system step response characteristics.
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.RawData.controls: dict of control bounds [lower, upper].
+            cfg.pModel.RawData.n_samples: number of step trajectories to generate.
+            cfg.pModel.RawData.Solver.sequence_length: total trajectory length.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, sequence_length).
+            Each trajectory has a step change at sequence_length // 2.
+    """
     bounds = [[cfg.pModel.RawData.controls[key][0], cfg.pModel.RawData.controls[key][1]] for key in cfg.pModel.RawData.controls.keys()]
     ctrl_values = np.zeros((cfg.pModel.RawData.n_samples, len(cfg.pModel.RawData.controls.keys()), cfg.pModel.RawData.Solver.sequence_length))
     
@@ -174,6 +360,29 @@ def random_steps_sampling_controls(cfg: data_gen_config):
     return ctrl_values
 
 def random_frequency_response_sampling_controls(cfg: data_gen_config):
+    """Sample frequency-sweep control trajectories for system identification.
+    
+    Generates control trajectories with a chirp (frequency sweep) starting at the midpoint. 
+    The first half is constant, and the second half contains a sine wave with linearly 
+    increasing frequency from min to max. Useful for system identification and frequency 
+    response analysis.
+    
+    The frequency sweep goes from _min_frequency (low) to _max_frequency (high), calculated 
+    based on the configured control frequency bounds (multiplied by 4 since these represent 
+    half-periods).
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.RawData.controls: dict of control bounds [lower, upper].
+            cfg.pModel.RawData.controls_frequency_min_in_timesteps: base for max sweep frequency.
+            cfg.pModel.RawData.controls_frequency_max_in_timesteps: base for min sweep frequency.
+            cfg.pModel.RawData.n_samples: number of trajectories to generate.
+            cfg.pModel.RawData.Solver.sequence_length: total trajectory length.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, sequence_length).
+            First half constant, second half contains frequency sweep.
+    """
     bounds = [[cfg.pModel.RawData.controls[key][0], cfg.pModel.RawData.controls[key][1]] for key in cfg.pModel.RawData.controls.keys()]
     ctrl_values = np.zeros((cfg.pModel.RawData.n_samples, len(cfg.pModel.RawData.controls.keys()), cfg.pModel.RawData.Solver.sequence_length))
     
@@ -204,6 +413,25 @@ def random_frequency_response_sampling_controls(cfg: data_gen_config):
     return ctrl_values
 
 def load_controls_from_file(cfg: data_gen_config):
+    """Load control trajectories from a CSV file and resample to simulation time vector.
+    
+    Reads control values from a CSV file where columns match control variable names from the 
+    config. The CSV must include a 'time' column. Control values are resampled via linear 
+    interpolation to match the simulation timestep, then replicated for all samples.
+
+    TODO: could be extended to load multiple trajectories for different samples.
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.RawData.controls_file_path: path to CSV file with time and control columns.
+            cfg.pModel.RawData.controls: dict of control names (used as column names).
+            cfg.pModel.RawData.Solver: simulation time parameters (start, end, timestep).
+            cfg.pModel.RawData.n_samples: number of times to replicate the loaded trajectory.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_samples, n_controls, sequence_length).
+            Same trajectory replicated across all samples.
+    """
     # load controls from file by control variable name
     _df = pd.read_csv(cfg.pModel.RawData.controls_file_path)
     _list = []
@@ -220,14 +448,29 @@ def load_controls_from_file(cfg: data_gen_config):
     return ctrl_values
 
 def constant_input_simulation_from_excel(cfg: data_gen_config):
-    """
-    This function is used to simulate the constant input simulation from the excel file.
-    The Excel file should have the following structure:
-    - First row: column names as in config-files
-    - Columns: each row defines one combination of control values for one simulation
-
-    The data sheet should have the name 'Tabelle1' and the columns should be named (in row 1) as the control variables.
-
+    """Load constant control values from an Excel file for steady-state simulations.
+    
+    Reads an Excel file with a sheet named 'Tabelle1' where each row defines one simulation 
+    with constant control values. Control columns must be named to match config control names. 
+    Each row's values are held constant for the entire sequence length.
+    
+    Useful for steady-state simulations or parameter sweeps with constant inputs.
+    
+    Args:
+        cfg: Data generation configuration.
+            cfg.pModel.RawData.controls_file_path: path to Excel file.
+            cfg.pModel.RawData.controls: dict of control names (must match column names in Excel).
+            cfg.pModel.RawData.Solver.sequence_length: length to replicate constant values.
+    
+    Returns:
+        np.ndarray: Control values with shape (n_rows, n_controls, sequence_length).
+            Each row from Excel becomes one sample with constant control values.
+    
+    Notes:
+        Excel file structure:
+        - Sheet name: 'Tabelle1'
+        - First row: column headers matching control variable names
+        - Each subsequent row: one set of constant control values for one simulation
     """
     file = pd.ExcelFile(cfg.pModel.RawData.controls_file_path)
     _df = file.parse(sheet_name='Tabelle1')
@@ -241,6 +484,20 @@ def constant_input_simulation_from_excel(cfg: data_gen_config):
 
 
 def random_sampling_initial_states(cfg: data_gen_config):
+    """Sample initial state values uniformly within configured bounds.
+    
+    Generates a 2D array of initial state values by sampling uniformly from the bounds 
+    specified in cfg.pModel.RawData.states for each state variable.
+    
+    Args:
+        cfg: Data generation configuration containing state bounds and n_samples.
+            cfg.pModel.RawData.states is a dict where each key maps to [lower_bound, upper_bound].
+            cfg.pModel.RawData.n_samples specifies the number of initial state sets to generate.
+    
+    Returns:
+        np.ndarray: Initial state values with shape (n_samples, n_states). Each row is one 
+            sampled initial state vector.
+    """
     bounds = [[cfg.pModel.RawData.states[key][0], cfg.pModel.RawData.states[key][1]] for key in cfg.pModel.RawData.states.keys()]
     initial_state_values = np.zeros((cfg.pModel.RawData.n_samples, len(cfg.pModel.RawData.states.keys())))
     for i in range(len(cfg.pModel.RawData.states.keys())):
@@ -248,13 +505,16 @@ def random_sampling_initial_states(cfg: data_gen_config):
     return initial_state_values
 
 def progress_string(progress: float, length: int = 10) -> str:
-    """
+    """Generate a visual progress bar string for logging.
+    
     Returns a visual progress string of the form '|||||.....' for a given progress value in [0, 1].
+    
     Args:
-        progress (float): Progress value between 0 and 1.
-        length (int): Total length of the progress string.
+        progress: Progress value between 0 and 1.
+        length: Total length of the progress string.
+        
     Returns:
-        str: Progress bar string.
+        Progress bar string with '|' for completed portion and '.' for remaining.
     """
     progress = max(0, min(1, progress))  # Clamp to [0, 1]
     n_complete = int(round(progress * length))
@@ -265,6 +525,44 @@ def data_generation(cfg: data_gen_config,
                     initial_state_values: np.ndarray = None,
                     param_values: np.ndarray = None,
                     ctrl_values: np.ndarray = None):
+    """Execute parallel FMU simulations and write results to raw data HDF5 file.
+    
+    Core data generation function that:
+
+    1. Sets up a Dask distributed cluster for parallel FMU simulation
+    2. Submits simulation tasks for each sample in batches
+    3. Monitors task completion and handles timeouts/failures
+    4. Incrementally writes results to the raw data HDF5 file
+    5. Logs completion status, failures, and timing information
+    
+    The function uses ThreadPoolExecutor to enforce per-simulation timeouts and Dask's 
+    LocalCluster for parallel execution across multiple workers. Results are written 
+    incrementally so partial data is available even if generation is interrupted.
+    
+    Args:
+        cfg: Data generation configuration containing:
+            - FMU path and simulation parameters
+            - Solver settings (timestep, tolerance, timeout)
+            - Multiprocessing and memory settings
+            - Output file paths
+        initial_state_values: Optional array of shape (n_samples, n_states) with initial states.
+        param_values: Optional array of shape (n_samples, n_parameters) with parameter values.
+        ctrl_values: Optional array of shape (n_samples, n_controls, sequence_length) with controls.
+    
+    Notes:
+        - The raw data HDF5 file must already exist with pre-allocated datasets.
+        - Dask worker memory limits and allowed failures are configured from cfg settings.
+        - Progress is logged via the Dask diagnostic dashboard at http://localhost:8787.
+        - Per-sample logs (completed, sim_failed, timedout, processing_time) are written 
+          incrementally to the HDF5 file.
+        - If a worker's tasks timeout repeatedly, the worker is restarted automatically.
+        - For large numbers of samples, tasks are submitted in "submission rounds" (batches of 10,000 simulations) 
+          to avoid overwhelming the scheduler.
+    
+    Raises:
+        BaseException: Any exception during generation is caught to ensure partial results 
+            are saved before re-raising.
+    """
     from bnode_core.data_generation.utils.fmu_simulate import fmu_simulate # import here to avoid circular import
     
     # wrap fmu_simulate to include idx and catch exceptions. Time out simulations by using ThreadPoolExecutor.
@@ -469,7 +767,37 @@ def data_generation(cfg: data_gen_config,
     cluster.close()
 
 def sample_all_values(cfg):
-    # sample initial states, parameters and controls with given sampling strategy
+    """Sample all input values (initial states, parameters, controls) according to config.
+    
+    Orchestrates sampling for all simulation inputs based on the configured sampling strategies.
+    Returns None for any input category not included in the config. For parameters, if sampling 
+    is disabled, returns default parameter values for all samples.
+    
+    Supported sampling strategies:
+        - Initial states: 'R' (random uniform)
+        - Controls: 'R', 'RO' (random with offset), 'ROCS', 'RROCS', 'RS' (random steps), 
+          'RF' (frequency response), 'file' (from CSV), 'constantInput' (from Excel)
+        - Parameters: 'R' (random uniform)
+    
+    Args:
+        cfg: Data generation configuration containing:
+
+            - cfg.pModel.RawData.initial_states_include: whether to sample initial states
+            - cfg.pModel.RawData.initial_states_sampling_strategy: 'R' for random uniform
+            - cfg.pModel.RawData.controls_include: whether to sample controls
+            - cfg.pModel.RawData.controls_sampling_strategy: strategy name (see above)
+            - cfg.pModel.RawData.parameters_include: whether to sample parameters
+            - cfg.pModel.RawData.parameters_sampling_strategy: 'R' for random uniform
+            - cfg.pModel.RawData.parameters: dict with parameter bounds and defaults
+            - cfg.pModel.RawData.n_samples: number of samples to generate
+    
+    Returns:
+        Tuple of (initial_state_values, param_values, ctrl_values) where:
+
+            - initial_state_values: np.ndarray (n_samples, n_states) or None
+            - param_values: np.ndarray (n_samples, n_parameters) or None
+            - ctrl_values: np.ndarray (n_samples, n_controls, sequence_length) or None
+    """
     if cfg.pModel.RawData.initial_states_include:
         if cfg.pModel.RawData.initial_states_sampling_strategy == 'R':
             initial_state_values = random_sampling_initial_states(cfg)
@@ -518,6 +846,44 @@ def sample_all_values(cfg):
     return initial_state_values, param_values, ctrl_values
     
 def run_data_generation(cfg: data_gen_config):
+    """Main orchestration function for raw data generation pipeline.
+    
+    Complete raw data generation workflow:
+
+    1. Convert and validate configuration
+    2. Set reproducibility seed (np.random.seed(42))
+    3. Create raw data HDF5 file with pre-allocated datasets
+    4. Sample all input values (initial states, parameters, controls)
+    5. Write sampled inputs and metadata to HDF5 file
+    6. Execute parallel FMU simulations via data_generation()
+    7. Save configuration as YAML file
+    
+    The function prompts for confirmation before overwriting existing raw data files 
+    (unless cfg.overwrite is True). It creates the complete HDF5 structure including:
+
+    - Time vector and sampled inputs (initial_states, parameters, controls)
+    - Pre-allocated arrays for simulation outputs (states, states_der, outputs)
+    - Metadata attributes (creation_date, config YAML)
+    - Log datasets for tracking simulation status
+    
+    This is the Hydra-decorated entry point called by main().
+    
+    Args:
+        cfg: Data generation configuration (automatically populated by Hydra from YAML + CLI args).
+            Key settings include:
+
+            - pModel.RawData: all generation parameters (FMU path, bounds, solver, sampling strategies)
+            - overwrite: if True, skip confirmation prompt for existing files
+            - multiprocessing_processes: number of parallel workers
+            - memory_limit_per_worker: memory limit per Dask worker
+    
+    Notes:
+        - Sets np.random.seed(42) for reproducibility (added 2024-11-23).
+        - Raw data HDF5 file path determined by filepath_raw_data(cfg).
+        - Config YAML path determined by filepath_raw_data_config(cfg).
+        - The HDF5 file config attribute stores OmegaConf.to_yaml(cfg.pModel.RawData).
+        - Creation date is recorded both in HDF5 attrs and in the config YAML.
+    """
     cfg = convert_cfg_to_dataclass(cfg)
 
     # added np.seed for reproducibility on 23.11.2024 (databases generated before this date are not exactly reproducible)
@@ -582,6 +948,25 @@ def run_data_generation(cfg: data_gen_config):
     OmegaConf.save(cfg.pModel.RawData, filepath_raw_data_config(cfg))
 
 def main():
+    """CLI entry point for raw data generation.
+    
+    Sets up Hydra configuration management and launches run_data_generation(). 
+    
+    Hydra automatically:
+
+    - Loads the data_generation.yaml config from the auto-detected config directory
+    - Parses command-line overrides
+    - Creates a working directory for outputs
+    - Injects the composed config into run_data_generation()
+    
+    Usage:
+        python raw_data_generation.py [overrides]
+        
+    Examples:
+    
+        python raw_data_generation.py pModel.RawData.n_samples=1000
+        python raw_data_generation.py pModel=SHF overwrite=true
+    """
     cs = get_config_store()
     config_dir = config_dir_auto_recognize()
     config_name = 'data_generation'

@@ -16,11 +16,13 @@ When `run_data_generation` finishes it writes a single HDF5 raw data file (path 
 
 ### Fields and groups written to the raw HDF5 file
 
-**Attributes:**
-- `creation_date` — string with the file creation timestamp (YYYY-MM-DD HH:MM:SS). TODO: AI, is this correct? I cannot find it in the raw data files.
-- `config` — the raw-data `pModel.RawData` configuration serialized to YAML (OmegaConf.to_yaml(cfg.pModel.RawData)). This is a snapshot of the configuration used for generation. TODO: AI, this is wrong. Would it be a good idea to save it there?
+#### Attributes
 
-**Datasets (high-level):**
+- `creation_date` — string with the file creation timestamp (YYYY-MM-DD HH:MM:SS). 
+- `config` — the raw-data `pModel.RawData` configuration serialized to YAML (OmegaConf.to_yaml(cfg.pModel.RawData)). This is a snapshot of the configuration used for generation. 
+
+#### Datasets (high-level)
+
 - `time` — 1D array containing the simulation time vector used for all time-series (from simulationStartTime to simulationEndTime with the configured timestep).
 - `parameters` (optional) — shape (n_samples, n_parameters). Sampled parameter values when `parameters_include` is enabled. Else: the default model parameter values used for all samples.
 - `parameters_names` — array of parameter names (stored as bytes/strings).
@@ -33,7 +35,8 @@ When `run_data_generation` finishes it writes a single HDF5 raw data file (path 
 - `outputs` (optional) — shape (n_samples, n_outputs, len(time)) for model outputs if configured.
 - `outputs_names` — array of output names.
 
-**Logs / progress information:**
+#### Logs / progress information
+
 - `logs` group — created to track simulation progress and per-sample status:
   - `logs/completed` — boolean array (n_samples,) marking which sample runs completed successfully.
   - `logs/sim_failed` — boolean array (n_samples,) marking runs that failed.
@@ -51,10 +54,12 @@ When `run_data_generation` finishes it writes a single HDF5 raw data file (path 
 
 ### What `data_preperation` writes into each dataset file
 
-**File-level attribute:**
+#### File-level attribute
+
 - `creation_date` — timestamp when the dataset file was created. TODO: AI, is this correct? I cannot find it in the dataset files.
 
-**Datasets:**
+#### Datasets
+
 - `time` — copied from the raw file (already trimmed to the requested timeframe).
 - For each key in `['states', 'states_der', 'controls', 'outputs', 'parameters']` present in the raw data:
   - `<key>_names` — names corresponding to that dataset (e.g. `states_names`).
@@ -64,21 +69,25 @@ When `run_data_generation` finishes it writes a single HDF5 raw data file (path 
   - `common_validation/<key>` — full common validation set copied from the temporary raw file (used across dataset sizes to ensure the same validation elements).
   - `common_test/<key>` — full common test set copied from the temporary raw file.
 
-**Side files:**
+#### Side files
+
 - A dataset-specific YAML config is saved for each dataset file path (via `filepath_dataset_config(cfg, n_samples_dataset)`), containing a copy of the `pModel` config with `n_samples` set to that dataset size and any dataset-prep metadata (the script saves `_conf.pModel` using OmegaConf.save).
 
 ### Key behaviors of data_preperation
 
-**Transforms and filtering:**
+#### Transforms and filtering
+
 - `data_preperation` performs deterministic transforms and filtering:
   - Unit conversions (e.g., `temperature_k_to_degC`, `power_w_to_kw`).
   - Numerical differentiation using an Akima interpolator (if `differentiate` transform is requested) and error-statistics logging.
   - Arbitrary Python-evaluated transforms (prefix `evaluate_python_`) — applied to a variable using an expression with `#` as a placeholder for the timeseries slice.
 
-**Filtering:**
+#### Filtering
+
 - Runs flagged as failed (or listed in `failed_idx`) can be removed.
 - Additional filters based on per-variable min/max or expressions can exclude samples.
 - Time-window trimming selects only the requested timeframe; the `sequence_length` is adjusted accordingly.
 
-**Selection:**
+#### Variable selection
+
 - Only the requested variables are kept per dataset (states, controls, outputs, parameters); others are removed to reduce dataset size.
