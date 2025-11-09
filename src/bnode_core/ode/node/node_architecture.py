@@ -1,3 +1,82 @@
+"""Neural ODE (NODE) Architecture Module.
+
+This module implements a Neural Ordinary Differential Equation (NODE) architecture
+for modeling dynamical systems. NODE directly learns the differential equations governing
+a system's evolution by parameterizing the derivative function with neural networks. Specifically, this module
+learns a State-Space representation of the system dynamics:
+
+Attention
+---------
+This documentation is AI written and may contain inaccuracies. Please verify the details before use.
+
+Overview
+--------
+Neural ODEs represent a continuous-depth neural network where the hidden state evolves
+according to a learned ODE:
+
+    dx/dt = f_θ(x, u, p, t)
+
+Where:
+    - x: System states
+    - u: Control inputs (optional)
+    - p: System parameters (optional)
+    - t: Time
+    - f_θ: Neural network parameterized by θ
+
+Outputs are generated an optional output network:
+
+    y = g_φ(x, u, p, t)
+
+Where:
+    - y: System outputs/measurements
+    - g_φ: Neural network parameterized by φ
+
+Architecture Components
+-----------------------
+1. **NeuralODEFunc**: Learns the state derivative function f_θ
+    - Input: Current states, controls (optional), parameters (optional)
+    - Output: State derivatives dx/dt
+    - Uses normalization for numerical stability
+
+2. **OutputNetwork**: Maps states to observable outputs (optional)
+    - Input: States, controls (optional), parameters (optional)
+    - Output: System outputs/measurements
+    - Decouples internal dynamics from observations
+
+3. **NeuralODE**: Main model combining ODE solver and output network
+    - Integrates state derivatives using torchdiffeq solvers
+    - Supports both training and inference modes
+    - Includes pre-training on derivatives and main training with ODE solver
+
+Key Features
+------------
+- **Continuous-time modeling**: No discretization artifacts
+- **Variable time step**: Can predict at arbitrary time points
+- **Flexible**: Supports controls, parameters, and outputs
+- **Normalized**: Built-in normalization for numerical stability
+
+Training Modes
+--------------
+1. **Pre-training Mode**:
+    - Trains on state derivatives directly (if available in dataset, could construct these
+    numerically, e.g. by finite differences)
+    - Fast initial parameter estimation
+    - No ODE solver required
+    - Loss: ||dx/dt - f_θ(x, u, p)||²
+
+2. **Main Training Mode**:
+    - Integrates ODE from initial conditions
+    - Uses torchdiffeq solvers (Euler, RK4, dopri5, etc.)
+    - More accurate but slower
+    - Loss: ||x(t) - ∫f_θ(x, u, p)dt||²
+
+Supported Solvers
+-----------------
+See torchdiffeq documentation.
+
+
+"""
+
 import torch
 import torch.nn as nn
 import logging
@@ -13,7 +92,55 @@ from bnode_core.ode.ode_utils.initialize_model import initialize_weights_biases
 from bnode_core.nn.nn_utils.normalization import NormalizationLayer1D
 from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
 
+
 class NeuralODEFunc(nn.Module):
+    """Neural network function representing ODE right-hand side f_θ(x, u, p).
+    
+    This module learns the state derivative function for a dynamical system:
+        
+        dx/dt = f_θ(x, u, p)
+    
+    The network includes normalization layers for numerical stability and supports
+    optional control inputs and system parameters.
+    
+    Args:
+        states_dim (int): Dimension of state vector x.
+        controls_dim (int, optional): Dimension of control input vector u. Default: 0.
+        parameters_dim (int, optional): Dimension of parameter vector p. Default: 0.
+        hidden_dim (int, optional): Hidden layer dimension. Default: 20.
+        n_layers (int, optional): Number of layers (minimum 2). Default: 3.
+        activation (nn.Module, optional): Activation function class. Default: nn.ELU.
+        intialization (str, optional): Weight initialization method
+            ('identity', 'xavier', 'kaiming', 'orthogonal'). Default: 'identity'.
+    
+    Attributes:
+        states_dim (int): Dimension of states.
+        controls_dim (int): Dimension of controls.
+        parameters_dim (int): Dimension of parameters.
+        include_controls (bool): Whether controls are used.
+        include_parameters (bool): Whether parameters are used.
+        normalization_states (NormalizationLayer1D): Normalizes input states.
+        normalization_states_der (NormalizationLayer1D): Normalizes output derivatives.
+        normalization_controls (NormalizationLayer1D): Normalizes control inputs.
+        normalization_parameters (NormalizationLayer1D): Normalizes parameters.
+        system_nn (nn.Sequential): Neural network for derivative function.
+    
+    Forward Args:
+
+        states (torch.Tensor): State tensor of shape [batch_size, states_dim].
+        parameters (torch.Tensor, optional): Parameters [batch_size, parameters_dim].
+        controls (torch.Tensor, optional): Controls [batch_size, controls_dim].
+
+    Returns:
+        tuple: (states_der, states_der_norm) where:
+            - states_der: Denormalized state derivatives [batch_size, states_dim]
+            - states_der_norm: Normalized state derivatives [batch_size, states_dim]
+    
+    Raises:
+        AssertionError: If normalization layers of states_der are not initialized before forward pass.
+        If no pre-training is done, this normalization layer must not be initialized.
+
+    """
     
     def __init__(self,
                 states_dim,
@@ -84,6 +211,55 @@ class NeuralODEFunc(nn.Module):
     
 
 class OutputNetwork(nn.Module):
+    """Neural network mapping states to observable outputs.
+    
+    This module learns the observation function that maps internal states to
+    measurable outputs:
+        y = g_θ(x, u, p)
+    
+    Useful when system states are not directly observable or when outputs
+    represent derived quantities.
+    
+    Args:
+        states_dim (int): Dimension of state vector x.
+        outputs_dim (int): Dimension of output vector y.
+        controls_dim (int, optional): Dimension of control inputs. Default: 0.
+        parameters_dim (int, optional): Dimension of parameters. Default: 0.
+        controls_to_output (bool, optional): Whether to include controls in
+            output mapping. Default: False.
+        hidden_dim (int, optional): Hidden layer dimension. Default: 20.
+        n_layers (int, optional): Number of layers (minimum 2). Default: 3.
+        activation (nn.Module, optional): Activation function. Default: nn.ELU.
+        intialization (str, optional): Weight initialization method. Default: 'identity'.
+    
+    Attributes:
+        states_dim (int): Dimension of states.
+        outputs_dim (int): Dimension of outputs.
+        controls_dim (int): Dimension of controls (0 if not used).
+        parameters_dim (int): Dimension of parameters.
+        include_parameters (bool): Whether parameters are used.
+        controls_to_output (bool): Whether controls feed into output network.
+        normalization_states (NormalizationLayer1D): Normalizes states.
+        normalization_controls (NormalizationLayer1D): Normalizes controls.
+        normalization_parameters (NormalizationLayer1D): Normalizes parameters.
+        normalization_outputs (NormalizationLayer1D): Normalizes outputs.
+        output_nn (nn.Sequential): Neural network for output mapping.
+    
+    Forward Args:
+        states (torch.Tensor): States [batch_size, states_dim].
+        parameters (torch.Tensor, optional): Parameters [batch_size, parameters_dim].
+        controls (torch.Tensor, optional): Controls [batch_size, controls_dim].
+    
+    Returns:
+        tuple: (outputs, outputs_norm) where:
+            - outputs: Denormalized outputs [batch_size, outputs_dim]
+            - outputs_norm: Normalized outputs [batch_size, outputs_dim]
+    
+    Raises:
+        AssertionError: If normalization of outputs are not initialized before forward pass.
+    
+
+    """
 
     def __init__(self,
                 states_dim,
@@ -155,6 +331,95 @@ class OutputNetwork(nn.Module):
         return outputs, outputs_norm
     
 class NeuralODE(nn.Module):
+    """Complete Neural ODE model for dynamical system learning.
+    
+    Main class that combines the ODE function, output network, and ODE solver
+    for training and inference on continuous-time dynamical systems.
+    
+    The model learns:
+        dx/dt = f_θ(x, u, p)    (ODE function)
+        y = g_φ(x, u, p)        (Output function, optional)
+    
+    And integrates: x(t) = x(t₀) + ∫[t₀,t] f_θ(x(τ), u(τ), p) dτ
+    
+    Args:
+        states_dim (int): Dimension of state vector x.
+        controls_dim (int, optional): Dimension of control inputs u. Default: 0.
+        parameters_dim (int, optional): Dimension of parameters p. Default: 0.
+        outputs_dim (int, optional): Dimension of outputs y. Default: 0.
+        controls_to_output_nn (bool, optional): Include controls in output mapping. Default: False.
+        hidden_dim (int, optional): Hidden dimension for ODE network. Default: 20.
+        n_layers (int, optional): Layers in ODE network. Default: 3.
+        hidden_dim_output_nn (int, optional): Hidden dimension for output network. Default: 20.
+        n_layers_output_nn (int, optional): Layers in output network. Default: 2.
+        activation (nn.Module, optional): Activation function. Default: nn.ELU.
+        intialization (str, optional): Initialization for output network. Default: 'identity'.
+        initialization_ode (str, optional): Initialization for ODE network. Default: 'identity'.
+    
+    Attributes:
+        include_controls (bool): Whether model uses controls.
+        include_parameters (bool): Whether model uses parameters.
+        include_outputs (bool): Whether model has output network.
+        ode_fun_count (int): Counter for ODE function evaluations.
+        NeuralODEFunc (NeuralODEFunc): ODE right-hand side function.
+        OutputNetwork (OutputNetwork): Output mapping network (if outputs_dim > 0).
+        current_controls (torch.Tensor): Controls for current integration.
+        current_times (torch.Tensor): Time points for current integration.
+        current_parameters (torch.Tensor): Parameters for current integration.
+    
+    Methods:
+        normalization_init(dataset): Initialize normalization from HDF5 dataset.
+        forward(states, parameters, controls, pre_training, times): Forward pass.
+        set_input(controls, times, parameters): Set inputs for ODE integration.
+        forward_ODE(t, x): ODE function compatible with torchdiffeq.
+        model_and_loss_evaluation(...): Compute loss for training/testing.
+        get_progress_string(...): Format training progress string.
+        save(path): Save model checkpoint.
+        load(path, device): Load model checkpoint.
+    
+    Training Modes:
+        **Pre-training (pre_training=True)**:
+            - Uses state derivatives directly from data
+            - Bypasses ODE solver for fast training
+            - Loss: ||dx/dt - f_θ(x)||² + ||y - g_φ(x)||²
+            - Requires 'states_der' in dataset
+        
+        **Main training (pre_training=False)**:
+            - Integrates ODE from initial conditions
+            - Uses torchdiffeq solver (Euler, RK4, dopri5, etc.)
+            - Loss: ||x(t) - x̂(t)||² + ||y(t) - ŷ(t)||²
+            - More accurate but computationally expensive
+    
+    Loss Components:
+        - **loss_states**: MSE between true and predicted states (normalized)
+        - **loss_outputs**: MSE between true and predicted outputs (normalized)
+        - **loss_states_der**: MSE for state derivatives (pre-training only)
+        - **rmse_states**: RMSE for states (main training only)
+        - **rmse_outputs**: RMSE for outputs (main training only)
+    
+    Solver Options:
+        Configured via train_cfg:
+            - **solver**: Solver name ('euler', 'rk4', 'dopri5', etc.)
+            - **solver_rtol**: Relative tolerance for adaptive solvers
+            - **solver_atol**: Absolute tolerance for adaptive solvers
+            - **solver_norm**: Norm for step size control ('max', 'mixed')
+            - **use_adjoint**: Use adjoint method for backpropagation
+            - **evaluate_at_control_times**: Force evaluation at control time points
+    
+    
+    Notes:
+        - Normalization must be initialized before any forward pass
+        - Adjoint method saves memory but may be slower for small models
+        - Control interpolation uses nearest-neighbor for robustness
+        - ODE function counter tracks solver efficiency
+        - All tensors use normalized values internally for stability
+    
+    See Also:
+        - ``NeuralODEFunc``: ODE right-hand side network
+        - ``OutputNetwork``: Output mapping network
+        - ``bnode_core.ode.trainer``: Training pipeline
+        - ``torchdiffeq.odeint``: ODE solver
+    """
     
     def __init__(self,
                 states_dim,
