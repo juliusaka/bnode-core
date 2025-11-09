@@ -460,12 +460,6 @@ def data_generation(cfg: data_gen_config,
     
     logging.info('multiprocessing time: {}'.format(time() - t0))
 
-    # add failed idx to raw data file (to ensure backward compatibility). Here, failed idx are simulations that were not completed, but not necessarily failed.
-    idx_failed = np.where(raw_data['logs/completed'][:] == False)[0].tolist() 
-    raw_data.create_dataset('failed_idx', data=np.array(idx_failed), dtype=int)
-    logging.info('Simulation that did not complete: {}'.format(idx_failed))
-    logging.info('Added not completed simulation as group failed_idx to raw data file.')
-
     # close raw data file
     raw_data.close()
     logging.info('closed raw data file, all data saved. Proceeding errors have no influence on the data.')
