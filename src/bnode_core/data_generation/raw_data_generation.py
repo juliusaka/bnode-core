@@ -102,8 +102,9 @@ from scipy.interpolate import CubicSpline, Akima1DInterpolator
 
 from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
 from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, config_dir_auto_recognize
+from typing import Tuple, Optional, List
 
-def random_sampling_parameters(cfg: data_gen_config):
+def random_sampling_parameters(cfg: data_gen_config) -> np.ndarray:
     """Sample parameter values uniformly within configured bounds.
     
     Generates a 2D array of parameter values by sampling uniformly from the bounds 
@@ -124,7 +125,7 @@ def random_sampling_parameters(cfg: data_gen_config):
         param_values[:, i] = np.random.uniform(bounds[i][0], bounds[i][1], cfg.pModel.RawData.n_samples)
     return param_values
 
-def random_sampling_controls(cfg: data_gen_config):
+def random_sampling_controls(cfg: data_gen_config) -> np.ndarray:
     """Sample control input values uniformly within configured bounds.
     
     Generates a 3D array of control trajectories by sampling uniformly from the bounds 
@@ -148,7 +149,7 @@ def random_sampling_controls(cfg: data_gen_config):
     # last control input is not used.
     return ctrl_values
 
-def random_sampling_controls_w_offset(cfg: data_gen_config, seq_len: int = None, n_samples: int = None):
+def random_sampling_controls_w_offset(cfg: data_gen_config, seq_len: Optional[int] = None, n_samples: Optional[int] = None) -> np.ndarray:
     """Sample control trajectories with random offset and bounded amplitude.
     
     For each control trajectory, first samples a random offset within the control bounds, 
@@ -185,7 +186,7 @@ def random_sampling_controls_w_offset(cfg: data_gen_config, seq_len: int = None,
     # last control input is not used.
     return ctrl_values
 
-def random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg: data_gen_config):
+def random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg: data_gen_config) -> np.ndarray:
     """Sample control trajectories using cubic spline interpolation with manual clipping (ROCS).
     
     Also known as ROCS (Random Offset Cubic Splines). Generates smooth control trajectories by:
@@ -242,7 +243,7 @@ def random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg: data_ge
                 print('error in random_sampling_controls_w_offset_cubic_splines')
     return ctrl_values
 
-def random_sampling_controls_w_offset_cubic_splines_clip_random(cfg: data_gen_config):
+def random_sampling_controls_w_offset_cubic_splines_clip_random(cfg: data_gen_config) -> np.ndarray:
     """Sample control trajectories using cubic spline interpolation with random rescaling (RROCS).
     
     Also known as RROCS (Randomly Rescaled Offset Cubic Splines). Generates smooth control 
@@ -328,7 +329,7 @@ def random_sampling_controls_w_offset_cubic_splines_clip_random(cfg: data_gen_co
             #     print('error in random_sampling_controls_w_offset_cubic_splines')
     return ctrl_values
 
-def random_steps_sampling_controls(cfg: data_gen_config):
+def random_steps_sampling_controls(cfg: data_gen_config) -> np.ndarray:
     """Sample step-change control trajectories for system response testing.
     
     Generates control trajectories with a single step change at the midpoint. Each control 
@@ -359,7 +360,7 @@ def random_steps_sampling_controls(cfg: data_gen_config):
     # last control input is not used.
     return ctrl_values
 
-def random_frequency_response_sampling_controls(cfg: data_gen_config):
+def random_frequency_response_sampling_controls(cfg: data_gen_config) -> np.ndarray:
     """Sample frequency-sweep control trajectories for system identification.
     
     Generates control trajectories with a chirp (frequency sweep) starting at the midpoint. 
@@ -412,7 +413,7 @@ def random_frequency_response_sampling_controls(cfg: data_gen_config):
             ctrl_values[i, j, i_step:] = _signal_value_end[:]
     return ctrl_values
 
-def load_controls_from_file(cfg: data_gen_config):
+def load_controls_from_file(cfg: data_gen_config) -> np.ndarray:
     """Load control trajectories from a CSV file and resample to simulation time vector.
     
     Reads control values from a CSV file where columns match control variable names from the 
@@ -447,7 +448,7 @@ def load_controls_from_file(cfg: data_gen_config):
     ctrl_values = np.repeat(ctrl_values, cfg.pModel.RawData.n_samples, axis=0)
     return ctrl_values
 
-def constant_input_simulation_from_excel(cfg: data_gen_config):
+def constant_input_simulation_from_excel(cfg: data_gen_config) -> np.ndarray:
     """Load constant control values from an Excel file for steady-state simulations.
     
     Reads an Excel file with a sheet named 'Tabelle1' where each row defines one simulation 
@@ -483,7 +484,7 @@ def constant_input_simulation_from_excel(cfg: data_gen_config):
     return ctrl_values
 
 
-def random_sampling_initial_states(cfg: data_gen_config):
+def random_sampling_initial_states(cfg: data_gen_config) -> np.ndarray:
     """Sample initial state values uniformly within configured bounds.
     
     Generates a 2D array of initial state values by sampling uniformly from the bounds 
@@ -766,7 +767,7 @@ def data_generation(cfg: data_gen_config,
     client.shutdown()
     cluster.close()
 
-def sample_all_values(cfg):
+def sample_all_values(cfg: data_gen_config) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
     """Sample all input values (initial states, parameters, controls) according to config.
     
     Orchestrates sampling for all simulation inputs based on the configured sampling strategies.
@@ -845,7 +846,7 @@ def sample_all_values(cfg):
         
     return initial_state_values, param_values, ctrl_values
     
-def run_data_generation(cfg: data_gen_config):
+def run_data_generation(cfg: data_gen_config) -> None:
     """Main orchestration function for raw data generation pipeline.
     
     Complete raw data generation workflow:
@@ -963,7 +964,7 @@ def main():
         python raw_data_generation.py [overrides]
         
     Examples:
-    
+
         python raw_data_generation.py pModel.RawData.n_samples=1000
         python raw_data_generation.py pModel=SHF overwrite=true
     """

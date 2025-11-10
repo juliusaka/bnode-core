@@ -81,7 +81,7 @@ from bnode_core.nn.nn_utils.capacity_scheduler import capacity_scheduler as Capa
 from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 
 @log_hydra_to_mlflow
-def train(cfg: train_test_config_class):
+def train(cfg: train_test_config_class) -> float:
     """Train VAE model on timeseries dataset with MLflow tracking.
     
     Complete training pipeline including:

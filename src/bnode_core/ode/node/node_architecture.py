@@ -76,6 +76,7 @@ See torchdiffeq documentation.
 
 
 """
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
@@ -91,6 +92,7 @@ import torchdiffeq as torchdiffeq
 from bnode_core.ode.ode_utils.initialize_model import initialize_weights_biases
 from bnode_core.nn.nn_utils.normalization import NormalizationLayer1D
 from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
+from typing import Tuple, Optional
 
 
 class NeuralODEFunc(nn.Module):
@@ -132,13 +134,14 @@ class NeuralODEFunc(nn.Module):
         controls (torch.Tensor, optional): Controls [batch_size, controls_dim].
 
     Returns:
-        tuple: (states_der, states_der_norm) where:
-            - states_der: Denormalized state derivatives [batch_size, states_dim]
-            - states_der_norm: Normalized state derivatives [batch_size, states_dim]
+        Tuple of (states_der, states_der_norm):
+            - states_der (torch.Tensor): Denormalized state derivatives [batch_size, states_dim]
+            - states_der_norm (torch.Tensor): Normalized state derivatives [batch_size, states_dim]
     
     Raises:
-        AssertionError: If normalization layers of states_der are not initialized before forward pass.
-        If no pre-training is done, this normalization layer must not be initialized.
+        AssertionError: If normalization layers of states_der are not initialized before 
+            forward pass. If no pre-training is done, this normalization layer must not 
+            be initialized.
 
     """
     
@@ -180,7 +183,7 @@ class NeuralODEFunc(nn.Module):
 
         initialize_weights_biases(self.system_nn, method=intialization)
     
-    def forward(self, states, parameters=None, controls=None):
+    def forward(self, states: torch.Tensor, parameters: Optional[torch.Tensor] = None, controls: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
 
         assert self.normalization_states_der._initialized, "the states derivative normalization layer must be initialized before calling the forward pass"
 
@@ -251,9 +254,9 @@ class OutputNetwork(nn.Module):
         controls (torch.Tensor, optional): Controls [batch_size, controls_dim].
     
     Returns:
-        tuple: (outputs, outputs_norm) where:
-            - outputs: Denormalized outputs [batch_size, outputs_dim]
-            - outputs_norm: Normalized outputs [batch_size, outputs_dim]
+        Tuple of (outputs, outputs_norm):
+            - outputs (torch.Tensor): Denormalized outputs [batch_size, outputs_dim]
+            - outputs_norm (torch.Tensor): Normalized outputs [batch_size, outputs_dim]
     
     Raises:
         AssertionError: If normalization of outputs are not initialized before forward pass.
@@ -302,7 +305,7 @@ class OutputNetwork(nn.Module):
 
         initialize_weights_biases(self.output_nn, method=intialization)
 
-    def forward(self, states, parameters = None, controls = None):
+    def forward(self, states: torch.Tensor, parameters: Optional[torch.Tensor] = None, controls: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         assert self.normalization_outputs._initialized, "the outputs normalization layer must be initialized before calling the forward pass"
 
         # normalize inputs

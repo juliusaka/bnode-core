@@ -38,7 +38,11 @@ def ode_training_initial_states(test_case: str, overrides: list[str] = []):
 
 
 def test_bnode_training():
-    ode_training('bnode_training')
+    ode_training('bnode_training',
+                #  overrides=[
+                #             'nn_model.training.max_epochs_override=100',
+                #             ]
+                            )
 
 
 def test_use_cuda_false():

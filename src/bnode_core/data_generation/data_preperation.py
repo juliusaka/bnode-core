@@ -70,8 +70,9 @@ import tqdm
 
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass, RawDataClass, get_config_store
 from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, filepath_dataset, filepath_dataset_config, config_dir_auto_recognize
+from typing import Tuple, Optional
 
-def load_and_validate_raw_data(cfg):
+def load_and_validate_raw_data(cfg: data_gen_config) -> Tuple[h5py.File, Optional[RawDataClass]]:
     """Load raw data HDF5 file and validate its configuration against current config.
     
     Loads the raw data file and its companion YAML config, validates the config structure, 
@@ -145,7 +146,7 @@ def load_and_validate_raw_data(cfg):
 
     return raw_data, raw_data_config
 
-def get_position_in_raw_data_file(variable: str, temp_raw_data: h5py.File):
+def get_position_in_raw_data_file(variable: str, temp_raw_data: h5py.File) -> list:
     """Find the dataset and index position of a variable in the raw data HDF5 file.
     
     Searches all '*_names' datasets in the HDF5 file to locate the specified variable. 
@@ -180,7 +181,7 @@ def get_position_in_raw_data_file(variable: str, temp_raw_data: h5py.File):
         temp[0][0] = temp[0][0].replace('_names', '')
         return temp[0]
 
-def transform_raw_data(cfg: data_gen_config, temp_raw_data: h5py.File, raw_data_config: RawDataClass):
+def transform_raw_data(cfg: data_gen_config, temp_raw_data: h5py.File, raw_data_config: RawDataClass) -> None:
     """Apply configured transformations to variables in the raw data file.
     
     Performs in-place transformations on raw data variables according to the transforms 
@@ -209,7 +210,7 @@ def transform_raw_data(cfg: data_gen_config, temp_raw_data: h5py.File, raw_data_
           Computes 0th, 1st, and optionally 2nd derivatives. Logs mean and max interpolation 
           errors normalized by standard deviation.
         - For 'evaluate_python_': The command is split on '#' and reconstructed with 
-          temp_raw_data[dataset_name][:,idx] as the data reference. Use caution with 
+          `temp_raw_data[dataset_name][:, idx]` as the data reference. Use caution with 
           arbitrary code execution.
         - Transform operations are logged for each variable.
     """
@@ -610,7 +611,7 @@ def main():
         ```python data_preperation.py --hydra-help```
         
     Examples:
-    
+
         python data_preperation.py pModel.dataset_prep.n_samples=[128,512,2048]
         python data_preperation.py pModel=SHF pModel.dataset_prep.validation_fraction=0.15
         python data_preperation.py pModel.dataset_prep.transforms.temperature=temperature_k_to_degC

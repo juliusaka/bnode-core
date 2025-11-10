@@ -33,6 +33,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import h5py
+from typing import Tuple, Optional, Union
 from pathlib import Path
 import time
 import os
@@ -93,7 +94,7 @@ class Encoder(nn.Module):
         modules.append(nn.Linear(hidden_dim, 2*bottleneck_dim))
         self.linear = nn.Sequential(*modules)  
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Encode timeseries to latent distribution parameters.
         
         Args:
@@ -133,8 +134,8 @@ class Decoder(nn.Module):
     """
     
     def __init__(self, n_channels: int, seq_len: int, hidden_dim: int, bottleneck_dim: int,
-                 activation: nn.Module = nn.ReLU, n_layers: int = 3, params_to_decoder = False, 
-                 param_dim: int = None):
+                 activation: nn.Module = nn.ReLU, n_layers: int = 3, params_to_decoder: bool = False, 
+                 param_dim: Optional[int] = None):
         """Initialize the Decoder network.
         
         Args:
@@ -173,7 +174,7 @@ class Decoder(nn.Module):
         modules.append(nn.Linear(hidden_dim, n_channels*seq_len))
         self.linear = nn.Sequential(*modules)  
               
-    def forward(self, z_latent, param = None):
+    def forward(self, z_latent: torch.Tensor, param: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Decode latent vector (and optionally parameters) to timeseries.
         
         Args:
@@ -239,7 +240,7 @@ class Regressor(nn.Module):
         modules.append(nn.Linear(hidden_dim, 2*bottleneck_dim))
         self.linear = nn.Sequential(*modules)
 
-    def forward(self, param):
+    def forward(self, param: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Predict latent distribution parameters from system parameters.
         
         Args:
@@ -290,7 +291,7 @@ class VAE(nn.Module):
     
     def __init__(self, n_states: int, n_outputs: int, seq_len: int, parameter_dim: int, 
                  hidden_dim: int, bottleneck_dim: int, activation: nn.Module = nn.ReLU, 
-                 n_layers: int = 3, params_to_decoder=False, feed_forward_nn = False):
+                 n_layers: int = 3, params_to_decoder: bool = False, feed_forward_nn: bool = False):
         """Initialize the VAE model.
         
         Args:
@@ -333,7 +334,7 @@ class VAE(nn.Module):
                          self.n_channels, seq_len, parameter_dim, hidden_dim, bottleneck_dim, activation, n_layers, self.Decoder.params_to_decoder))
         logging.info('VAE initialized with {} parameters'.format(count_parameters(self)))
 
-    def reparametrize(self, mu, logvar):
+    def reparametrize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         """Apply reparametrization trick to sample from latent distribution.
         
         Samples z ~ N(mu, exp(0.5 * logvar)) using z = mu + eps * std, where eps ~ N(0, I).
@@ -342,6 +343,7 @@ class VAE(nn.Module):
         Args:
             mu: Mean of latent distribution, shape (batch, bottleneck_dim).
             logvar: Log-variance of latent distribution, shape (batch, bottleneck_dim).
+
         
         Returns:
             Sampled latent vector z of shape (batch, bottleneck_dim).
@@ -355,7 +357,17 @@ class VAE(nn.Module):
         z_latent = eps.mul(std).add_(mu)
         return z_latent
 
-    def forward(self, states, outputs, params, train=True, predict = False, n_passes: int = 1, test_with_zero_eps: bool = False, device = None):
+    def forward(
+        self, 
+        states: torch.Tensor, 
+        outputs: torch.Tensor, 
+        params: torch.Tensor, 
+        train: bool = True, 
+        predict: bool = False, 
+        n_passes: int = 1, 
+        test_with_zero_eps: bool = False, 
+        device: Optional[torch.device] = None
+    ) -> Tuple:
         """Perform forward pass through the VAE network.
         
         Three operational modes based on flags:
@@ -466,7 +478,7 @@ class VAE(nn.Module):
 
         return x, x_hat, states_hat, outputs_hat, mu_encoder, logvar_encoder, mu_regressor, logvar_regressor, retvals_norm
     
-    def predict(self, param):
+    def predict(self, param: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Generate timeseries predictions from system parameters only.
         
         Convenience method for inference mode. Bypasses Encoder and generates
@@ -491,7 +503,7 @@ class VAE(nn.Module):
         torch.save(self.state_dict(), path)
         logging.info('\t \t \tSaved model to {}'.format(path))
     
-    def load(self, path: Path, device = None):
+    def load(self, path: Path, device: Optional[torch.device] = None):
         """Load model state dictionary from disk.
         
         Args:
@@ -501,13 +513,19 @@ class VAE(nn.Module):
         self.load_state_dict(torch.load(path, map_location=device))
         logging.info('\tLoaded model from {}'.format(path))
 
-def loss_function(x: torch.tensor, x_hat:torch.tensor, 
-                  mu: torch.tensor, mu_hat: torch.tensor, 
-                  logvar: torch.tensor, logvar_hat: torch.tensor,
-                  beta: float = 1.0, gamma: float = 1000.0, 
-                  capacity: float = None,
-                  reduce: bool = True,
-                  device = None):
+def loss_function(
+    x: torch.Tensor, 
+    x_hat: torch.Tensor, 
+    mu: torch.Tensor, 
+    mu_hat: torch.Tensor, 
+    logvar: torch.Tensor, 
+    logvar_hat: torch.Tensor,
+    beta: float = 1.0, 
+    gamma: float = 1000.0, 
+    capacity: Optional[float] = None,
+    reduce: bool = True,
+    device: Optional[torch.device] = None
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute composite loss function for VAE training.
     
     Implements the PELS-VAE loss combining reconstruction, KL divergence, and regressor losses.
