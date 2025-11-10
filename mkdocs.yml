@@ -60,8 +60,11 @@ nav:
         - bnode_core/ode/bnode/bnode.md
         - bnode_core/ode/bnode/bnode_export.md
       - bnode_core/ode/node.md
-      - Utilities:
+      - ODE Utilities:
         - bnode_core/ode/trainer_utils/test_from_mlflow.md
+    - Neural Networks:
+      - bnode_core/nn/nn_utils.md
+      - bnode_core/nn/vae.md
     - bnode_core/filepaths.md
 
   - Config:

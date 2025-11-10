@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import logging
 
-from .train_to_negative_eigenvalues import initialize_to_negative_eigenvalues
+from bnode_core.ode.ode_utils.train_to_negative_eigenvalues import initialize_to_negative_eigenvalues
 
 def initialize_weights_biases(net: nn.Module, method: str = None, **kwargs):
     if method == 'identity':

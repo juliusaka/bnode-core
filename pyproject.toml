@@ -45,6 +45,7 @@ dev = [
     "rich",
     "pytest-xdist>=3.8.0",
     "pytest-html>=4.1.1",
+    "pytest-dependency>=0.6.0",
 ]
 # torch is define here and in optiona dependencies. The dependency groups hera are only for development.
 torch =[

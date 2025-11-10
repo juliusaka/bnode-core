@@ -499,6 +499,7 @@ class pels_vae_network_class(base_network_class):
     @classmethod
     def check_if_torch_module(cls,v):
         try:
+            import torch
             eval(v)
         except:
             raise ValueError('activation must be a torch.nn.Module, \

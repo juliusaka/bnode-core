@@ -1,3 +1,65 @@
+"""VAE training and testing pipeline for timeseries modeling.
+
+This module implements the complete training pipeline for Variational Autoencoders (VAE)
+with parameter conditioning, supporting standard VAE, PELS-VAE, and feed-forward modes.
+
+Attention:
+    This documentation is AI generated. Be aware of possible inaccuricies.
+
+### Command-line Usage
+
+The module uses Hydra for configuration management and MLflow for experiment tracking.
+Training is launched via the command line:
+
+```bash
+uv run python -m bnode_core.nn.vae.vae_train_test
+
+uv run <path to vae_train_test.py>
+```
+
+Configuration files are loaded from `conf/train_test_vae.yaml` (or specified config path).
+
+### Configuration
+
+Key configuration parameters (via Hydra config):
+
+- `dataset_name`: Name of HDF5 dataset to load
+- `use_cuda`: Enable CUDA acceleration
+- `use_amp`: Enable automatic mixed precision training
+- `nn_model.network.*`: Model architecture parameters (hidden_dim, n_latent, activation, etc.)
+- `nn_model.training.*`: Training hyperparameters (batch_size, lr, max_epochs, etc.)
+
+### Training Workflow
+
+1. Load HDF5 dataset and create train/validation/test/common_test dataloaders
+2. Initialize VAE model with specified architecture
+3. Initialize normalization layers on full training dataset
+4. Train with:
+
+   - Adam optimizer with learning rate scheduling (ReduceLROnPlateau)
+   - Early stopping monitoring validation loss
+   - Capacity scheduling for controlled KL divergence growth
+   - Automatic mixed precision (AMP) support
+   - Gradient clipping for stability
+5. Save best model checkpoint based on validation loss
+6. Evaluate on all dataset splits and save predictions to HDF5 file
+7. Log all metrics and artifacts to MLflow
+
+### Output Files
+
+- `model.pth`: Best model checkpoint (state_dict)
+- `dataset_with_predictions.h5`: Copy of input dataset with added model predictions
+- `vae_train_test.py`, `vae_architecture.py`: Copies of source files for reproducibility
+
+### Key Features
+
+- **Multi-pass prediction**: Average multiple stochastic forward passes for robust predictions
+- **Capacity scheduling**: Gradually increase KL divergence capacity to prevent posterior collapse
+- **Early stopping**: Monitor validation loss with configurable patience and threshold
+- **MLflow integration**: Automatic logging of metrics, parameters, and artifacts via decorator
+- **Reproducibility**: Saves source code and full configuration to output directory
+"""
+
 import torch
 import hydra
 from pathlib import Path
@@ -9,22 +71,44 @@ import logging
 import shutil
 import h5py
 
-import filepaths
-
-from networks.src.kullback_leibler import kullback_leibler, count_populated_dimensions
-from networks.vae.vae_architecture import VAE, loss_function
-from config import train_test_config_class
-from networks.src.load_data import load_dataset_and_config, make_stacked_dataset
-from networks.src.early_stopping import EarlyStopping
-from networks.src.capacity_scheduler import capacity_scheduler as CapacityScheduler
-from utils.hydra_mlflow_decorator import log_hydra_to_mlflow
+from bnode_core import filepaths
+from bnode_core.nn.nn_utils.kullback_leibler import kullback_leibler, count_populated_dimensions
+from bnode_core.nn.vae.vae_architecture import VAE, loss_function
+from bnode_core.config import train_test_config_class
+from bnode_core.nn.nn_utils.load_data import load_dataset_and_config, make_stacked_dataset
+from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
+from bnode_core.nn.nn_utils.capacity_scheduler import capacity_scheduler as CapacityScheduler
+from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 
 @log_hydra_to_mlflow
 def train(cfg: train_test_config_class):
+    """Train VAE model on timeseries dataset with MLflow tracking.
+    
+    Complete training pipeline including:
+
+    - Dataset loading and preprocessing
+    - Model initialization and normalization layer setup
+    - Training loop with early stopping and capacity scheduling
+    - Evaluation on all dataset splits
+    - Model checkpoint saving and artifact logging
+    
+    Args:
+        cfg: Hydra configuration object containing all training parameters.
+            Key sections: dataset_name, use_cuda, use_amp, nn_model.network, nn_model.training
+    
+    Returns:
+        Final MSE loss on test set (float).
+    
+    Notes:
+        - Uses @log_hydra_to_mlflow decorator for automatic MLflow experiment tracking
+        - Saves best model based on validation loss
+        - Copies dataset to output directory with added model predictions
+        - Logs metrics at each epoch: loss, mse_loss, kl_loss, regressor_loss, populated_dims
+    """
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
 
     # load dataset and config
-    dataset, dataset_config = load_dataset_and_config(cfg)
+    dataset, dataset_config = load_dataset_and_config(cfg.dataset_name, cfg.dataset_path)
     
     # make train and test torch tensor datasets
     train_dataset = make_stacked_dataset(dataset, 'train')
@@ -76,7 +160,6 @@ def train(cfg: train_test_config_class):
                                                             threshold=cfg.nn_model.training.lr_scheduler_threshold,
                                                             threshold_mode=cfg.nn_model.training.lr_scheduler_threshold_mode,
                                                             min_lr=cfg.nn_model.training.lr_min,
-                                                            verbose=True,
                                                             )
     # initialize early stopping
     early_stopping = EarlyStopping(patience=cfg.nn_model.training.early_stopping_patience,
@@ -104,6 +187,24 @@ def train(cfg: train_test_config_class):
     
     # define one model and loss evaluation
     def model_and_loss_evaluation(model, states, outputs, parameters, train=True, n_passes: int = 1, return_model_outputs: bool = False, test_from_regressor: bool = True):
+        """Evaluate model forward pass and compute all loss components.
+        
+        Args:
+            model: VAE model instance.
+            states: State timeseries tensor, shape (batch, n_states, seq_len).
+            outputs: Output timeseries tensor, shape (batch, n_outputs, seq_len).
+            parameters: System parameters tensor, shape (batch, parameter_dim).
+            train: If True, use Encoder's latent distribution. If False, controlled by test_from_regressor.
+            n_passes: Number of stochastic forward passes to average.
+            return_model_outputs: If True, return model outputs (predictions, latent variables, raw losses).
+            test_from_regressor: If True during testing, use Regressor's latent distribution instead of Encoder's.
+        
+        Returns:
+            Dictionary with keys: loss, mse_loss, kl_loss, regressor_loss, populated_dims.
+            If return_model_outputs=True, returns tuple (ret_val, model_outputs) where model_outputs
+            contains: mse_loss_raw, kl_loss_raw, regressor_loss_raw, states_hat, outputs_hat, 
+            mu, logvar, mu_hat, logvar_hat.
+        """
         _train = train if train is True else test_from_regressor # if not training, do the test with either mu, logvar from regressor or from encoder
         x, x_hat, states_hat, outputs_hat, mu, logvar, mu_hat, logvar_hat, normed_values = model(states, outputs, parameters, train=_train, 
                                                                                                  predict = False, n_passes=n_passes, 
@@ -155,6 +256,15 @@ def train(cfg: train_test_config_class):
         return ret_val if not return_model_outputs else (ret_val, model_outputs)
         
     def get_model_inputs(data_loader: torch.utils.data.DataLoader, data: dict = None):
+        """Extract model inputs from data loader or data dictionary.
+        
+        Args:
+            data_loader: PyTorch DataLoader (if provided, fetches next batch).
+            data: Dictionary with keys 'states', 'outputs', 'parameters' (alternative to data_loader).
+        
+        Returns:
+            Tuple of (states, outputs, parameters) tensors moved to device.
+        """
         if data_loader is None:
             assert data is not None, 'Either data_loader or data must be not None'
         else:
@@ -168,6 +278,21 @@ def train(cfg: train_test_config_class):
 
     # define train loop for one epoch
     def train_one_epoch(model, train_loader, optimizer, scaler, epoch):
+        """Execute one training epoch with gradient updates.
+        
+        Iterates through all batches in train_loader, computes losses, performs
+        backpropagation with gradient clipping and AMP scaling.
+        
+        Args:
+            model: VAE model instance.
+            train_loader: PyTorch DataLoader for training data.
+            optimizer: PyTorch optimizer.
+            scaler: CUDA AMP gradient scaler.
+            epoch: Current epoch number (for logging).
+        
+        Returns:
+            Dictionary with training metrics: loss, mse_loss, kl_loss, regressor_loss, populated_dims.
+        """
         # get data from train loader
         model.train()
         for batch_idx, data in enumerate(train_loader):
@@ -192,6 +317,20 @@ def train(cfg: train_test_config_class):
     
     def test_or_validate_one_epoch(model, _data_loader, n_passes: int = 1, all_batches: bool = False,
                                    return_model_outputs: bool = False):
+        """Evaluate model on validation or test set without gradient computation.
+        
+        Args:
+            model: VAE model instance.
+            _data_loader: PyTorch DataLoader for evaluation data.
+            n_passes: Number of stochastic forward passes to average.
+            all_batches: If True, evaluate on all batches and average metrics. If False, evaluate only first batch.
+            return_model_outputs: If True, return model predictions and latent variables.
+        
+        Returns:
+            Dictionary with evaluation metrics: loss, mse_loss, kl_loss, regressor_loss, populated_dims.
+            If return_model_outputs=True, returns tuple (ret_vals, model_outputs) where model_outputs
+            contains predictions and latent variables for all evaluated batches.
+        """
         model.eval()
         # make sure that the data loader is not shuffled by initializing a new data loader
         if all_batches:
@@ -222,6 +361,15 @@ def train(cfg: train_test_config_class):
         return ret_vals if not return_model_outputs else (ret_vals, model_outputs)
     
     def append_context_to_dict_keys(dictionary: dict, context: str):
+        """Add context suffix to all dictionary keys for MLflow logging.
+        
+        Args:
+            dictionary: Dictionary with metric names as keys.
+            context: Suffix to append (e.g., 'train', 'validation', 'test').
+        
+        Returns:
+            New dictionary with keys formatted as 'original_key_context'.
+        """
         return dict({'{}_{}'.format(key, context): value for key, value in dictionary.items()})
 
     # training loop
@@ -286,7 +434,7 @@ def train(cfg: train_test_config_class):
     dataset.close()
     # copy dataset to hydra output directory
     _path = filepaths.filepath_dataset_current_hydra_output()
-    shutil.copy(filepaths.filepath_dataset_from_name(cfg.dataset_name), _path)
+    shutil.copy(filepaths.filepath_dataset_from_config(cfg.dataset_name, cfg.dataset_path), _path)
     dataset = h5py.File(_path, 'r+')
     # add model outputs to dataset
     for context, dataloader in zip(['train', 'test', 'validation', 'common_test'], [train_loader, test_loader, validation_loader, common_test_loader]):
@@ -315,47 +463,40 @@ def train(cfg: train_test_config_class):
 
     # save this file and the vae_architecture.py file to hydra output directory
     shutil.copy(Path(__file__), filepaths.dir_current_hydra_output())
-    shutil.copy(Path(VAE.__module__.replace('.', os.sep)+'.py'), filepaths.dir_current_hydra_output())
     return ret_vals['mse_loss']
 
-def test(cfg: train_test_config_class, hydra_run_dir: str = None):
-
-    # add routine to plot latent space
-    # add routine to plot histogram of errors over channels
-    # add routine to plot histogram of errors over time
-    # add routine to plot output timeseries
-    pass
-
-@hydra.main(config_path=str(Path('conf').absolute()), config_name='train_test_vae', version_base=None)
-def main(cfg: train_test_config_class):
-    val = train(cfg)
-
-
-    return val
+def main():
+    """Entry point for VAE training via Hydra CLI.
+    
+    Initializes Hydra configuration system and launches train with validated
+    config. Auto-detects config directory and uses 'train_test_vae' as the
+    default config name.
+    
+    This function can be registered in pyproject.toml, enabling command-line
+    execution via a custom script name.
+    
+    Examples:
+        Run from command line::
+        
+            uv run python -m bnode_core.nn.vae.vae_train_test
+        
+        With config overrides::
+        
+            uv run python -m bnode_core.nn.vae.vae_train_test \\
+                nn_model.training.lr_start=0.0001 \\
+                dataset_name=my_dataset
+        
+    
+    Side Effects:
+        - Registers config store with Hydra
+        - Auto-detects config directory from filepaths
+        - Launches Hydra-decorated train function
+    """
+    from bnode_core.config import get_config_store
+    cs = get_config_store()
+    config_dir = filepaths.config_dir_auto_recognize()
+    config_name = 'train_test_vae'
+    hydra.main(config_path=str(config_dir.absolute()), config_name=config_name, version_base=None)(train)()
 
 if __name__ == '__main__':
     main()
-
-    # what shall this do?
-
-    # work with hydra
-
-    # log to mlflow (ask for experiment name?, maybe with waiting else default)
-    # perform training
-    # save checkpoints
-    # log training progress on screen
-    
-    # log training progress on mlflow with a lot of interesting values
-    # log with test set all values only from time to time
-    # log from time to time graphs:
-        # KL Divergence histogram
-        # reconstruction
-    
-    # when training is done, do testing and saves results 
-    # (like reconstructed timeseries as file, mu, logvar, kldivergence) to mlflow directory
-    # save also some final pictures to mlflow directly
-    # add histogram for final values: mse distributions, kl distributions etc
-
-    # also: write a file with matplotlib sliders to look at training results
-    # (reconstructed timeseries with drop_down menu), kl_divergence...
-    # or from command line with hydra

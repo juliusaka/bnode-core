@@ -55,7 +55,7 @@ def test_main_creates_plots(tmp_path, monkeypatch):
     # prevent interactive show
     monkeypatch.setattr("matplotlib.pyplot.show", lambda *a, **k: None)
 
-    outdir = Path('./_tests/visualization/')
+    outdir = Path('./tests/_results/visualization/')
     
     dataset_path = Path(r"resources\data\surrogate-test-data\data\raw_data\StratifiedHeatFlowModel_v3_c-RROCS\StratifiedHeatFlowModel_v3_c-RROCS_raw_data.hdf5").absolute()
     config_path = Path(r"resources\data\surrogate-test-data\data\raw_data\StratifiedHeatFlowModel_v3_c-RROCS\StratifiedHeatFlowModel_v3_c-RROCS_RawData_config.yaml").absolute()
