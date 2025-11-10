@@ -14,8 +14,9 @@ import logging
 from omegaconf import OmegaConf
 from bnode_core.config import base_pModelClass, train_test_config_class
 from bnode_core.filepaths import filepath_dataset_config_from_name, filepath_dataset_from_config
+from typing import Tuple, Optional, Union
 
-def load_validate_dataset_config(path: Path):
+def load_validate_dataset_config(path: Path) -> base_pModelClass:
     """Load and validate dataset configuration from YAML file.
 
     Args:
@@ -42,7 +43,7 @@ def load_validate_dataset_config(path: Path):
     return dataset_config
 
 
-def load_dataset_and_config(dataset_name: str, dataset_path: str):
+def load_dataset_and_config(dataset_name: str, dataset_path: str) -> Tuple[h5py.File, Optional[base_pModelClass]]:
     """Load HDF5 dataset and its configuration.
     
     Loads the HDF5 dataset file and attempts to load its configuration.
@@ -54,7 +55,7 @@ def load_dataset_and_config(dataset_name: str, dataset_path: str):
     
     Returns:
         Tuple of (dataset, dataset_config) where:
-        
+
             - dataset: Open h5py.File handle to HDF5 dataset.
             - dataset_config: Validated configuration (base_pModelClass) or None if not found.
     
@@ -75,7 +76,12 @@ def load_dataset_and_config(dataset_name: str, dataset_path: str):
         dataset_config = load_validate_dataset_config(_path)
     return dataset, dataset_config
 
-def make_stacked_dataset(dataset: h5py.File, context: str, seq_len_from_file: int = None, seq_len_batches: int = None):
+def make_stacked_dataset(
+    dataset: h5py.File, 
+    context: str, 
+    seq_len_from_file: Optional[int] = None, 
+    seq_len_batches: Optional[int] = None
+) -> Union[torch.utils.data.StackDataset, 'TimeSeriesDataset']:
     """Create a PyTorch dataset from HDF5 data with optional time series batching.
     
     Loads time series data (states, derivatives, parameters, controls, outputs) from an HDF5
@@ -236,7 +242,7 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
         #self.mapping = torch.tensor(np.array(self.mapping), dtype=torch.int64)
 
 
-    def __getitem__(self,index):
+    def __getitem__(self, index: int) -> dict:
         """Get a single sliding window sample.
         
         Args:
@@ -256,7 +262,7 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
                 ret_val[key] = value[i, :, k_start:k_stop]
         return ret_val
     
-    def __getitems__(self, indices):
+    def __getitems__(self, indices: list) -> list:
         """Get multiple sliding window samples (batch retrieval).
         
         Args:
@@ -274,7 +280,7 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
             samples[i] = self.__getitem__(index)
         return samples
     
-    def __len__(self):
+    def __len__(self) -> int:
         """Return the total number of sliding windows in the dataset.
         
         Returns:

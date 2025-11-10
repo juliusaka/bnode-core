@@ -11,6 +11,9 @@ Attention:
 import numpy as np
 import logging
 import torch
+from typing import Optional, Callable
+import torch.nn as nn
+import torch.optim as optim
 
 class EarlyStopping:
     """Stop training early if validation loss doesn't improve after given patience.
@@ -32,8 +35,16 @@ class EarlyStopping:
         optimizer_path: File path for saving optimizer state.
     """
 
-    def __init__(self, patience=7, verbose=False, threshold=0, threshold_mode ='abs', 
-                 path='checkpoint.pt', optimizer_path='optimizer.pt', trace_func=print):
+    def __init__(
+        self, 
+        patience: int = 7, 
+        verbose: bool = False, 
+        threshold: float = 0, 
+        threshold_mode: str = 'abs', 
+        path: str = 'checkpoint.pt', 
+        optimizer_path: str = 'optimizer.pt', 
+        trace_func: Callable = print
+    ):
         """Initialize early stopping monitor.
         
         Args:
@@ -81,7 +92,14 @@ class EarlyStopping:
         self.counter = 0
         self.early_stop = False
 
-    def __call__(self, loss, model, epoch = None, optimizer = None, corresponding_loss = None):
+    def __call__(
+        self, 
+        loss: float, 
+        model: nn.Module, 
+        epoch: Optional[int] = None, 
+        optimizer: Optional[optim.Optimizer] = None, 
+        corresponding_loss: Optional[float] = None
+    ):
         """Update early stopping state based on current validation loss.
         
         Checks if loss has improved according to threshold criteria. Saves checkpoint
@@ -134,7 +152,13 @@ class EarlyStopping:
         if self.counter >= self.patience:
                 self.early_stop = True
 
-    def save_checkpoint(self, loss, model, optimizer, epoch):
+    def save_checkpoint(
+        self, 
+        loss: float, 
+        model: nn.Module, 
+        optimizer: Optional[optim.Optimizer], 
+        epoch: Optional[int]
+    ):
         """Save model checkpoint when validation loss improves.
         
         Args:

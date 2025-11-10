@@ -10,6 +10,7 @@ Attention:
 
 import logging
 import numpy as np
+from typing import Optional, Callable
 
 class capacity_scheduler:
     """Schedule the KL divergence capacity for VAE bottleneck layer.
@@ -33,9 +34,18 @@ class capacity_scheduler:
         reached_max_capacity: True if capacity has reached capacity_max.
     """
 
-    def __init__(self, patience, capacity_start, capacity_max, capacity_increment, 
-                 capacity_increment_mode, threshold, threshold_mode, 
-                 trace_func = logging.info, enabled = True):
+    def __init__(
+        self, 
+        patience: int, 
+        capacity_start: float, 
+        capacity_max: float, 
+        capacity_increment: float, 
+        capacity_increment_mode: str, 
+        threshold: float, 
+        threshold_mode: str, 
+        trace_func: Callable = logging.info, 
+        enabled: bool = True
+    ):
         """Initialize the capacity scheduler.
         
         Args:
@@ -76,7 +86,7 @@ class capacity_scheduler:
         if not self.enabled:
             self.trace_func('CapacityScheduler disabled.')
 
-    def update(self, score):
+    def update(self, score: float):
         """Update scheduler state based on current validation loss.
         
         Tracks validation loss improvements and increases capacity when loss
@@ -124,7 +134,7 @@ class capacity_scheduler:
                     self.trace_func('\tCapacityScheduler updated capacity to {} after {} epochs.'.format(self.capacity, self.counter))
                     self.counter = 0
 
-    def get_capacity(self):
+    def get_capacity(self) -> Optional[float]:
         """Get current capacity target for KL divergence loss.
         
         Returns:

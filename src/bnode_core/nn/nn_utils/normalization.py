@@ -57,7 +57,7 @@ class NormalizationLayerTimeSeries(nn.Module):
             assert self.std.requires_grad == False
             assert self.mu.requires_grad == False
 
-    def forward(self,x, denormalize = False):
+    def forward(self, x: torch.Tensor, denormalize: bool = False) -> torch.Tensor:
         """Normalize or denormalize input time series.
         
         If not initialized and normalizing, automatically initializes from input data.
@@ -152,7 +152,7 @@ class NormalizationLayer1D(nn.Module):
         else:
             raise RuntimeError("normalization layer has already been initialized")
 
-    def forward(self,x, denormalize = False):
+    def forward(self, x: torch.Tensor, denormalize: bool = False) -> torch.Tensor:
         """Normalize or denormalize input features.
         
         If not initialized and normalizing, automatically initializes from input. Handles
@@ -188,7 +188,7 @@ class NormalizationLayer1D(nn.Module):
             x = torch.add(x, mu)
         return x
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return string representation of the layer.
         
         Returns:

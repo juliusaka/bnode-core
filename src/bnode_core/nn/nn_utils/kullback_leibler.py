@@ -8,8 +8,15 @@ Attention:
 """
 
 import torch
+from typing import Optional
 
-def kullback_leibler(mu, logvar, per_dimension = False, reduce = True, time_series_aggregation_mode = 'mean'):
+def kullback_leibler(
+    mu: torch.Tensor, 
+    logvar: torch.Tensor, 
+    per_dimension: bool = False, 
+    reduce: bool = True, 
+    time_series_aggregation_mode: Optional[str] = 'mean'
+) -> torch.Tensor:
     """Compute KL divergence KL(N(mu, exp(logvar)) || N(0, I)).
     
     Calculates the Kullback-Leibler divergence between a learned normal distribution
@@ -60,7 +67,13 @@ def kullback_leibler(mu, logvar, per_dimension = False, reduce = True, time_seri
     
     return kl
 
-def count_populated_dimensions(mu, logvar, threshold = 0.05, kl_timeseries_aggregation_mode = 'mean', return_idx = False):
+def count_populated_dimensions(
+    mu: torch.Tensor, 
+    logvar: torch.Tensor, 
+    threshold: float = 0.05, 
+    kl_timeseries_aggregation_mode: str = 'mean', 
+    return_idx: bool = False
+) -> torch.Tensor:
     """Count number of latent dimensions actively used by the model.
     
     A dimension is considered "populated" or "active" if its KL divergence exceeds

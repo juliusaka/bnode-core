@@ -1,6 +1,8 @@
 """Utility for counting trainable parameters in PyTorch models."""
 
-def count_parameters(model):
+import torch.nn as nn
+
+def count_parameters(model: nn.Module) -> int:
     """Count total number of trainable parameters in a model.
     
     Args:
