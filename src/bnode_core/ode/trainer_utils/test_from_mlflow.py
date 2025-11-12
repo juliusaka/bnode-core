@@ -429,7 +429,7 @@ def main():
             for result in results:
                 result.get()
     
-    print(f"All jobs completed. Artifacts remain in: {temp_dir_path}")
+    print(f"All jobs completed.")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
