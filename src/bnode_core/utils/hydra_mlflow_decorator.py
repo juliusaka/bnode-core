@@ -25,6 +25,7 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
     else:
       logging.warning('mlflow_tracking_uri is None, using file-based mlflow in root directory')
+      logging.warning('If the training is running here, you might have set an environment variable MLflow_TRACKING_URI that overrides the config value.')
     mlflow.set_experiment(cfg.mlflow_experiment_name)
     mlflow.start_run(log_system_metrics=True)
 
