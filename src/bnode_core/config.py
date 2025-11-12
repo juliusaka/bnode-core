@@ -1174,6 +1174,7 @@ class onnx_export_config_class(load_latent_ode_config_class):
     output_dir: Optional[str] = None
     model_directory: Optional[str] = None
     mlflow_run_id: Optional[str] = None # which model checkpoint to load
+    mlflow_tracking_uri: Optional[str] = None
     model_checkpoint_path: Optional[str] = None
     config_path: Optional[str] = None
     dataset_path: Optional[str] = None
@@ -1182,6 +1183,11 @@ class onnx_export_config_class(load_latent_ode_config_class):
     def _check_exclusive_model_source(self):
         if self.model_directory is not None and self.mlflow_run_id is not None:
             raise ValueError('Only one of model_directory or mlflow_run_id can be provided, not both')
+        return self
+    @model_validator(mode='after')
+    def _check_mlflow_tracking_uri(self):
+        if self.mlflow_run_id is not None and self.mlflow_tracking_uri is None:
+            raise ValueError('mlflow_tracking_uri must be provided when mlflow_run_id is used')
         return self
 
 def get_config_store() -> ConfigStore:

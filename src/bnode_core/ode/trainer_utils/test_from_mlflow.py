@@ -298,7 +298,9 @@ def main():
         for dataset in dataset_names:
             # retrieve config from mlflow
             _artifact_uri = mlflow.get_run(run_id).info.artifact_uri
+            # TODO: this should be downloaded from the artifact store
             _config_path = filepaths.filepath_from_ml_artifacts_uri(_artifact_uri + "/.hydra/config_validated.yaml")
+
             # copy config to temporary directory
             temp_config = temp_dir.name + "/config " + str(jobs) + ".yaml"
             print(f"copying config from {_config_path} to {temp_config}")
@@ -365,7 +367,7 @@ def main():
         Returns:
             subprocess.CompletedProcess: Result of the subprocess execution.
         """
-        result = subprocess.run(["python", "networks/neural_ode/trainer.py", f"-cp={temp_dir}" , f"-cn={temp_config_name}", f"+nn_model.training.training_dataset_name={training_dataset}"])
+        result = subprocess.run(["uv run trainer", f"-cp={temp_dir}" , f"-cn={temp_config_name}", f"+nn_model.training.training_dataset_name={training_dataset}"])
         return result
 
     if command_line_args["n_processes"][0] == "1":
@@ -381,9 +383,6 @@ def main():
             for result in results:
                 result.get()
     # start jobs
-
-
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
