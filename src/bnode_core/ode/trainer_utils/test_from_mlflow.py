@@ -1,25 +1,25 @@
 """Test trained models from MLflow runs on new datasets.
 
 This module provides functionality to load trained neural ODE models from MLflow runs
-and test them on different datasets. It automates the process of retrieving model
-configurations and checkpoints from MLflow, updating test parameters, and executing
-validation runs.
+and test them on different datasets. It downloads artifacts directly from the MLflow
+server (no local file access required) and executes validation runs.
+
 You can use all configuration options from trainer.py to override parameters for testing.
 
 Typical Usage Example
 ---------------------
-Test a single run on a new dataset:
+Test a single run on a new dataset using experiment_id (recommended):
 
 ```python
     python test_from_mlflow.py \\
-        experiment=myModel # or experiment id \\
+        experiment_id=123456789 \\
         run_name=bemused-hen-59 \\
-        # or run_id=8c2c32b9407a4e20946f72cd1c714776
+        # or run_id=8c2c32b9407a4e20946f72cd1c714776 \\
         dataset_name=myTestData \\
         mlflow_experiment_name=validation_results \\
         mlflow_tracking_uri=http://localhost:5000 \\
         n_processes=1 \\
-        nn_model_base=latent_ode_base\\
+        nn_model_base=latent_ode_base \\
         # specify overrides:
         override nn_model.training.batch_size_test=128 \\
         override nn_model.training.test_save_internal_variables=false \\
@@ -43,10 +43,12 @@ Run Selection (one of):
 
     run_id : str or list[str]
         MLflow run ID(s) to test. Comma-separated for multiple runs.
-    experiment + run_name : str
-        Experiment name and specific run name within that experiment.
-    experiment : str
-        Experiment name to test all runs from that experiment.
+    experiment_id + run_name : str
+        Experiment ID and specific run name(s) within that experiment (recommended).
+    experiment_id : str
+        Experiment ID to test all runs from that experiment.
+    experiment : str (deprecated)
+        Experiment name - triggers warning as multiple experiments can share names.
 
 Optional:
 
@@ -59,11 +61,13 @@ Optional:
 
 Notes
 -----
-- The module creates temporary configuration files combining the original training
-  config with test-specific updates.
+- Artifacts are downloaded from MLflow server to Hydra output directory.
+- Downloaded artifacts are stored in {hydra_output}/mlflow_test_artifacts/run_{run_id}/.
+- Artifacts persist after testing for inspection and debugging.
 - Model checkpoints are automatically retrieved from MLflow artifact storage.
 - Results are logged to a new MLflow experiment specified by mlflow_experiment_name.
 - When testing multiple runs/datasets, a Cartesian product is created (all combinations).
+- Use experiment_id instead of experiment name to avoid ambiguity.
 
 See Also
 --------
@@ -100,8 +104,8 @@ mlflow : MLflow documentation for run and artifact management.
 
 import mlflow
 import sys
+import argparse
 import logging
-import tempfile
 import shutil
 import bnode_core.filepaths as filepaths
 import yaml
@@ -111,70 +115,58 @@ import hydra
 from bnode_core.ode.trainer import train_all_phases
 from multiprocessing import Pool
 import warnings
+from pathlib import Path
+from datetime import datetime
 
-def parse_command_line_args(sys_argv):
-    """Parse command line arguments into structured dictionaries.
-    
-    Processes command-line arguments and separates them into regular arguments
-    and override arguments. Regular arguments use '=' syntax, while overrides
-    use 'override key=value' syntax.
-    
-    Args:
-        sys_argv (list[str]): System argument vector (typically sys.argv).
-            Expected format:
-                - Regular: 'key=value1,value2' (values split by comma)
-                - Override: 'override key=value'
-    
-    Returns:
-        tuple (tuple[dict, dict]): A tuple containing:
-            - command_line_args (dict): Regular arguments with values as lists.
-            - overrides (dict): Override arguments with values as strings.
-    
-    Examples:
-        >>> parse_command_line_args(['script.py', 'dataset_name=test1,test2', 'override use_cuda=false'])
-        ({'dataset_name': ['test1', 'test2']}, {'use_cuda': 'false'})
+def parse_args():
+    parser = argparse.ArgumentParser(description="Test trained models from MLflow runs on new datasets.")
+    parser.add_argument('--dataset_name', required=True, type=str,
+                        help='Name(s) of dataset(s) to test on. Comma-separated for multiple datasets.')
+    parser.add_argument('--mlflow_experiment_name', required=True, type=str,
+                        help='Name for the new MLflow experiment where test results will be logged.')
+    parser.add_argument('--nn_model_base', required=True, type=str,
+                        help='Base configuration for the neural network model (e.g., latent_ode_base).')
+    parser.add_argument('--mlflow_tracking_uri', type=str, default='http://localhost:5000',
+                        help='URI of MLflow tracking server.')
+    parser.add_argument('--n_processes', type=int, default=1,
+                        help='Number of parallel processes for testing.')
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--run_id', type=str,
+                       help='MLflow run ID(s) to test. Comma-separated for multiple runs.')
+    group.add_argument('--experiment_id', type=str,
+                       help='Experiment ID to test all runs from that experiment or with --run_name.')
+    group.add_argument('--experiment', type=str,
+                       help='Experiment name (deprecated, triggers warning).')
+
+    parser.add_argument('--run_name', type=str,
+                        help='Run name(s) within experiment_id. Comma-separated for multiple runs.')
+    parser.add_argument('--override', action='append', default=[],
+                        help='Override specific config parameters, e.g. --override nn_model.training.batch_size_test=128')
+
+    args = parser.parse_args()
+    # Convert comma-separated lists to Python lists
+    args.dataset_name = [x.strip() for x in args.dataset_name.split(",")]
+    if args.run_id:
+        args.run_id = [x.strip() for x in args.run_id.split(",")]
+    if args.run_name:
+        args.run_name = [x.strip() for x in args.run_name.split(",")]
+    return args
+
+def parse_overrides(override_list):
     """
-    command_line_args = {}
+    Parse list of override strings into a dict of key-value pairs.
+    Each override should be in the form key=value.
+    """
     overrides = {}
-    sys_argv = sys_argv[1:]
-    for arg in sys_argv:
-        if not arg.startswith("override"):
-            key, value = arg.split("=")
-            command_line_args[key] = value.split(",")
-        else:
-            _command = arg.split(" ")
-            key, value = _command[1].split("=")
-            overrides[key] = value
-    return command_line_args, overrides
+    for item in override_list:
+        if '=' not in item:
+            raise ValueError(f"Override argument '{item}' is not in key=value format.")
+        key, value = item.split('=', 1)
+        overrides[key.strip()] = value.strip()
+    return overrides
 
-def validate_command_line_args(command_line_args):
-    """Validate required command line arguments are present.
-    
-    Checks that all required arguments are provided and sets defaults for
-    optional arguments.
-    
-    Args:
-        command_line_args (dict): Parsed command line arguments.
-    
-    Raises:
-        ValueError: If required arguments (dataset_name, mlflow_experiment_name,
-            nn_model_base) are missing.
-    
-    Side Effects:
-        - Sets command_line_args['n_processes'] = 1 if not provided.
-        - Prints warning messages for missing optional arguments.
-    """
-    if "dataset_name" not in command_line_args:
-        raise ValueError("No dataset_name provided. Please provide a dataset_name.")
-    if "mlflow_experiment_name" not in command_line_args:
-        raise ValueError("No mlflow_experiment_name provided. Please provide a mlflow_experiment_name.")
-    if "n_processes" not in command_line_args:
-        print("No n_processes provided. Using default value of 1.")
-        command_line_args["n_processes"] = 1
-    if "nn_model_base" not in command_line_args:
-        raise ValueError("No nn_model_base provided. Please provide a nn_model_base.")
-
-def get_run_ids(command_line_args):
+def get_run_ids(args):
     """Retrieve MLflow run IDs based on provided selection criteria.
     
     Resolves run IDs from either direct run_id specification, run_name lookup
@@ -182,10 +174,14 @@ def get_run_ids(command_line_args):
     
     Args:
         command_line_args (dict): Parsed command line arguments containing one of:
+
             - 'run_id': Direct list of run IDs.
-            - 'experiment' + 'run_name': Experiment name and specific run names.
-            - 'experiment': All runs from the experiment.
+            - 'experiment_id' + 'run_name': Experiment ID and specific run names.
+            - 'experiment_id': All runs from the experiment.
+            - 'experiment': Experiment name (deprecated, triggers warning).
+            
             Optional:
+
             - 'mlflow_tracking_uri': MLflow server URI.
     
     Returns:
@@ -193,61 +189,57 @@ def get_run_ids(command_line_args):
     
     Raises:
         ValueError: If incompatible argument combinations are provided
-            (e.g., both run_name and run_id, or both run_id and experiment).
+            (e.g., both run_name and run_id, or both run_id and experiment_id).
     
     Side Effects:
         - Sets MLflow tracking URI via mlflow.set_tracking_uri().
         - Prints progress messages about run ID retrieval.
+        - Issues warning if 'experiment' (name) is used instead of 'experiment_id'.
     
     Examples:
-        >>> get_run_ids({'experiment': ['my_exp'], 'run_name': ['run1', 'run2']})
+        >>> get_run_ids({'experiment_id': ['123456'], 'run_name': ['run1', 'run2']})
         ['abc123', 'def456']
     """
-    if "mlflow_tracking_uri" in command_line_args:
-        mlflow.set_tracking_uri(command_line_args["mlflow_tracking_uri"][0])
+    mlflow.set_tracking_uri(args.mlflow_tracking_uri)
+    if args.run_id:
+        return args.run_id
+    if args.experiment:
+        warnings.warn(
+            "Using 'experiment' (name) is deprecated. Multiple experiments can have the same name. "
+            "Please use 'experiment_id' instead for unambiguous experiment identification.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        experiment = mlflow.get_experiment_by_name(args.experiment)
+        if experiment is None:
+            raise ValueError(f"Experiment with name '{args.experiment}' not found.")
+        # TODO: What happens if there are multiple experiments with same name?
+        experiment_id = experiment.experiment_id
     else:
-        print("No mlflow_tracking_uri provided. Using default.")
-        mlflow.set_tracking_uri("http://localhost:5000")
-
-    # get run_ids
-    if "run_name" in command_line_args.keys() and "run_id" in command_line_args.keys():
-        raise ValueError("Both run_name and run_id provided. Please provide only one.")
-    
-    if "run_id" in command_line_args.keys() and "experiment" in command_line_args.keys():
-        raise ValueError("Both run_id and experiment provided. Please provide only one.")
-
-    if "experiment" in command_line_args.keys():
-        experiment_name = command_line_args["experiment"]
-        print("experiment_name: ", experiment_name)
-        print("searching for runs of experiment")
-        experiment = mlflow.get_experiment_by_name(experiment_name[0])
-        runs = mlflow.search_runs(experiment.experiment_id)
-        if "run_name" in command_line_args:
-            # retrieve run_ids from run_names
-            print("searching for run_ids of run_names")
-            run_names = command_line_args["run_name"]
-            run_ids = []
-            for run_name in run_names:
-                run_ids.append(runs[runs["tags.mlflow.runName"] == run_name]["run_id"].values[0])
-        else:
-            print("using all runs of experiment")
-            run_ids = runs["run_id"].to_list()
-    else:
-        run_ids = command_line_args["run_id"]
-    print("run_ids: ", run_ids)
-    return run_ids
+        experiment_id = args.experiment_id
+    runs = mlflow.search_runs(experiment_id)
+    if args.run_name:
+        run_ids = []
+        for run_name in args.run_name:
+            matching_runs = runs[runs["tags.mlflow.runName"] == run_name]
+            if len(matching_runs) == 0:
+                raise ValueError(f"No run found with name '{run_name}' in experiment {experiment_id}")
+            run_ids.append(matching_runs["run_id"].values[0])
+        return run_ids
+    return runs["run_id"].to_list()
 
 def main():
     """Main execution function for testing models from MLflow runs.
     
     Orchestrates the complete workflow:
     1. Parses and validates command line arguments.
-    2. Retrieves run IDs from MLflow.
+    2. Retrieves run IDs from MLflow using experiment_id (or deprecated experiment name).
     3. For each run-dataset combination:
-       - Downloads and loads the training configuration from MLflow artifacts.
+       - Downloads artifacts from MLflow server to Hydra output directory.
+       - Loads the training configuration from downloaded artifacts.
        - Updates config for testing (new dataset, model path, test mode).
        - Applies any override parameters.
-       - Saves modified config to temporary files.
+       - Saves modified config to temporary files in Hydra output.
     4. Executes testing jobs either sequentially or in parallel.
     
     The function creates a Cartesian product of runs × datasets, generating
@@ -258,7 +250,9 @@ def main():
         FileNotFoundError: If MLflow artifacts (config, model) cannot be found.
     
     Side Effects:
-        - Creates temporary directory for config files (auto-cleaned on exit).
+        - Creates mlflow_test_artifacts directory in Hydra output for configs and artifacts.
+        - Downloads artifacts from MLflow server (if not local).
+        - Artifacts persist after testing for inspection.
         - Launches subprocess calls to trainer.py for each test job.
         - Logs results to MLflow under the specified experiment name.
         - Prints progress messages throughout execution.
@@ -267,44 +261,77 @@ def main():
         - Model checkpoints are retrieved from the final training phase.
         - Sequence length is set to match the last training phase.
         - Original training dataset name is preserved for reference.
+        - Artifacts are organized as: {hydra_output}/mlflow_test_artifacts/run_{run_id}/
+        - Use experiment_id instead of experiment name to avoid ambiguity warnings.
     
     Examples:
         Command line usage::
         
             python test_from_mlflow.py \\
-                experiment=trained_models \\
+                experiment_id=123456789 \\
                 run_name=final-model-123 \\
                 dataset_name=validation_set \\
                 mlflow_experiment_name=validation_results \\
                 nn_model_base=latent_ode_base \\
                 n_processes=1
     """
-    command_line_args, overrides = parse_command_line_args(sys.argv)
-    validate_command_line_args(command_line_args)
+    args = parse_args()
+    overrides = parse_overrides(args.override)
+    run_ids = get_run_ids(args)
+    dataset_names = args.dataset_name
 
-    run_ids = get_run_ids(command_line_args)
-    
-    dataset_names = command_line_args["dataset_name"]
-
-    # get temporary directory for saving config files
-    temp_dir = tempfile.TemporaryDirectory()
-    print("using temporary directory for saving config files: ", temp_dir.name)
-    # create nn_model directory in temporary directory
-    pathlib.Path(temp_dir.name + "/nn_model").mkdir(parents=True, exist_ok=True)
+    # get temporary directory in Hydra output folder for saving config files and artifacts
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H-%M-%S")
+    hydra_output_dir = Path.cwd() / "outputs" / date_str / time_str
+    hydra_output_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir_path = hydra_output_dir / "mlflow_test_artifacts"
+    temp_dir_path.mkdir(parents=True, exist_ok=True)
+    print(f"using directory for artifacts and config files: {temp_dir_path}")
+    # create nn_model directory
+    (temp_dir_path / "nn_model").mkdir(parents=True, exist_ok=True)
 
     jobs = 0
     training_dataset_list = []
+    artifact_dirs = {}  # Store artifact directories per run_id
+    
     for run_id in run_ids:
         for dataset in dataset_names:
-            # retrieve config from mlflow
-            _artifact_uri = mlflow.get_run(run_id).info.artifact_uri
-            # TODO: this should be downloaded from the artifact store
-            _config_path = filepaths.filepath_from_ml_artifacts_uri(_artifact_uri + "/.hydra/config_validated.yaml")
+            # Download artifacts from MLflow server
+            mlflow_run = mlflow.get_run(run_id)
+            artifact_uri = mlflow_run.info.artifact_uri
+            
+            # Check if we need to download artifacts (not already local)
+            if run_id not in artifact_dirs:
+                if not artifact_uri.startswith('file://'):
+                    # Download artifacts from remote MLflow server
+                    run_artifact_dir = temp_dir_path / f"run_{run_id}"
+                    run_artifact_dir.mkdir(parents=True, exist_ok=True)
+                    print(f"Downloading artifacts for run {run_id} from MLflow server to {run_artifact_dir}")
+                    
+                    mlflow.artifacts.download_artifacts(
+                        run_id=run_id,
+                        dst_path=str(run_artifact_dir)
+                    )
+                    artifact_dirs[run_id] = run_artifact_dir
+                    print(f"Successfully downloaded artifacts to {run_artifact_dir}")
+                else:
+                    # Local artifacts - use direct path
+                    artifact_dirs[run_id] = Path(artifact_uri.replace('file://',''))
+                    print(f"Using local artifacts from {artifact_dirs[run_id]}")
+            
+            # Get config path from downloaded/local artifacts
+            _config_path = artifact_dirs[run_id] / ".hydra" / "config_validated.yaml"
+            
+            if not _config_path.exists():
+                raise FileNotFoundError(f"Config file not found at {_config_path}")
 
             # copy config to temporary directory
-            temp_config = temp_dir.name + "/config " + str(jobs) + ".yaml"
+            temp_config = temp_dir_path / f"config_{jobs}.yaml"
             print(f"copying config from {_config_path} to {temp_config}")
             shutil.copy(_config_path, temp_config)
+            
             # update config with dataset_name, sequence_length, model_path, test_mode
             # open yaml file
             with open(temp_config) as file:
@@ -313,25 +340,34 @@ def main():
             # update config
             training_dataset_list.append(config["dataset_name"])
             config["dataset_name"] = dataset
-            config["mlflow_experiment_name"] = command_line_args["mlflow_experiment_name"][0]
+            config["mlflow_experiment_name"] = args.mlflow_experiment_name
+            # TODO: is this important
             config["nn_model"]["training"]["pre_trained_model_seq_len"] = config["nn_model"]["training"]["main_training"][-1]["seq_len_train"]
-            _model_path = _artifact_uri + "/model_phase_" + str(len(config["nn_model"]["training"]["main_training"])) + ".pt"
-            config["nn_model"]["training"]["path_trained_model"] = _model_path
+            
+            # Use local path to downloaded model checkpoint
+            # TODO: could also look for latest checkpoint in dir
+            _model_filename = f"model_phase_{len(config['nn_model']['training']['main_training'])}.pt"
+            _model_path = artifact_dirs[run_id] / _model_filename
+            
+            if not _model_path.exists():
+                raise FileNotFoundError(f"Model checkpoint not found at {_model_path}")
+            
+            config["nn_model"]["training"]["path_trained_model"] = str(_model_path)
             print(f"\tmodel path: {_model_path}")
             config["nn_model"]["training"]["load_trained_model_for_test"] = True
 
-            # set overrides
+            # set overrides (propagate to config using key-path logic)
             for key, value in overrides.items():
                 print(f"setting override: {key}={value}")
-                path = key.split(".")
-                if len(path) == 1:
-                    config[path[0]] = value
-                elif len(path) == 2:
-                    config[path[0]][path[1]] = value
-                elif len(path) == 3:
-                    config[path[0]][path[1]][path[2]] = value
-                else:
-                    raise ValueError("Invalid override path.")
+                path = key.split('.')
+                ref = config
+                for i, part in enumerate(path):
+                    if i == len(path) - 1:
+                        ref[part] = value
+                    else:
+                        if part not in ref:
+                            ref[part] = {}
+                        ref = ref[part]
 
             config_nn_model = config["nn_model"]
             # delete nn_model from config
@@ -339,19 +375,19 @@ def main():
 
             # add defaults to the very top
             config["defaults"]= ["base_train_test", {"nn_model": f"model{jobs}"}, "_self_"]
-
             # also to nn_model
-            config_nn_model["defaults"] = [command_line_args["nn_model_base"][0], "_self_"]
+            config_nn_model["defaults"] = [args.nn_model_base, "_self_"]
 
             # save updated config to temporary directory
             with open(temp_config, 'w') as file:
                 yaml.dump(config, file)
 
             # save nn_model to temporary directory
-            with open(temp_dir.name + "/nn_model/model" + str(jobs) + ".yaml", 'w') as file:
+            with open(temp_dir_path / "nn_model" / f"model{jobs}.yaml", 'w') as file:
                 yaml.dump(config_nn_model, file)
             jobs += 1
     print(f"Successfully created {jobs} jobs.")
+    print(f"Artifacts and configs saved in: {temp_dir_path}")
 
     print("starting jobs...")
     # remove all arguments from sys.argv
@@ -367,22 +403,33 @@ def main():
         Returns:
             subprocess.CompletedProcess: Result of the subprocess execution.
         """
-        result = subprocess.run(["uv run trainer", f"-cp={temp_dir}" , f"-cn={temp_config_name}", f"+nn_model.training.training_dataset_name={training_dataset}"])
+        # Split the command into executable and arguments instead of one string with spaces.
+        cmd = [
+            "uv",
+            "run",
+            "trainer",
+            f"-cp={temp_dir}",
+            f"-cn={temp_config_name}",
+            f"+nn_model.training.training_dataset_name={training_dataset}"
+        ]
+        print(f"Running command: {' '.join(cmd)}")
+        result = subprocess.run(cmd)
         return result
 
-    if command_line_args["n_processes"][0] == "1":
+    if args.n_processes == 1:
         print("running jobs sequentially")
         for i in range(jobs):
-            result = wrap_train_all_phases(temp_dir.name, f"config {str(i)}.yaml", training_dataset_list[i])
+            result = wrap_train_all_phases(str(temp_dir_path), f"config_{i}.yaml", training_dataset_list[i])
             print(result)
     else:
         print("running jobs in parallel")
         warnings.warn("Parallel execution is not fully tested yet.")
-        with Pool(processes=int(int(command_line_args["n_processes"][0]))) as pool:
-            results = [pool.apply_async(wrap_train_all_phases, (temp_dir.name, f"config {str(i)}.yaml")) for i in range(jobs)]
+        with Pool(processes=args.n_processes) as pool:
+            results = [pool.apply_async(wrap_train_all_phases, (str(temp_dir_path), f"config_{i}.yaml", training_dataset_list[i])) for i in range(jobs)]
             for result in results:
                 result.get()
-    # start jobs
+    
+    print(f"All jobs completed. Artifacts remain in: {temp_dir_path}")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
