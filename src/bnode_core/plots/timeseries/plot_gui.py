@@ -5,7 +5,6 @@ from matplotlib.widgets import Slider
 import numpy as np
 import argparse
 import os
-import filepaths
 
 def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3):
     print(dataset_path)
@@ -227,11 +226,19 @@ parser.add_argument('--dataset_path', type=str, help='path to dataset',
                     default=None)
 parser.add_argument('-n', '--n_trajectory_rows', type=int, help='number of trajectory rows to plot', default=3)
 
-if __name__ == '__main__':
+def main():
     args = parser.parse_args()
     if args.dataset_path == None:
         args.dataset_path = input('Enter path to dataset: ')
         _path = Path(args.dataset_path)
-    _path = filepaths.filepath_from_local_or_ml_artifacts(args.dataset_path)
+    if args.dataset_path.startswith('file://'):
+        _path = Path(args.dataset_path.replace('file://',''))
+    else:
+        _path = Path(args.dataset_path)
+        if not _path.exists():
+            raise FileNotFoundError(f"The dataset path {args.dataset_path} can not be opened.")
     print('opening dataset at {}'.format(_path))
     plot_gui(_path, n_trajectory_rows=args.n_trajectory_rows)
+
+if __name__ == '__main__':
+    main()
