@@ -506,7 +506,64 @@ def train_all_phases(cfg: train_test_config_class):
                             else:
                                 logging.info('Testing of dataset for context {}'.format(context))
                                 if _save_predictions is True:
-                                    ret_vals, model_outputs = test_or_validate_one_epoch(model, dataloaders[context], job['train_cfg'], job['pre_train'], device, all_batches=True, return_model_outputs=True)
+                                    # Stream results batch-by-batch to HDF5 to reduce RAM usage
+                                    total_len = len(dataloaders[context].dataset)
+                                    data_iter = iter(dataloaders[context])
+                                    created_dsets = False
+                                    write_offset = 0
+                                    metrics_sum = {}
+                                    n_batches = 0
+                                    keys_to_save = []
+                                    while True:
+                                        try:
+                                            data_batch = next(data_iter)
+                                        except StopIteration:
+                                            break
+                                        with torch.no_grad():
+                                            logging.info(f"\t Batch {n_batches+1}/{int(total_len/cfg.nn_model.training.batch_size_test)+1}")
+                                            ret_vals_batch, model_outputs_batch = model.model_and_loss_evaluation(
+                                                data_batch, job['train_cfg'], job['pre_train'], device,
+                                                return_model_outputs=True, test=True
+                                            )
+                                        # Initialize datasets on first batch according to save policy
+                                        if not created_dsets:
+                                            # Decide which keys to save
+                                            for key in model_outputs_batch.keys():
+                                                if cfg.nn_model.training.test_save_internal_variables is True:
+                                                    _save = True
+                                                else:
+                                                    if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
+                                                        _save = True
+                                                    elif cfg.nn_model.training.test_save_internal_variables_for == context:
+                                                        _save = True
+                                                        logging.info('Saving internal variable {} as test_save_internal_variables_for context is {}'.format(key, context))
+                                                    else:
+                                                        _save = False
+                                                        logging.info('Not saving internal variable {} as test_save_no_internal_variables is True'.format(key))
+                                                if _save:
+                                                    keys_to_save.append(key)
+                                            # Create HDF5 datasets per key with full size on first dimension
+                                            for key in keys_to_save:
+                                                arr = model_outputs_batch[key]
+                                                shape_rest = arr.shape[1:]
+                                                dset_shape = (total_len,) + shape_rest
+                                                hdf5_dataset.create_dataset(context + '/' + key, shape=dset_shape, dtype=arr.dtype)
+                                            created_dsets = True
+                                        # Write this batch to HDF5
+                                        Batch = next(iter(model_outputs_batch.values())).shape[0] if len(model_outputs_batch) > 0 else 0
+                                        for key in keys_to_save:
+                                            arr = model_outputs_batch[key]
+                                            hdf5_dataset[context + '/' + key][write_offset:write_offset + arr.shape[0], ...] = arr
+                                        write_offset += Batch
+                                        # Accumulate metrics for averaging later (match old np.mean over batches)
+                                        if n_batches == 0:
+                                            metrics_sum = {k: float(v) for k, v in ret_vals_batch.items()}
+                                        else:
+                                            for k, v in ret_vals_batch.items():
+                                                metrics_sum[k] += float(v)
+                                        n_batches += 1
+                                    # Compute mean metrics across batches
+                                    ret_vals = {k: (metrics_sum[k] / max(n_batches, 1)) for k in metrics_sum.keys()}
                                 else:
                                     ret_vals = test_or_validate_one_epoch(model, dataloaders[context], job['train_cfg'], job['pre_train'], device, all_batches=True, return_model_outputs=False)
                                 # log stats with logging
@@ -517,22 +574,7 @@ def train_all_phases(cfg: train_test_config_class):
                                 # save loss function values
                                 if _save_predictions is True:
                                     for key, value in ret_vals.items():
-                                        hdf5_dataset.create_dataset(context+'/'+key, data=value) 
-                                    # save reconstructed timeseries and raw loss function values
-                                    for key, value in model_outputs.items():
-                                        if cfg.nn_model.training.test_save_internal_variables is True:
-                                            _save = True
-                                        else:
-                                            if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
-                                                _save = True
-                                            elif cfg.nn_model.training.test_save_internal_variables_for == context:
-                                                _save = True
-                                                logging.info('Saving internal variable {} as test_save_internal_variables_for context is {}'.format(key, context))
-                                            else:
-                                                _save = False
-                                                logging.info('Not saving internal variable {} as test_save_no_internal_variables is True'.format(key))
-                                        if _save is True:
-                                            hdf5_dataset.create_dataset(context+'/'+key, data=value)
+                                        hdf5_dataset.create_dataset(context+'/'+key, data=value)
                         if _save_predictions is True:
                             hdf5_dataset.close()
                             # save this file
