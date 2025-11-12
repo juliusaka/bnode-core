@@ -223,6 +223,7 @@ def load_trained_latent_ode(cfg_export):
     
     Args:
         cfg_export (onnx_export_config_class): Export configuration containing:
+
             - mlflow_run_id: MLflow run identifier (if loading from MLflow)
             - model_directory: Local directory path (if loading locally)
             - mlflow_tracking_uri: MLflow tracking server URI
@@ -232,6 +233,7 @@ def load_trained_latent_ode(cfg_export):
     
     Returns:
         dict (dict): Dictionary containing:
+        
             - 'model': Initialized BNODE model with loaded weights
             - 'cfg': OmegaConf configuration object
             - 'dataset_file': Opened HDF5 dataset file handle
