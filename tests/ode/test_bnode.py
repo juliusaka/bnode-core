@@ -26,13 +26,13 @@ def ode_training(test_case: str, overrides: list[str] = [],):
 
 def ode_training_params(test_case: str, overrides: list[str] = []):
     overrides += [
-        'dataset_path=resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest_dataset.hdf5',
+        'dataset_path=resources/data/surrogate-test-data/data/datasets/StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest/StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest_dataset.hdf5',
     ]
     ode_training(test_case, overrides=overrides)
 
 def ode_training_initial_states(test_case: str, overrides: list[str] = []):
     overrides += [
-        'dataset_path=resources\data\surrogate-test-data\data\datasets\SimpleSeriesResonance_v4_s-R__n-100_pytest\SimpleSeriesResonance_v4_s-R__n-100_pytest_dataset.hdf5',
+        'dataset_path=resources/data/surrogate-test-data/data/datasets/SimpleSeriesResonance_v4_s-R__n-100_pytest/SimpleSeriesResonance_v4_s-R__n-100_pytest_dataset.hdf5',
     ]
     ode_training(test_case, overrides=overrides)
 

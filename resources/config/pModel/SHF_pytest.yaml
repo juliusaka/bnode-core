@@ -3,7 +3,7 @@ defaults:
 
 RawData:
   modelName: StratifiedHeatFlowModel
-  fmuPath: resources\models\surrogate-test-models\models\ThermalTesters\StratifiedHeatFlowModel.fmu
+  fmuPath: resources/models/surrogate-test-models/models/ThermalTesters/StratifiedHeatFlowModel.fmu
   versionName: v3pyTest
   parameters:
     C: [1.8]
