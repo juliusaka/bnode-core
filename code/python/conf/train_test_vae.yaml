@@ -1,9 +1,0 @@
-defaults:
-  - base_train_test
-  - nn_model: pels_vae_linear
-  - _self_
-
-dataset_name: GrayBoxModelBSU_v1_p-R__n-2048
-use_cuda: true
-use_amp: false 
-mlflow_experiment_name: Default

@@ -1,6 +1,0 @@
-[submodule "code/python/torchdiffeq"]
-	path = code/python/torchdiffeq
-	url = https://github.com/rtqichen/torchdiffeq.git
-[submodule "code/modelica/ClaRa-official"]
-	path = code/modelica/ClaRa-official
-	url = https://github.com/xrg-simulation/ClaRa-official.git
