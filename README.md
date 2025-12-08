@@ -59,18 +59,19 @@ TODO: add examples
 
     So you can install torch with
 
-   ```
+    ```
     uv pip install torch torchvision torchaudio --torch-backend auto
-   ```
+    ```
+
     before using ```uv sync``` / ```uv run```.
-    
-    You can also manually select the appropriate command from [uv doc](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection)
+    You can also manually select the appropriate command from [uv doc](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection).
 
     **You're done!**
 
 4. (Optional:) Use the virtual environment:
-    
+
     Run 
+
     ```
     uv sync
     ```
@@ -79,13 +80,13 @@ TODO: add examples
 
     To activate the virtual environment, use:
 
-    ```
-    [linux-bash]
-    source .venv/bin/activate
-    [windows-powershell]
-    .venv\Scripts\Activate
-    ```
-    in your Terminal or add it in VS Code using the command palette (Ctrl+Shift+P) and searching for "Python: Select Interpreter".
+        ```
+        [linux-bash]
+        source .venv/bin/activate
+        [windows-powershell]
+        .venv\Scripts\Activate
+        ```
+    in your terminal or add it in VS Code using the command palette (Ctrl+Shift+P) and searching for "Python: Select Interpreter".
 
 You don't need to use the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
 
