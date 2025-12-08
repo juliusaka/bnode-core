@@ -57,6 +57,11 @@ torch =[
     "torchvision>=0.22.0",
 ]
 
+plotly =[
+    "dash>=3.3.0",
+    "plotly>=6.4.0",
+]
+
 [project.optional-dependencies]
 # torch is defined here and in dependency gropus
 torch =[
@@ -67,13 +72,9 @@ torch =[
     "torchdiffeq>=0.2.5",
     "torchvision>=0.22.0",
 ]
-plotly =[
-    "dash>=3.3.0",
-    "plotly>=6.4.0",
-]
 
 [tool.uv]
-default-groups = ["dev", "torch"]
+default-groups = ["dev", "torch", "plotly"]
 
 [project.scripts]
 # this is a possibility to define commands

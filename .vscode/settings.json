@@ -8,7 +8,8 @@
         "--cov-report=html:tests/_results/coverage",
         "-rA", // show summary of ALL tests at end
         "--html=./tests/_results/_test_report.html", // generate HTML report
-        "--self-contained-html" // make HTML report self-contained
+        "--self-contained-html", // make HTML report self-contained
+        "-n 16", // run tests in parallel using 8 workers
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true
