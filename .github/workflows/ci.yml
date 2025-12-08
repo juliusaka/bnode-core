@@ -1,0 +1,32 @@
+name: mkdocs build documentation
+on:
+  push:
+    branches:
+      - master
+      - main
+permissions:
+  contents: write
+jobs:
+  deploy:
+    name: build with uvx
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Configure Git Credentials
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      
+      # https://docs.astral.sh/uv/guides/integration/github/
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+      
+      - name: Deploy docs with uvx
+        run: >-
+          uvx --with mkdocstrings --with mkdocs-material --with mkdocstrings-python
+          --with mkdocs-include-markdown-plugin mkdocs gh-deploy --force

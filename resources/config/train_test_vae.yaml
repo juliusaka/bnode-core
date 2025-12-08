@@ -1,0 +1,9 @@
+defaults:
+  - base_train_test
+  - nn_model: pels_vae_linear
+  - _self_
+
+dataset_path: resources/data/surrogate-test-data/data/datasets/ThreeStratifiedHeatFlowModel_v3_p-R__n-100_pytest/ThreeStratifiedHeatFlowModel_v3_p-R__n-100_pytest_dataset.hdf5
+use_cuda: true
+use_amp: false 
+mlflow_experiment_name: Default

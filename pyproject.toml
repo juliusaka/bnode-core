@@ -1,0 +1,102 @@
+[project]
+name = "bnode-core"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Julius Aka", email = "julius.aka@uni-a.de" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "bokeh>=3.8.0",
+    "dask>=2025.10.0",
+    "distributed>=2025.10.0",
+    "fmpy>=0.3.26",
+    "h5py>=3.15.1",
+    "hydra-core>=1.3.2",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "omegaconf>=2.3.0",
+    "onnxscript>=0.5.6",
+    "pandas>=2.3.3",
+    "pydantic>=2.12.3",
+    "pyyaml>=6.0.2",
+    "scipy>=1.16.2",
+    "seaborn>=0.13.2",
+    "tqdm>=4.67.1",
+]
+
+
+[project.urls]
+Homepage = "https://no.com"
+Documentation = "https://no.com"
+Repository = "https://no.com"
+Issues = "https://no.com"
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "ty",
+    "twine",
+    "build",
+    "pre-commit",
+    "rich",
+    "pytest-xdist>=3.8.0",
+    "pytest-html>=4.1.1",
+    "pytest-dependency>=0.6.0",
+]
+# torch is define here and in optiona dependencies. The dependency groups hera are only for development.
+torch =[
+    "mlflow>=3.5.0",
+    "onnx>=1.19.1",
+    "torch>=2.7.0",
+    "torchaudio>=2.8.0",
+    "torchdiffeq>=0.2.5",
+    "torchvision>=0.22.0",
+]
+
+plotly =[
+    "dash>=3.3.0",
+    "plotly>=6.4.0",
+]
+
+[project.optional-dependencies]
+# torch is defined here and in dependency gropus
+torch =[
+    "mlflow>=3.5.0",
+    "onnx>=1.19.1",
+    "torch>=2.7.0",
+    "torchaudio>=2.8.0",
+    "torchdiffeq>=0.2.5",
+    "torchvision>=0.22.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "torch", "plotly"]
+
+[project.scripts]
+# this is a possibility to define commands
+fmu_simulate = "bnode_core.data_generation.utils.fmu_simulate:main"
+fmu_variable_names = "bnode_core.data_generation.utils.print_fmu_variable_names:main"
+data_generation = "bnode_core.data_generation.raw_data_generation:main"
+data_preperation = "bnode_core.data_generation.data_preperation:main"
+visualize_data = "bnode_core.data_generation.utils.visualize_data:main"
+trainer = "bnode_core.ode.trainer:main"
+bnode_export = "bnode_core.ode.bnode.bnode_export:main"
+plot_gui = "bnode_core.plots.timeseries.plot_gui:main"
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[tool.pytest.ini_options]
+# this enables pytest to automatically use all available cores.
+addopts = "-n auto"

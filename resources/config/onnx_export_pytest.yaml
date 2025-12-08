@@ -1,0 +1,10 @@
+defaults:
+  - base_onnx_export
+  - _self_
+
+model_directory: null
+mlflow_run_id: null # if provided, uses the mlflow run id to load the model, otherwise uses the model_directory. Provide only one!
+model_checkpoint_path: null # default uses the latest checkpoint in the model directory (i.e. model_phase_X.pt)
+output_dir: null 
+config_path: null
+dataset_path: null

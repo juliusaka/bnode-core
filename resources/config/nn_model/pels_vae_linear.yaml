@@ -1,0 +1,30 @@
+defaults:
+  - pels_vae
+  - _self_
+
+network:
+  n_latent: 64
+  n_linear_layers: 4
+  linear_hidden_dim: 256
+  dropout_rate: 0.0
+  activation: 'torch.nn.ReLU'
+  params_to_decoder: false
+  feed_forward_nn: false
+  
+training:
+  max_epochs: 100
+  batch_size: 12
+  beta_start: 0.0001
+  use_capacity: False
+  capacity_patience: 2
+  capacity_start: 0.2
+  capacity_max: 20.0
+  capacity_increment: 0.2
+  capacity_increment_mode: abs
+  capacity_threshold: 0.2
+  capacity_threshold_mode: rel
+  lr_start: 1e-3
+  early_stopping_patience: 20
+  early_stopping_threshold: 0.000
+  clip_grad_norm: 1e6
+  test_from_regressor: true

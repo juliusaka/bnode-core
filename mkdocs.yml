@@ -1,0 +1,105 @@
+site_name: bnode-core
+site_url: https://github.com/juliusaka/balanced-neural-odes
+site_author: Julius Aka
+site_description: bnode-core
+theme:
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    logo: material/file-document-multiple-outline
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      primary: white
+      toggle:
+        icon: material/lightbulb
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: black
+      toggle:
+        icon: material/lightbulb-outline
+        name: Switch to light mode
+  name: material
+  features:
+    - navigation.instant
+    - navigation.top
+    - navigation.tabs
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+  - tags
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [ "src" ]
+          options:
+            annotations_path: brief
+            docstring_style: google
+            show_docstring_examples: true
+            show_signature_annotations: true
+            members_order: source
+  - include-markdown:
+      preserve_includer_indent: true
+nav:
+  - Home: index.md
+  - API Reference: 
+    - reference.md
+    - Data Generation:
+      - bnode_core/data_generation/introduction.md
+      - bnode_core/data_generation/raw_data_generation.md
+      - bnode_core/data_generation/data_preperation.md
+    - (B)NODE Module:
+      - bnode_core/ode/trainer.md
+      - BNODE:
+        - bnode_core/ode/bnode/bnode.md
+        - bnode_core/ode/bnode/bnode_export.md
+      - bnode_core/ode/node.md
+      - ODE Utilities:
+        - bnode_core/ode/trainer_utils/test_from_mlflow.md
+    - Neural Networks:
+      - bnode_core/nn/nn_utils.md
+      - bnode_core/nn/vae.md
+    - bnode_core/filepaths.md
+    - bnode_core/config.md
+
+  - Config:
+    - bnode_core/config.md
+  # - Configuration Reference: bnode_core/config.md
+  - License: LICENSE.md
+markdown_extensions:
+  - attr_list
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - tables
+  - md_in_html
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+repo_url: https://github.com/juliusaka/balanced-neural-odes
+extra:
+  social:
+    - icon: material/web
+      link: https://www.uni-augsburg.de/de/fakultaet/fai/informatik/prof/imech/team/julius-aka/
+    - icon: material/linkedin
+      link: https://www.linkedin.com/in/julius-aka/
+    - icon: material/school
+      link: https://scholar.google.com/citations?user=7SypqSQAAAAJ&hl
+    - icon: material/github
+      link: https://github.com/juliusaka
+watch:
+  - README.md
+  - src/bnode_core/
+  - docs/
