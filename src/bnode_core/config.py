@@ -180,7 +180,7 @@ class RawDataClass:
         parameters_sampling_strategy (str): Strategy for parameter sampling (e.g., 'R'). See raw_data_generation.py for options.
         controls_default_lower_value (float): Default lower bound for a control when unspecified.
         controls_default_upper_value (float): Default upper bound for a control when unspecified.
-        controls (Optional[Dict]): Mapping control-name -> [min, max] or None to inject defaults; list must have length 2 and min <= max.
+        controls (Optional[Dict]): Mapping control-name -> [min, max], [min, max, clip_lower, clip_upper] or None to inject defaults. If 4 elements, clip values are applied after sampling.
         controls_include (bool): Whether to include controls in data generation.
         controls_sampling_strategy (str): Strategy for control sampling (e.g., 'R', 'ROCS', 'RROCS', 'file', 'constantInput').
         controls_frequency_min_in_timesteps (Optional[int]): Minimum control hold-frequency in time steps (required with ROCS/RROCS).
@@ -260,10 +260,13 @@ class RawDataClass:
             if value is None:
                 v[key] = [info.data['controls_default_lower_value'], info.data['controls_default_upper_value']]
                 logging.info(f'control ranges {key} has been set to \t {[round(x, 4) for x in v[key]]}')
-            if not len(v[key]) == 2:
-                raise ValueError(f'control {key} must be a dictionary of lists with 2 elements')
+            if not ((len(v[key]) == 2) or (len(v[key]) == 4)):
+                raise ValueError(f'control {key} must be a dictionary of lists with 2 or 4 elements')
             if v[key][0] > v[key][1]:
                 raise ValueError(f'control {key}: first element must be smaller than second element')
+            if len(v[key]) == 4:
+                if v[key][2] > v[key][3]:
+                    raise ValueError(f'control {key}: clip value lower bound must be smaller than upper bound')
         return v
     @field_validator('states')
     @classmethod
@@ -1171,6 +1174,7 @@ class onnx_export_config_class(load_latent_ode_config_class):
     output_dir: Optional[str] = None
     model_directory: Optional[str] = None
     mlflow_run_id: Optional[str] = None # which model checkpoint to load
+    mlflow_tracking_uri: Optional[str] = None
     model_checkpoint_path: Optional[str] = None
     config_path: Optional[str] = None
     dataset_path: Optional[str] = None
@@ -1179,6 +1183,11 @@ class onnx_export_config_class(load_latent_ode_config_class):
     def _check_exclusive_model_source(self):
         if self.model_directory is not None and self.mlflow_run_id is not None:
             raise ValueError('Only one of model_directory or mlflow_run_id can be provided, not both')
+        return self
+    @model_validator(mode='after')
+    def _check_mlflow_tracking_uri(self):
+        if self.mlflow_run_id is not None and self.mlflow_tracking_uri is None:
+            raise ValueError('mlflow_tracking_uri must be provided when mlflow_run_id is used')
         return self
 
 def get_config_store() -> ConfigStore:

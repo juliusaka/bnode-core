@@ -7,8 +7,8 @@ from hydra.core.global_hydra import GlobalHydra
 from test_bnode import ode_training
 from bnode_core.ode.bnode.bnode_export import main as bnode_export_main
 
-dataset_path = r"resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest_dataset.hdf5"
-parameter_dataset_path = r"resources\data\surrogate-test-data\data\datasets\StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest\StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest_dataset.hdf5"
+dataset_path = r"resources/data/surrogate-test-data/data/datasets/StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest/StratifiedHeatFlowModel_v3_c-RROCS__n-100_pytest_dataset.hdf5"
+parameter_dataset_path = r"resources/data/surrogate-test-data/data/datasets/StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest/StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest_dataset.hdf5"
 
 # Perform tests for bnode expor
 # train a simple model using ode_training from the config class, with max_epochs_override=10

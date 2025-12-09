@@ -379,12 +379,9 @@ def run_data_preperation(cfg: data_gen_config):
     logging.info('Copied raw data to temporary file {}'.format(temp_raw_data_path))
     
     # remove failed runs from raw data
-    if 'failed_idx' in raw_data.keys():
-        remove_runs = raw_data['failed_idx']
-        remove_runs = np.array(remove_runs, dtype=int)
-        logging.info('Removing failed runs from raw data: {}'.format(remove_runs))
-    else:
-        logging.info('No failed runs in raw data. Skipping removal of failed runs.')
+    # get idx of logs/completed that are 0
+    remove_runs = np.where(raw_data['logs/completed'][:] == 0)[0]
+    logging.info('Removing failed runs from raw data: {}'.format(remove_runs))
     
     _remove_runs = []
     if len(cfg.pModel.dataset_prep.filter_trajectories_limits) > 0:

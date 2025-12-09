@@ -197,12 +197,14 @@ See Also
 
 import hydra
 from pathlib import Path
+import pathlib
 import logging
 import mlflow
 import yaml
 import h5py
 import torch
 from omegaconf import OmegaConf
+import shutil
 
 import bnode_core.filepaths as filepaths
 from bnode_core.filepaths import config_dir_auto_recognize
@@ -221,6 +223,7 @@ def load_trained_latent_ode(cfg_export):
     
     Args:
         cfg_export (onnx_export_config_class): Export configuration containing:
+
             - mlflow_run_id: MLflow run identifier (if loading from MLflow)
             - model_directory: Local directory path (if loading locally)
             - mlflow_tracking_uri: MLflow tracking server URI
@@ -230,10 +233,12 @@ def load_trained_latent_ode(cfg_export):
     
     Returns:
         dict (dict): Dictionary containing:
+        
             - 'model': Initialized BNODE model with loaded weights
             - 'cfg': OmegaConf configuration object
             - 'dataset_file': Opened HDF5 dataset file handle
             - 'dataset': Processed training dataset (stacked format)
+            - 'temp_dir': Temporary directory path (if artifacts were downloaded, None otherwise)
     
     Raises:
         FileNotFoundError: If dataset file cannot be found at specified path.
@@ -243,23 +248,54 @@ def load_trained_latent_ode(cfg_export):
         - Normalization is not re-initialized (uses saved parameters)
         - Latest checkpoint is used if model_checkpoint_path is None
         - Model is loaded in evaluation mode for deterministic inference
+        - When loading from MLflow remote server, artifacts are downloaded to Hydra output folder
+        - Temporary artifact directory is named 'mlflow_artifacts_{run_id}' in Hydra output
     """
+    temp_dir = None
+    
     # get artifacts directory
     if cfg_export.mlflow_run_id is not None:
         mlflow.set_tracking_uri(cfg_export.mlflow_tracking_uri)
-        raise NotImplementedError("MLflow loading is not implemented in this environment.")
-        dir_artifacts = filepaths.filepath_from_ml_artifacts_uri(mlflow.get_run(cfg_export.mlflow_run_id).info.artifact_uri)
+        mlflow_run = mlflow.get_run(cfg_export.mlflow_run_id)
+        artifact_uri = mlflow_run.info.artifact_uri
+        
+        # Check if artifacts are on remote server (not local file://)
+        if not artifact_uri.startswith('file://'):
+            # Download artifacts to temporary directory in Hydra output folder
+            hydra_output_dir = filepaths.dir_current_hydra_output()
+            temp_dir = hydra_output_dir / f'mlflow_artifacts_{cfg_export.mlflow_run_id}'
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f'Downloading MLflow artifacts from remote server to: {temp_dir}')
+            
+            # Download all artifacts
+            mlflow.artifacts.download_artifacts(
+                run_id=cfg_export.mlflow_run_id,
+                dst_path=str(temp_dir)
+            )
+            dir_artifacts = temp_dir
+            logging.info(f'Successfully downloaded artifacts to {temp_dir}')
+        else:
+            # Local MLflow artifacts
+            dir_artifacts = Path(artifact_uri.replace('file://', ''))
     else:
-        dir_artifacts = filepaths.filepath_from_local_or_ml_artifacts(cfg_export.model_directory)
+        dir_artifacts = Path(cfg_export.model_directory)
     logging.info('Resolved artifacts uri as {}'.format(str(dir_artifacts)))
+
+    # get config and dataset paths
     if cfg_export.config_path is None:
         path_config = dir_artifacts / '.hydra' / 'config_validated.yaml'
     else: 
-        path_config = filepaths.filepath_from_local_or_ml_artifacts(cfg_export.config_path)
+        raise ValueError('Custom config_path is not supported in this version.')
+    
+    # dataset path
     if cfg_export.dataset_path is None:
         path_dataset = dir_artifacts / 'dataset.hdf5'
     else:
-        path_dataset = filepaths.filepath_from_local_or_ml_artifacts(cfg_export.dataset_path)
+        if cfg_export.dataset_path.startswith('file://'):
+            path_dataset = Path(cfg_export.dataset_path.replace('file://', ''))
+        else:
+            path_dataset = Path(cfg_export.dataset_path)
+
 
     # load config (and validate it using the dataclass?)
     with open(path_config) as file:
@@ -268,6 +304,7 @@ def load_trained_latent_ode(cfg_export):
         cfg.use_cuda = False
     logging.info('Loaded config of BNODE: {}'.format(str(cfg)))
     
+
     # load training dataset
     if path_dataset.is_file():
         dataset_file = h5py.File(path_dataset, 'r')
@@ -281,9 +318,15 @@ def load_trained_latent_ode(cfg_export):
     if cfg_export.model_checkpoint_path is None:
         path_checkpoint = sorted(dir_artifacts.rglob('model_phase_*.pt'))[-1]
     else:
-        path_checkpoint = filepaths.filepath_from_local_or_ml_artifacts(cfg_export.model_checkpoint_path)
+        if cfg_export.model_checkpoint_path.startswith('file://'):
+            path_checkpoint = Path(cfg_export.model_checkpoint_path.replace('file://', ''))
+        else:
+            path_checkpoint = Path(cfg_export.model_checkpoint_path)
+        if not path_checkpoint.is_file():
+            raise FileNotFoundError(f'Checkpoint file {path_checkpoint} not found. Please provide a valid checkpoint path.')
+        
     model.load(path_checkpoint, device='cpu')
-    return {'model': model, 'cfg': cfg, 'dataset_file': dataset_file, 'dataset': dataset}
+    return {'model': model, 'cfg': cfg, 'dataset_file': dataset_file, 'dataset': dataset, 'temp_dir': temp_dir}
 
 
 def export_example_io_data(res, inputs, path_example_io):
@@ -484,8 +527,9 @@ def export_bnode(cfg_export: onnx_export_config_class):
     # load model
     res = load_trained_latent_ode(cfg_export)
     model, cfg, dataset_file, dataset = res['model'], res['cfg'], res['dataset_file'], res['dataset']
+    temp_dir = res['temp_dir']
     model.eval()
-
+    
     # determine output dir
     dir_output = Path(cfg_export.output_dir) if cfg_export.output_dir is not None else filepaths.dir_current_hydra_output()
 
@@ -685,6 +729,21 @@ def export_bnode(cfg_export: onnx_export_config_class):
     # export also example io
     path_example_io = dir_output / f'decoder_example_io.hdf5'
     export_example_io_data(res, inputs, path_example_io)
+    
+    if temp_dir is not None:
+        logging.info(f'Cleaning up temporary directory: {temp_dir}')
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        logging.info('Temporary directory cleaned up successfully')
+    
+    # copy the current hydra folder to the output for reference
+    dir_hydra_current = filepaths.dir_current_hydra_output()
+    dir_hydra_output_copy = dir_output / 'hydra'
+    if dir_hydra_current.is_dir() and (dir_hydra_output_copy.absolute() != dir_hydra_current.absolute()):
+        logging.info(f'Copying current Hydra directory {dir_hydra_current} to output {dir_hydra_output_copy}')
+        shutil.copytree(dir_hydra_current, dir_hydra_output_copy, dirs_exist_ok=True)
+        logging.info('Hydra directory copied successfully')
+    else: 
+       Warning(f'Current Hydra directory {dir_hydra_current} not found and could not be copied.')
 
 
 def main():

@@ -57,6 +57,11 @@ torch =[
     "torchvision>=0.22.0",
 ]
 
+plotly =[
+    "dash>=3.3.0",
+    "plotly>=6.4.0",
+]
+
 [project.optional-dependencies]
 # torch is defined here and in dependency gropus
 torch =[
@@ -69,7 +74,7 @@ torch =[
 ]
 
 [tool.uv]
-default-groups = ["dev", "torch"]
+default-groups = ["dev", "torch", "plotly"]
 
 [project.scripts]
 # this is a possibility to define commands
@@ -80,6 +85,7 @@ data_preperation = "bnode_core.data_generation.data_preperation:main"
 visualize_data = "bnode_core.data_generation.utils.visualize_data:main"
 trainer = "bnode_core.ode.trainer:main"
 bnode_export = "bnode_core.ode.bnode.bnode_export:main"
+plot_gui = "bnode_core.plots.timeseries.plot_gui:main"
 
 [build-system]
 requires = ["uv_build>=0.8.17,<0.9.0"]

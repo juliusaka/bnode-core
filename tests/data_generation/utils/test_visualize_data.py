@@ -57,8 +57,8 @@ def test_main_creates_plots(tmp_path, monkeypatch):
 
     outdir = Path('./tests/_results/visualization/')
     
-    dataset_path = Path(r"resources\data\surrogate-test-data\data\raw_data\StratifiedHeatFlowModel_v3_c-RROCS\StratifiedHeatFlowModel_v3_c-RROCS_raw_data.hdf5").absolute()
-    config_path = Path(r"resources\data\surrogate-test-data\data\raw_data\StratifiedHeatFlowModel_v3_c-RROCS\StratifiedHeatFlowModel_v3_c-RROCS_RawData_config.yaml").absolute()
+    dataset_path = Path(r"resources/data/surrogate-test-data/data/raw_data/StratifiedHeatFlowModel_v3_c-RROCS/StratifiedHeatFlowModel_v3_c-RROCS_raw_data.hdf5").absolute()
+    config_path = Path(r"resources/data/surrogate-test-data/data/raw_data/StratifiedHeatFlowModel_v3_c-RROCS/StratifiedHeatFlowModel_v3_c-RROCS_RawData_config.yaml").absolute()
 
     # Mock sys.argv for argparse
     import sys

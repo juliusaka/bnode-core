@@ -66,6 +66,7 @@ nav:
       - bnode_core/nn/nn_utils.md
       - bnode_core/nn/vae.md
     - bnode_core/filepaths.md
+    - bnode_core/config.md
 
   - Config:
     - bnode_core/config.md
