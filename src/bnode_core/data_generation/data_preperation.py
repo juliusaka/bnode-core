@@ -415,8 +415,8 @@ def run_data_preperation(cfg: data_gen_config):
             _remove_runs.append(np.nonzero(idx)[0])
     
     # remove runs from raw data
-    if len(_remove_runs) > 0:
-        _remove_runs = np.concatenate(_remove_runs)
+    if len(_remove_runs) > 0 or len(remove_runs) > 0:
+        _remove_runs = np.concatenate(_remove_runs) if len(_remove_runs) > 0 else np.array([], dtype=int)
         remove_runs = np.unique(np.concatenate([remove_runs, _remove_runs]))
         logging.info('Found {} runs to remove from raw data: {}'.format(len(remove_runs), remove_runs))
         remove_runs = np.sort(remove_runs)
