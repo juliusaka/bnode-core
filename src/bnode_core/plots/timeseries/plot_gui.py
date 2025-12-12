@@ -152,7 +152,7 @@ def _get_parameters(f: h5py.File, context: str, sidx: int) -> Tuple[np.ndarray, 
     return names, params, params_norm
 
 
-def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3):
+def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
     if not _HAS_DASH:
         raise RuntimeError("Dash is required for the Plotly GUI. Please install with `pip install dash`. ")
 
@@ -347,13 +347,14 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3):
         return fig, pfig
 
     # Run app
-    app.run(debug=False)
+    app.run(debug=False, port=port)
 
 
 # add parser for file path
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_path', type=str, help='path to dataset', default=None)
 parser.add_argument('-n', '--n_trajectory_rows', type=int, help='number of trajectory rows to plot', default=3)
+parser.add_argument('-p', '--port', type=int, help='port for the plotly server', default=8050)
 parser.add_argument('--no-browser', action='store_true', help='Do not auto-open a browser (headless server).')
 
 
@@ -368,7 +369,7 @@ def main():
         if not _path.exists():
             raise FileNotFoundError(f"The dataset path {args.dataset_path} can not be opened.")
     print(f'Opening dataset at {_path}')
-    plot_gui(_path, n_trajectory_rows=args.n_trajectory_rows)
+    plot_gui(_path, n_trajectory_rows=args.n_trajectory_rows, port=args.port)
 
 
 if __name__ == '__main__':

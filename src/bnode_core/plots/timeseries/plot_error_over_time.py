@@ -24,7 +24,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-import filepaths
 from plot_dataset import calculate_normalization_stats
 from plot_error_histogram import (
     calculate_variable_errors,
@@ -233,7 +232,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     try:
-        with h5py.File(filepaths.filepath_from_local_or_ml_artifacts(args.dataset_path), 'r') as f:
+        with h5py.File(args.dataset_path, 'r') as f:
             out_dir = Path(args.output_folder)
             out_dir.mkdir(parents=True, exist_ok=True)
             generate_error_over_time(

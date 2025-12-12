@@ -22,8 +22,6 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 
-import filepaths
-
 from common import save_figure
 from plot_dataset import (
     calculate_scaling_dict,
@@ -199,7 +197,7 @@ def generate_ppt(
         error_vectors = error_vectors[: len(all_variable_names)]
         logging.info(f"Test mode: limiting to {len(all_variable_names)} variables")
 
-    prs = Presentation("utils/plots/template.pptx") # TODO: add an empty template file and a CLI option to use a custom template
+    prs = Presentation("template.pptx") # TODO: add an empty template file and a CLI option to use a custom template
     prs.core_properties.title = f"Error Analysis - {context_key}"
 
     # Slide geometry in inches
@@ -360,7 +358,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     try:
-        with h5py.File(filepaths.filepath_from_local_or_ml_artifacts(args.dataset_path), 'r') as f:
+        with h5py.File(args.dataset_path, 'r') as f:
             generate_ppt(
                 f,
                 args.context,
