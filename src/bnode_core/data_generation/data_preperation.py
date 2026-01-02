@@ -528,6 +528,28 @@ def run_data_preperation(cfg: data_gen_config):
     creation_date = datetime.now()
     temp_raw_data.attrs['creation_date'] = str(creation_date)
 
+    # add normalization statistics to datasets
+    logging.info('Calculating normalization statistics and adding it to temporary raw data file attributes.')
+    temp_raw_data.create_group('normalization')
+    for key in ['states', 'states_der', 'controls', 'outputs', 'parameters']:
+        if key in temp_raw_data.keys():
+            data = temp_raw_data[key][:]
+            if key == 'parameters':
+                # parameters are not time-series, only calculate mean and std over axis 0
+                mean = np.mean(data, axis=0)
+                std = np.std(data, axis=0)
+            else:
+                mean = np.mean(data, axis=(0,2))
+                std = np.std(data, axis=(0,2))
+            temp_raw_data['normalization'].create_group(key)
+            temp_raw_data['normalization'][key].create_dataset('mean', data=mean)
+            temp_raw_data['normalization'][key].create_dataset('std', data=std)
+            temp_raw_data['normalization'][key].create_dataset('min', data=np.min(data, axis=(0,2)) if key != 'parameters' else np.min(data, axis=0))
+            temp_raw_data['normalization'][key].create_dataset('max', data=np.max(data, axis=(0,2)) if key != 'parameters' else np.max(data, axis=0))
+            logging.info('Added normalization statistics for {} to temporary raw data file.'.format(key))
+        else:
+            logging.info('No {} in raw data. Skipping normalization statistics for {}.'.format(key, key))
+
     _reached_max_samples = False
     # sample dataset sizes and save datasets
     for n_samples_dataset in cfg.pModel.dataset_prep.n_samples:
@@ -547,6 +569,9 @@ def run_data_preperation(cfg: data_gen_config):
                 if n_samples_dataset > raw_data_n_samples:
                     raise ValueError('n_samples_dataset must be smaller than n_samples in raw data. Reaching this line should not happen.')
                 dataset_file.create_dataset(key + '_names', data=temp_raw_data[key + '_names'])
+                for _key2 in temp_raw_data['normalization'][key].keys():
+                    dataset_file.create_dataset('normalization/' + key + '/' + _key2, data=temp_raw_data['normalization'][key][_key2])
+                    
                 # get idx
                 train_idx_stop = int((n_samples_dataset/raw_data_n_samples) * validation_idx_start_total)
                 if not train_idx_stop > 0:

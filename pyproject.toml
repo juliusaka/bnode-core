@@ -99,4 +99,5 @@ omit = ["tests/*"]
 
 [tool.pytest.ini_options]
 # this enables pytest to automatically use all available cores.
-addopts = "-n auto"
+# loadscope ensures tests in the same scope (file/class) run sequentially, respecting dependencies
+addopts = "-n auto --dist loadscope"
