@@ -230,6 +230,7 @@ class RawDataClass:
             if info.data['raw_data_from_external_source'] == False:
                 raise ValueError('fmuPath must be set if raw_data_from_external_source is False')
         else:
+            v = v.replace('\\', '/')  # normalize path for windows users
             path = Path(v)
             if path.suffix != '.fmu':
                 raise ValueError('fmuPath must be a .fmu file')
