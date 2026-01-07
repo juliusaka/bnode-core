@@ -685,6 +685,7 @@ def data_generation(cfg: data_gen_config,
                                                 future.release()
                                                 futures.remove(future)
                                                 _n_timedout += 1
+                                                _n_finished += 1
                                                 raw_data['logs/timedout'][key] = True
                     if _restart_worker:
                         _workers_to_restart.append(worker)
