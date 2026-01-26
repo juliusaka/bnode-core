@@ -444,7 +444,9 @@ def run_data_preperation(cfg: data_gen_config):
             return np.arange(len(names_list))
         else:
             names_list = np.array(names_list, dtype=str).tolist()
-            return [names_list.index(variable) for variable in chosen_variables]
+            idx_unsorted = [names_list.index(variable) for variable in chosen_variables]
+            idx = np.sort(idx_unsorted)
+            return idx
     
     def select_variables_of_interest(type: str, variables: list, remove: bool = False):
         # type is states, states_der, controls, outputs, parameters
