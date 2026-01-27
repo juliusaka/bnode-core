@@ -1078,6 +1078,9 @@ class train_test_config_class:
     Attributes:
         nn_model (abstract_nn_model_class): Model configuration (network + training) to run.
         dataset_name (str): Name of the dataset configuration to use.
+        dataset_path (str): Alternatively, give path to this dataset.
+        dataset_norm_name (str): Name of the dataset to use for the normalization calculation and the 'testnorm' context.
+        dataset_nrom_path (str): Alternatively, give path to this dataset.
         mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
@@ -1092,6 +1095,8 @@ class train_test_config_class:
     nn_model: abstract_nn_model_class = MISSING
     dataset_path: Optional[str] = None
     dataset_name: Optional[str] = None
+    dataset_norm_path: Optional[str] = None
+    dataset_norm_name: Optional[str] = None
         
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'
@@ -1122,6 +1127,25 @@ class train_test_config_class:
             if not path.exists():
                 raise ValueError(f'dataset_path does not exist: {dataset_path}')
             # Extract filename without extension as dataset_name
+            return path.stem
+        return v
+
+    @field_validator('dataset_norm_path')
+    @classmethod
+    def check_dataset_norm_path_and_name(cls, dataset_norm_path, info: ValidationInfo):
+        if dataset_norm_path is not None and info.data.get('dataset_norm_name') is not None:
+            raise ValueError('Only one of dataset_norm_path or dataset_norm_name can be provided, not both')
+        return dataset_norm_path
+    
+    @field_validator('dataset_norm_name')
+    @classmethod
+    def set_dataset_norm_name_from_path(cls, v, info: ValidationInfo):
+        dataset_norm_path = info.data.get('dataset_norm_path')
+        if dataset_norm_path is not None:
+            path = Path(dataset_norm_path)
+            if not path.exists():
+                raise ValueError(f'dataset_norm_path does not exist: {dataset_norm_path}')
+            # Extract filename without extension as dataset_norm_name
             return path.stem
         return v
 

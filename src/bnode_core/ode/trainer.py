@@ -355,6 +355,12 @@ def train_all_phases(cfg: train_test_config_class):
     # load hdf5 dataset
     hdf5_dataset, _ = load_dataset_and_config(cfg.dataset_name, cfg.dataset_path)
     mlflow.log_param('dataset_name', cfg.dataset_name)
+
+    if cfg.dataset_norm_name is not None or cfg.dataset_norm_path is not None:
+        hdf5_dataset_norm, _ = load_dataset_and_config(cfg.dataset_norm_name, cfg.dataset_norm_path)
+        mlflow.log_param('dataset_norm_name', cfg.dataset_norm_name)
+    else: 
+        hdf5_dataset_norm = None
     
     # collect jobs
     # job_list=[] filled with dict of style: {'skip': bool, 'test': bool, 'train_cfg': cfg, 'pre_train': bool}
@@ -407,10 +413,15 @@ def train_all_phases(cfg: train_test_config_class):
                         datasets = {}
                         for context in ['train', 'test', 'validation', 'common_test']:
                             datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches)
+                        for context in ['testnorm']:
+                            if hdf5_dataset_norm is not None:
+                                datasets[context] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches)
                         _loaded_seq_len = _load_seq_len
                         _reload_dataloaders_required = True
                     else:
                         for context in ['train', 'test', 'validation', 'common_test']:
+                            datasets[context].set_seq_len(_seq_len_batches)
+                        if 'testnorm' in datasets.keys():
                             datasets[context].set_seq_len(_seq_len_batches)
                         _reload_dataloaders_required = True # TODO; check if this is necessary
                     _batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
@@ -425,7 +436,10 @@ def train_all_phases(cfg: train_test_config_class):
                                 del dataloaders[key]
                         # create new
                         dataloaders={}
-                        for context in ['train', 'test', 'validation', 'common_test']:
+                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
+                            if context == 'testnorm' and 'testnorm' not in datasets.keys():
+                                dataloaders[context] = None
+                                continue
                             if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
                                 dataloaders[context] = None
                                 logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
@@ -455,7 +469,12 @@ def train_all_phases(cfg: train_test_config_class):
                     _created_model_this_job = False	
                     # initialize model
                     if _created_model is False:
-                        model = initialize_model(cfg, datasets['train'], hdf5_dataset)
+                        try:
+                            model = initialize_model(cfg, datasets['train'], hdf5_dataset_norm if hdf5_dataset_norm is not None else hdf5_dataset)
+                        except Exception as e:
+                            logging.error('Error during model initialization: {}'.format(e))
+                            logging.error('Maybe dataset and dataset_norm are not compatible?')
+                            raise e
                         _created_model, _created_model_this_job = True, True
                     if cfg.nn_model.training.load_pretrained_model is True and _created_model_this_job is True:
                         _path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_pretrained_model)
@@ -498,9 +517,15 @@ def train_all_phases(cfg: train_test_config_class):
                             logging.info('Adding predictions to dataset')
                             logging.info('copied dataset to file: {}'.format(_path))
                             hdf5_dataset = h5py.File(_path, 'r+')
+                            if dataloaders['testnorm'] is not None:
+                                # copy contents from 'test' to 'testnorm' in hdf5_dataset
+                                hdf5_dataset.create_group('testnorm')
+                                for key in hdf5_dataset_norm['test'].keys():
+                                    data = hdf5_dataset_norm['test'][key][:]
+                                    hdf5_dataset['testnorm'].create_dataset(key, data=data)
                         else:
                             logging.info('Not saving predictions in dataset')
-                        for context in ['train', 'test', 'validation', 'common_test']:
+                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
                             if dataloaders[context] is None:
                                 logging.info('No data for context {} in dataset. Skipping.'.format(context))
                             else:
