@@ -441,6 +441,7 @@ def train_all_phases(cfg: train_test_config_class):
                                 dataloaders[context] = None
                                 continue
                             if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
+                                # TODO: I believe this is never reached
                                 dataloaders[context] = None
                                 logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
                             else:
@@ -460,7 +461,7 @@ def train_all_phases(cfg: train_test_config_class):
                         _created_datasets_and_loaders = True
                         _loaded_batch_size = _batch_size
                         # update seq_len train for this job to the actual seq_len of the dataset
-                        if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (wiht map)
+                        if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (with map)
                             job['train_cfg'].seq_len_train = datasets['train'].seq_len
                         else:
                             job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
