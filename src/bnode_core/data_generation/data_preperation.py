@@ -554,7 +554,7 @@ def run_data_preperation(cfg: data_gen_config):
 
     _reached_max_samples = False
     # sample dataset sizes and save datasets
-    for n_samples_dataset in np.array(cfg.pModel.dataset_prep.n_samples).sort():
+    for n_samples_dataset in np.sort(np.array(cfg.pModel.dataset_prep.n_samples)):
         if _reached_max_samples:
             logging.warning('Reached maximum number of samples in raw data. Skipping further dataset creation.')
             break
