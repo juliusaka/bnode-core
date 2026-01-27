@@ -421,8 +421,9 @@ def train_all_phases(cfg: train_test_config_class):
                     else:
                         for context in ['train', 'test', 'validation', 'common_test']:
                             datasets[context].set_seq_len(_seq_len_batches)
-                        if 'testnorm' in datasets.keys():
-                            datasets[context].set_seq_len(_seq_len_batches)
+                        for context in ['testnorm']:
+                            if hdf5_dataset_norm is not None:
+                                datasets[context].set_seq_len(_seq_len_batches)
                         _reload_dataloaders_required = True # TODO; check if this is necessary
                     _batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
                     _drop_last = True if job['test'] is False else False
