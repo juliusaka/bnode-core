@@ -952,8 +952,8 @@ def run_data_generation(cfg: data_gen_config) -> None:
 
     # copy hydra folder to output folder
     hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
-    logging.info('Copying hydra output folder from {} to {}'.format(hydra_output_dir, dest_dir))
     dest_dir = Path(filepath_raw_data(cfg)).parent / 'hydra'
+    logging.info('Copying hydra output folder from {} to {}'.format(hydra_output_dir, dest_dir))
     if dest_dir.exists():
         shutil.rmtree(dest_dir)
     shutil.copytree(hydra_output_dir, dest_dir)
