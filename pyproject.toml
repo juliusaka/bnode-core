@@ -73,6 +73,11 @@ torch =[
     "torchvision>=0.22.0",
 ]
 
+plotly =[
+    "dash>=3.3.0",
+    "plotly>=6.4.0",
+]
+
 [tool.uv]
 default-groups = ["dev", "torch", "plotly"]
 
