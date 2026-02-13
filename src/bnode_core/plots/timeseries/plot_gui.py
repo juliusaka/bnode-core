@@ -24,17 +24,26 @@ Features:
       to include the selected sample's extrema when they exceed those quantiles.
     - Controls styled in green (solid), truth vs. prediction overlay for states/outputs.
     - Dynamic number of trajectory rows and per-row channel selection.
-    - Parameter bar chart (normalized to train-set ranges when available) with values shown.
-    - Supports contexts: "train" and/or "common_test".
+        - Parameter bar chart (normalized to train-set ranges when available) with values shown.
+        - Supports context-based datasets ("train" and/or "common_test") as well as
+            "raw" datasets where arrays live at the file root (no context keys, no *_hat
+            predictions).
 
-Expected dataset structure:
+Expected dataset structure (context-based):
     - time: 1D array of length T (seconds; auto-shown in hours if very large magnitudes).
     - contexts: "train" and/or "common_test"
         - states, outputs, controls: float arrays shaped (N, C, T)
         - states_hat, outputs_hat: optional predictions shaped (N, C, T)
         - parameters: optional (N, P)
-    - *_names: optional per-channel names datasets (e.g., states_names, outputs_names, controls_names)
+    - *_names: optional per-channel names datasets at the file root
+      (e.g., states_names, outputs_names, controls_names)
     - parameters_names: optional per-parameter names
+
+Expected dataset structure (raw dataset, e.g. consolidated reference data):
+    - time: 1D array of length T
+    - states, outputs, controls: float arrays shaped (N, C, T) at the file root
+    - parameters: optional (N, P) at the file root
+    - *_names and parameters_names as above
 
 Notes:
     - Requires Dash; install bnode-core using the bnode-core[plotly] option.
@@ -73,36 +82,64 @@ def _available_contexts(f: h5py.File) -> List[str]:
     return [c for c in ['train', 'common_test'] if c in f]
 
 
-def _build_channel_options(f: h5py.File) -> List[Tuple[str, Tuple[str, int]]]:
-    options = []
+def _build_channel_options(f: h5py.File, is_raw: bool, primary_context: str) -> List[Tuple[str, Tuple[str, int]]]:
+    """Build (label, (dtype, channel_index)) options for trajectory selection.
+
+    For context-based datasets we inspect ``primary_context`` (usually "train").
+    For raw datasets we inspect top-level arrays at the file root.
+    """
+
+    options: List[Tuple[str, Tuple[str, int]]] = []
+
     for dtype in ['states', 'outputs', 'controls']:
-        if 'train' in f and dtype in f['train']:
+        if is_raw:
+            if dtype not in f:
+                continue
             names_key = f"{dtype}_names"
-            names = np.array(f[names_key][:], dtype='str') if names_key in f else np.array([f"{dtype}_{i}" for i in range(f['train'][dtype].shape[1])])
-            for ch in range(len(names)):
-                label = f"{dtype}:{names[ch]}"
-                options.append((label, (dtype, ch)))
+            if names_key in f:
+                names = np.array(f[names_key][:], dtype='str')
+            else:
+                names = np.array([f"{dtype}_{i}" for i in range(f[dtype].shape[1])])
+        else:
+            if primary_context not in f or dtype not in f[primary_context]:
+                continue
+            names_key = f"{dtype}_names"
+            if names_key in f:
+                names = np.array(f[names_key][:], dtype='str')
+            else:
+                names = np.array([f"{dtype}_{i}" for i in range(f[primary_context][dtype].shape[1])])
+
+        for ch in range(len(names)):
+            label = f"{dtype}:{names[ch]}"
+            options.append((label, (dtype, ch)))
+
     return options
 
 
 def _has_hat(f: h5py.File, context: str, dtype: str) -> bool:
     key = f"{dtype}_hat"
+    # Raw datasets (no context groups) do not have *_hat predictions
+    if context not in f:
+        return False
     return key in f[context]
 
 
 def _get_sample_count(f: h5py.File, context: str) -> int:
     # prefer states if available; otherwise outputs; otherwise controls
+    src = f[context] if context in f else f
     for dtype in ['states', 'outputs', 'controls']:
-        if dtype in f[context]:
-            return f[context][dtype].shape[0]
+        if dtype in src:
+            return src[dtype].shape[0]
     return 0
 
 
 def _get_series(f: h5py.File, context: str, dtype: str, ch: int, sidx: int) -> Tuple[np.ndarray, np.ndarray]:
-    y = f[context][dtype][sidx, ch, :]
+    src = f[context] if context in f else f
+    y = src[dtype][sidx, ch, :]
     y_hat = None
     if dtype != 'controls' and _has_hat(f, context, dtype):
-        y_hat = f[context][f"{dtype}_hat"][sidx, ch, :]
+        src_hat = f[context]
+        y_hat = src_hat[f"{dtype}_hat"][sidx, ch, :]
     return y, y_hat
 
 
@@ -112,10 +149,11 @@ def _quantile_bounds(f: h5py.File, context: str, dtype: str, ch: int, lower_q: f
     We flatten (samples, time) for the given context/dtype/channel to get robust bounds.
     If dtype not present, return (None, None).
     """
-    if dtype not in f[context]:
+    src = f[context] if context in f else f
+    if dtype not in src:
         return None, None
     # shape: (samples, channels, time) -> select channel then flatten samples & time
-    arr = f[context][dtype][:, ch, :].reshape(-1)
+    arr = src[dtype][:, ch, :].reshape(-1)
     low = float(np.percentile(arr, lower_q))
     high = float(np.percentile(arr, upper_q))
     if not np.isfinite(low) or not np.isfinite(high):
@@ -137,10 +175,11 @@ def _get_label(f: h5py.File, dtype: str, ch: int) -> str:
 
 
 def _get_parameters(f: h5py.File, context: str, sidx: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if 'parameters' not in f[context]:
+    src = f[context] if context in f else f
+    if 'parameters' not in src:
         return None, None, None
-    names = np.array(f['parameters_names'][:], dtype='str') if 'parameters_names' in f else np.array([f"p{i}" for i in range(f[context]['parameters'].shape[1])])
-    params = f[context]['parameters'][sidx, :]
+    names = np.array(f['parameters_names'][:], dtype='str') if 'parameters_names' in f else np.array([f"p{i}" for i in range(src['parameters'].shape[1])])
+    params = src['parameters'][sidx, :]
     # normalization based on train set if available
     if 'train' in f and 'parameters' in f['train']:
         mins = f['train']['parameters'][:].min(axis=0)
@@ -159,9 +198,27 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
     f = h5py.File(dataset_path, 'r')
     time, time_label = _detect_time_axis(f)
     contexts = _available_contexts(f)
+
+    # Detect whether this is a context-based dataset or a raw (root-level) dataset
+    is_raw = False
     if not contexts:
-        raise ValueError("No supported contexts found in dataset (expected 'train' and/or 'common_test').")
-    channel_options = _build_channel_options(f)
+        # Raw dataset: states/outputs/controls at file root, no *_hat predictions
+        if any(dtype in f for dtype in ['states', 'outputs', 'controls']):
+            is_raw = True
+            contexts = ['raw']
+        else:
+            raise ValueError(
+                "No supported contexts found in dataset (expected 'train' and/or 'common_test') "
+                "and no top-level 'states'/'outputs'/'controls' for raw dataset."
+            )
+
+    # Primary context used to build default channel options (train if available)
+    if is_raw:
+        primary_context = 'raw'
+    else:
+        primary_context = 'train' if 'train' in contexts else contexts[0]
+
+    channel_options = _build_channel_options(f, is_raw=is_raw, primary_context=primary_context)
 
     # Pre-create dropdowns up to a reasonable maximum; user can choose how many plots to display
     MAX_ROWS = min(8, max(1, len(channel_options)))
