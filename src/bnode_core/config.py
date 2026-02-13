@@ -1080,7 +1080,9 @@ class train_test_config_class:
         dataset_name (str): Name of the dataset configuration to use.
         dataset_path (str): Alternatively, give path to this dataset.
         dataset_norm_name (str): Name of the dataset to use for the normalization calculation and the 'testnorm' context.
-        dataset_nrom_path (str): Alternatively, give path to this dataset.
+        dataset_norm_path (str): Alternatively, give path to this dataset.
+        dataset_ref_name (str): Name of the dataset to use for reference trajectories in evaluation contexts.
+        dataset_ref_path (str): Alternatively, give path to this dataset.
         mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
@@ -1097,6 +1099,8 @@ class train_test_config_class:
     dataset_name: Optional[str] = None
     dataset_norm_path: Optional[str] = None
     dataset_norm_name: Optional[str] = None
+    dataset_ref_path: Optional[str] = None
+    dataset_ref_name: Optional[str] = None
         
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'

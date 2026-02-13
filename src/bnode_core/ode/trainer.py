@@ -362,6 +362,12 @@ def train_all_phases(cfg: train_test_config_class):
     else: 
         hdf5_dataset_norm = None
     
+    if cfg.dataset_ref_name is not None or cfg.dataset_ref_path is not None:
+        hdf5_dataset_ref, _ = load_dataset_and_config(cfg.dataset_ref_name, cfg.dataset_ref_path)
+        mlflow.log_param('dataset_ref_name', cfg.dataset_ref_name)
+    else:
+        hdf5_dataset_ref = None
+    
     # collect jobs
     # job_list=[] filled with dict of style: {'skip': bool, 'test': bool, 'train_cfg': cfg, 'pre_train': bool}
     job_list = []
@@ -416,6 +422,9 @@ def train_all_phases(cfg: train_test_config_class):
                         for context in ['testnorm']:
                             if hdf5_dataset_norm is not None:
                                 datasets[context] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches)
+                        if hdf5_dataset_ref is not None:
+                            for context in ['ref']: # the norm dataset should always have full length
+                                datasets[context] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
                         _loaded_seq_len = _load_seq_len
                         _reload_dataloaders_required = True
                     else:
@@ -459,6 +468,10 @@ def train_all_phases(cfg: train_test_config_class):
                                 dataloaders[context] = torch.utils.data.DataLoader(datasets[context], batch_size=_batch_size_here, shuffle=_shuffle,
                                                                                     num_workers = _num_workers, persistent_workers=True, 
                                                                                     pin_memory=True, drop_last=_drop_last, prefetch_factor=cfg.prefetch_factor)
+                        if datasets['ref'] is not None:
+                            dataloaders['ref'] = torch.utils.data.DataLoader(datasets['ref'], batch_size=len(datasets['ref']), shuffle=False,
+                                                                            num_workers = 1, persistent_workers=True, 
+                                                                            pin_memory=True, drop_last=False, prefetch_factor=cfg.prefetch_factor)
                         _created_datasets_and_loaders = True
                         _loaded_batch_size = _batch_size
                         # update seq_len train for this job to the actual seq_len of the dataset
@@ -525,9 +538,15 @@ def train_all_phases(cfg: train_test_config_class):
                                 for key in hdf5_dataset_norm['test'].keys():
                                     data = hdf5_dataset_norm['test'][key][:]
                                     hdf5_dataset['testnorm'].create_dataset(key, data=data)
+                            if dataloaders['ref'] is not None:
+                                # copy contents from 'test' to 'ref' in hdf5_dataset
+                                hdf5_dataset.create_group('ref')
+                                for key in hdf5_dataset_ref['test'].keys():
+                                    data = hdf5_dataset_ref['test'][key][:]
+                                    hdf5_dataset['ref'].create_dataset(key, data=data)
                         else:
                             logging.info('Not saving predictions in dataset')
-                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
+                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
                             if dataloaders[context] is None:
                                 logging.info('No data for context {} in dataset. Skipping.'.format(context))
                             else:
@@ -910,6 +929,14 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation', pre_train), step=epoch)
                 ret_vals_test = test_or_validate_one_epoch(model, dataloaders['test'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
+                if dataloaders['ref'] is not None:
+                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch:
+                        ret_vals_ref = test_or_validate_one_epoch(model, dataloaders['ref'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
+                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train), step=epoch)
+                if dataloaders['testnorm'] is not None:
+                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch:
+                        ret_vals_testnorm = test_or_validate_one_epoch(model, dataloaders['testnorm'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
+                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train), step=epoch)
                 mlflow.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
                 mlflow.log_metric('Stable_epochs', _stable_epochs, step=epoch)
                 _progress_string = model.get_progress_string(ret_vals_train, ret_vals_validation, ret_vals_test, pre_train)
@@ -918,6 +945,10 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                     mlflow.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
                     mlflow.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
                     mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                    if dataloaders['ref'] is not None:
+                        mlflow.log_metrics(append_context_to_dict_keys(ret_vals_ref, 'ref_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                    if dataloaders['testnorm'] is not None:
+                        mlflow.log_metrics(append_context_to_dict_keys(ret_vals_testnorm, 'testnorm_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
                     break
                 _batches_this_phase = (epoch - epoch_0 + 1)* _batches_per_epoch
                 # set early stopping active if seq_len_increase_in_batches is reached through flag and reset early stopping counter
