@@ -227,7 +227,8 @@ def filepath_raw_data(cfg: data_gen_config) -> Path:
         Path: Path to the raw-data file.
     """
     if cfg.pModel.RawData.raw_data_from_external_source:
-        file = dir_raw_data(cfg) / cfg.pModel.RawData.raw_data_path
+        # file = dir_raw_data(cfg) / cfg.pModel.RawData.raw_data_path
+        file = Path(cfg.pModel.RawData.raw_data_path)
     else:
         file = dir_raw_data(cfg) / (raw_data_name(cfg) + '_raw_data.hdf5')
     return file
