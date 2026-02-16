@@ -812,6 +812,7 @@ class base_neural_ode_training_settings_class():
         pre_trained_model_seq_len (Optional[int]): Sequence length of the pretrained checkpoint to load.
         path_pretrained_model (Optional[str]): Path to pretrained weights. Can also be copied from mlflow web UI.
         path_trained_model (Optional[str]): Path to trained model weights for testing. Can also be copied from mlflow web UI.
+        ref_and_testnorm_every_n_epochs (int): Frequency (in epochs) to run reference and testnorm evaluations during training.
         batch_size_test (int): Batch size to use during testing.
         initialization_type (Optional[str]): Weight initialization scheme for NN. Options: 'xavier', none.
         initialization_type_ode (Optional[str]): Initialization scheme for ODE-specific components. Options: 'xavier', none.
@@ -830,6 +831,7 @@ class base_neural_ode_training_settings_class():
     path_pretrained_model: Optional[str] = None
     path_trained_model: Optional[str] = None 
 
+    ref_and_testnorm_every_n_epochs: int = 32
     batch_size_test: int = 48
     initialization_type: Optional[str] = None
     initialization_type_ode: Optional[str] = None
@@ -955,6 +957,7 @@ class base_latent_ode_training_settings_class:
         pre_trained_model_seq_len (Optional[int]): Sequence length used by the pretrained checkpoint.
         path_pretrained_model (Optional[str]): Path to pretrained model. Can also be copied from mlflow web UI.
         path_trained_model (Optional[str]): Path to trained model for testing. Can also be copied from mlflow web UI.
+        ref_and_testnorm_every_n_epochs (int): Frequency (in epochs) to run reference and testnorm evaluations during training.
         batch_size_test (int): Test-time batch size.
         initialization_type (Optional[str]): Weight initialization scheme for NN. Options: 'xavier', none.
         initialization_type_ode (Optional[str]): Initialization scheme for ODE parts. Options: 'xavier', 'move_eigvals_matrix' (only for linear ode), 'move_eigvals_net', none.
@@ -975,6 +978,7 @@ class base_latent_ode_training_settings_class:
     path_pretrained_model: Optional[str] = None
     path_trained_model: Optional[str] = None 
 
+    ref_and_testnorm_every_n_epochs: int = 32
     batch_size_test: int = 48
     initialization_type: Optional[str] = None
     initialization_type_ode: Optional[str] = None

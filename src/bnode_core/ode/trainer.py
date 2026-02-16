@@ -940,14 +940,14 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                 ret_vals_test = test_or_validate_one_epoch(model, dataloaders['test'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
                 if dataloaders['ref'] is not None:
-                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
+                    if epoch % train_cfg.ref_and_testnorm_every_n_epochs == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
                         logging.info('Testing ref dataset')
                         ret_vals_ref = test_or_validate_one_epoch(model, dataloaders['ref'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
                         _res = append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train)
                         logging.info(_res)
                         mlflow.log_metrics(_res, step=epoch)
                 if dataloaders['testnorm'] is not None:
-                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
+                    if epoch % train_cfg.ref_and_testnorm_every_n_epochs == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
                         logging.info('Testing testnorm dataset')
                         ret_vals_testnorm = test_or_validate_one_epoch(model, dataloaders['testnorm'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
                         _res = append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train)
