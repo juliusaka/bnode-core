@@ -523,35 +523,49 @@ def train_all_phases(cfg: train_test_config_class):
                             logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx+1]['train_cfg'].seq_len_epoch_start))
                     else:
                         logging.info('Testing model')
-                        hdf5_dataset.close()
-                        # copy dataset to hydra output directory
-                        _save_predictions = cfg.nn_model.training.save_predictions_in_dataset
-                        if _save_predictions is True:
-                            _path = filepaths.filepath_dataset_current_hydra_output()
-                            shutil.copy(filepaths.filepath_dataset_from_config(cfg.dataset_name, cfg.dataset_path), _path)
-                            logging.info('Adding predictions to dataset')
-                            logging.info('copied dataset to file: {}'.format(_path))
-                            hdf5_dataset = h5py.File(_path, 'r+')
-                            if dataloaders['testnorm'] is not None:
-                                # copy contents from 'test' to 'testnorm' in hdf5_dataset
-                                hdf5_dataset.create_group('testnorm')
-                                for key in hdf5_dataset_norm['test'].keys():
-                                    data = hdf5_dataset_norm['test'][key][:]
-                                    hdf5_dataset['testnorm'].create_dataset(key, data=data)
-                            if dataloaders['ref'] is not None:
-                                # copy contents from 'test' to 'ref' in hdf5_dataset
-                                hdf5_dataset.create_group('ref')
-                                for key in hdf5_dataset_ref['test'].keys():
-                                    data = hdf5_dataset_ref['test'][key][:]
-                                    hdf5_dataset['ref'].create_dataset(key, data=data)
-                        else:
-                            logging.info('Not saving predictions in dataset')
                         for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
                             if dataloaders[context] is None:
                                 logging.info('No data for context {} in dataset. Skipping.'.format(context))
                             else:
                                 logging.info('Testing of dataset for context {}'.format(context))
+                                # determine if predictions should be saved for this context according to config
+                                _save_predictions = cfg.nn_model.training.save_predictions_in_dataset
+                                _save_predictions = _save_predictions and context in cfg.nn_model.training.save_predictions_for
+                                _save_predictions = _save_predictions or (context in cfg.nn_model.training.test_save_internal_variables_for)
+
                                 if _save_predictions is True:
+                                    if not filepaths.filepath_dataset_current_hydra_output().exists():
+                                        logging.warning('Creating dataset file: {}'.format(filepaths.filepath_dataset_current_hydra_output()))
+                                        hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'w')
+
+                                    logging.info('Copying dataset for context {} to hdf5 file for testing.'.format(context))
+                                    
+                                    if context in ['train', 'test', 'validation', 'common_test']:
+                                        # copy contents from dataloader dataset to hdf5_dataset_pred
+                                        hdf5_dataset_pred.create_group(context)
+                                        for key in hdf5_dataset[context].keys():
+                                            data = hdf5_dataset[context][key][:]
+                                            hdf5_dataset_pred[context].create_dataset(key, data=data)
+                                        hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset['time'][:])
+                                    elif context in ['testnorm']:
+                                        # copy contents from dataloader dataset to hdf5_dataset_pred
+                                        hdf5_dataset_pred.create_group(context)
+                                        for key in hdf5_dataset_norm['test'].keys():
+                                            data = hdf5_dataset_norm['test'][key][:]
+                                            hdf5_dataset_pred[context].create_dataset(key, data=data)
+                                        hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset_norm['time'][:])
+                                    elif context in ['ref']:
+                                        # copy contents from dataloader dataset to hdf5_dataset_pred
+                                        hdf5_dataset_pred.create_group(context)
+                                        for key in hdf5_dataset_ref['test'].keys():
+                                            data = hdf5_dataset_ref['test'][key][:]
+                                            hdf5_dataset_pred[context].create_dataset(key, data=data)
+                                        hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset_ref['time'][:])
+                                    else:
+                                        raise ValueError('Context {} not recognized for copying dataset to hdf5 file for testing.'.format(context))
+
+                                    logging.info('Adding model predictions to hdf5 file for context {}.'.format(context))
+
                                     # Stream results batch-by-batch to HDF5 to reduce RAM usage
                                     total_len = len(dataloaders[context].dataset)
                                     data_iter = iter(dataloaders[context])
@@ -575,17 +589,13 @@ def train_all_phases(cfg: train_test_config_class):
                                         if not created_dsets:
                                             # Decide which keys to save
                                             for key in model_outputs_batch.keys():
-                                                if cfg.nn_model.training.test_save_internal_variables is True:
+                                                if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
                                                     _save = True
+                                                elif cfg.nn_model.training.test_save_internal_variables is True and context in cfg.nn_model.training.test_save_internal_variables_for:
+                                                    _save = True
+                                                    logging.info('Saving internal variable {} for context {} according to config.'.format(key, context))
                                                 else:
-                                                    if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
-                                                        _save = True
-                                                    elif cfg.nn_model.training.test_save_internal_variables_for == context:
-                                                        _save = True
-                                                        logging.info('Saving internal variable {} as test_save_internal_variables_for context is {}'.format(key, context))
-                                                    else:
-                                                        _save = False
-                                                        logging.info('Not saving internal variable {} as test_save_no_internal_variables is True'.format(key))
+                                                    _save = False
                                                 if _save:
                                                     keys_to_save.append(key)
                                             # Create HDF5 datasets per key with full size on first dimension
@@ -593,13 +603,13 @@ def train_all_phases(cfg: train_test_config_class):
                                                 arr = model_outputs_batch[key]
                                                 shape_rest = arr.shape[1:]
                                                 dset_shape = (total_len,) + shape_rest
-                                                hdf5_dataset.create_dataset(context + '/' + key, shape=dset_shape, dtype=arr.dtype)
+                                                hdf5_dataset_pred.create_dataset(context + '/' + key, shape=dset_shape, dtype=arr.dtype)
                                             created_dsets = True
                                         # Write this batch to HDF5
                                         Batch = next(iter(model_outputs_batch.values())).shape[0] if len(model_outputs_batch) > 0 else 0
                                         for key in keys_to_save:
                                             arr = model_outputs_batch[key]
-                                            hdf5_dataset[context + '/' + key][write_offset:write_offset + arr.shape[0], ...] = arr
+                                            hdf5_dataset_pred[context + '/' + key][write_offset:write_offset + arr.shape[0], ...] = arr
                                         write_offset += Batch
                                         # Accumulate metrics for averaging later (match old np.mean over batches)
                                         if n_batches == 0:
@@ -620,9 +630,9 @@ def train_all_phases(cfg: train_test_config_class):
                                 # save loss function values
                                 if _save_predictions is True:
                                     for key, value in ret_vals.items():
-                                        hdf5_dataset.create_dataset(context+'/'+key, data=value)
+                                        hdf5_dataset_pred.create_dataset(context+'/'+key, data=value)
                         if _save_predictions is True:
-                            hdf5_dataset.close()
+                            hdf5_dataset_pred.close()
                             # save this file
                             shutil.copy(Path(__file__), filepaths.dir_current_hydra_output())
                             logging.info('copied current trainer.py: {} \nto: \n{}'.format(Path(__file__), filepaths.dir_current_hydra_output()))
@@ -930,13 +940,19 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                 ret_vals_test = test_or_validate_one_epoch(model, dataloaders['test'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
                 if dataloaders['ref'] is not None:
-                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch:
+                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
+                        logging.info('Testing ref dataset')
                         ret_vals_ref = test_or_validate_one_epoch(model, dataloaders['ref'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
-                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train), step=epoch)
+                        _res = append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train)
+                        logging.info(_res)
+                        mlflow.log_metrics(_res, step=epoch)
                 if dataloaders['testnorm'] is not None:
-                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch:
+                    if epoch % 16 == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
+                        logging.info('Testing testnorm dataset')
                         ret_vals_testnorm = test_or_validate_one_epoch(model, dataloaders['testnorm'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
-                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train), step=epoch)
+                        _res = append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train)
+                        logging.info(_res)
+                        mlflow.log_metrics(_res, step=epoch)
                 mlflow.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
                 mlflow.log_metric('Stable_epochs', _stable_epochs, step=epoch)
                 _progress_string = model.get_progress_string(ret_vals_train, ret_vals_validation, ret_vals_test, pre_train)

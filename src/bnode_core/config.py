@@ -802,10 +802,13 @@ class base_neural_ode_training_settings_class():
         pre_train (bool): If True, run a pretraining stage before main training.
         load_pretrained_model (bool): Load a pretrained model before training.
         load_trained_model_for_test (bool): Load a fully trained model and run testing only.
-        save_predictions_in_dataset (bool): Save predictions back into the dataset after testing.
-        test (bool): Enable test pass after training.
-        test_save_internal_variables (bool): Save internal variables to dataset during testing.
-        test_save_internal_variables_for (str): Save internal variables for this dataset split during testing. (e.g., 'common_test')
+        save_predictions_in_dataset (bool): If True, enable saving predictions back into the dataset during testing.
+        save_predictions_for (Optional[List[str]]): Dataset contexts for which predictions are saved when
+            save_predictions_in_dataset is True. Typical entries are
+            ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref'].
+        test_save_internal_variables (bool): Store internal variables during test for analysis.
+        test_save_internal_variables_for (Optional[List[str]]): Dataset contexts for which internal
+            variables are stored during testing. Uses the same context labels as save_predictions_for.
         pre_trained_model_seq_len (Optional[int]): Sequence length of the pretrained checkpoint to load.
         path_pretrained_model (Optional[str]): Path to pretrained weights. Can also be copied from mlflow web UI.
         path_trained_model (Optional[str]): Path to trained model weights for testing. Can also be copied from mlflow web UI.
@@ -820,9 +823,9 @@ class base_neural_ode_training_settings_class():
     load_pretrained_model: bool = False
     load_trained_model_for_test: bool = False
     save_predictions_in_dataset: bool = True
-    test: bool = True
+    save_predictions_for: Optional[List[str]] = field(default_factory=lambda: ['test']) # contexts: 'train', 'test', 'validation', 'common_test', 'testnorm', 'ref'
     test_save_internal_variables: bool = False
-    test_save_internal_variables_for: str = 'common_test'
+    test_save_internal_variables_for: Optional[List[str]] = field(default_factory=lambda: ['test'])
     pre_trained_model_seq_len: Optional[int] = None
     path_pretrained_model: Optional[str] = None
     path_trained_model: Optional[str] = None 
@@ -941,10 +944,14 @@ class base_latent_ode_training_settings_class:
         pre_train (bool): If True, perform a pretraining stage.
         load_pretrained_model (bool): Load a pretrained model before training.
         load_trained_model_for_test (bool): Load a trained model and run tests only.
-        save_predictions_in_dataset (bool): Save predictions back into the dataset on test.
+        save_predictions_in_dataset (bool): If True, enable saving predictions back into the dataset during testing.
+        save_predictions_for (Optional[List[str]]): Dataset contexts for which predictions are saved when
+            save_predictions_in_dataset is True. Typical entries are
+            ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref'].
         test (bool): Enable a post-training test run.
         test_save_internal_variables (bool): Store internal variables during test for analysis.
-        test_save_internal_variables_for (str): Label for the stored internal variables.
+        test_save_internal_variables_for (Optional[List[str]]): Dataset contexts for which internal
+            variables are stored during testing. Uses the same context labels as save_predictions_for.
         pre_trained_model_seq_len (Optional[int]): Sequence length used by the pretrained checkpoint.
         path_pretrained_model (Optional[str]): Path to pretrained model. Can also be copied from mlflow web UI.
         path_trained_model (Optional[str]): Path to trained model for testing. Can also be copied from mlflow web UI.
@@ -960,9 +967,10 @@ class base_latent_ode_training_settings_class:
     load_pretrained_model: bool = False
     load_trained_model_for_test: bool = False
     save_predictions_in_dataset: bool = True
+    save_predictions_for: Optional[List[str]] = field(default_factory=lambda: ['test']) # should be one of the contexts 'train', 'test', 'validation', 'testnorm', 'ref'
     test: bool = True
     test_save_internal_variables: bool = False
-    test_save_internal_variables_for: str = 'common_test'
+    test_save_internal_variables_for: Optional[List[str]] = field(default_factory=lambda: ['test'])
     pre_trained_model_seq_len: Optional[int] = None
     path_pretrained_model: Optional[str] = None
     path_trained_model: Optional[str] = None 
