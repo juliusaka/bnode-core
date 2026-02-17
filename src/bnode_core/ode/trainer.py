@@ -537,10 +537,14 @@ def train_all_phases(cfg: train_test_config_class):
                                     if not filepaths.filepath_dataset_current_hydra_output().exists():
                                         logging.warning('Creating dataset file: {}'.format(filepaths.filepath_dataset_current_hydra_output()))
                                         hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'w')
+                                        for key in hdf5_dataset.keys():
+                                            if key not in ['train', 'test', 'validation', 'common_test', 'common_validation', 'time']:
+                                                hdf5_dataset_pred.copy(hdf5_dataset[key], key)
+                                                logging.info('Copying dataset key {} to hdf5 file for testing.'.format(key))
 
                                     logging.info('Copying dataset for context {} to hdf5 file for testing.'.format(context))
                                     
-                                    if context in ['train', 'test', 'validation', 'common_test']:
+                                    if context in ['train', 'test', 'validation', 'common_test', 'common_validation']:
                                         # copy contents from dataloader dataset to hdf5_dataset_pred
                                         hdf5_dataset_pred.create_group(context)
                                         for key in hdf5_dataset[context].keys():

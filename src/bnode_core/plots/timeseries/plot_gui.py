@@ -31,7 +31,8 @@ Features:
 
 Expected dataset structure (context-based):
     - time: 1D array of length T (seconds; auto-shown in hours if very large magnitudes).
-    - contexts: "train" and/or "common_test"
+    - contexts: any subset of
+        ["train", "test", "validation", "common_test", "common_validation", "ref", "testnorm"]
         - states, outputs, controls: float arrays shaped (N, C, T)
         - states_hat, outputs_hat: optional predictions shaped (N, C, T)
         - parameters: optional (N, P)
@@ -71,15 +72,46 @@ except Exception:
     _HAS_DASH = False
 
 
-def _detect_time_axis(f: h5py.File) -> Tuple[np.ndarray, str]:
-    time = f['time'][:]
+def _time_for_context(f: h5py.File, context: str) -> Tuple[np.ndarray, str]:
+    """Return time vector and label for a given context.
+
+    New convention:
+        - ``time`` is stored inside each context group (e.g. f['train']['time']).
+
+    Backwards compatibility per context:
+        - If the selected context has no ``time`` dataset, fall back to f['time']
+          at the file root when available.
+        - If neither is present, synthesize an index-based time axis from the
+          first available data array (states/outputs/controls) so that older or
+          slightly malformed files can still be inspected.
+    """
+
+    time = None
+
+    # 1) Prefer context-local time datasets, following the new convention
+    if context in f and 'time' in f[context]:
+        time = f[context]['time'][:]
+
+    # 2) Fall back to root-level time for legacy files
+    if time is None and 'time' in f:
+        time = f['time'][:]
+
+    if time is None:
+        raise ValueError(f"No time dataset found for context '{context}' or at file root. Cannot plot timeseries without a time axis.")
+
     if np.max(time) > 1.0e4:
         return time / 3600.0, 'time [h]'
     return time, 'time [s]'
 
 
 def _available_contexts(f: h5py.File) -> List[str]:
-    return [c for c in ['train', 'common_test'] if c in f]
+    """Return list of supported context groups present in the file.
+
+    Supported contexts (in priority order for the default selection):
+        - "train", "test", "validation", "common_test", "common_validation", "ref", "testnorm".
+    """
+    supported = ['train', 'test', 'validation', 'common_test', 'common_validation', 'ref', 'testnorm']
+    return [c for c in supported if c in f]
 
 
 def _build_channel_options(f: h5py.File, is_raw: bool, primary_context: str) -> List[Tuple[str, Tuple[str, int]]]:
@@ -196,7 +228,6 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
         raise RuntimeError("Dash is required for the Plotly GUI. Please install with `pip install dash`. ")
 
     f = h5py.File(dataset_path, 'r')
-    time, time_label = _detect_time_axis(f)
     contexts = _available_contexts(f)
 
     # Detect whether this is a context-based dataset or a raw (root-level) dataset
@@ -208,7 +239,8 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
             contexts = ['raw']
         else:
             raise ValueError(
-                "No supported contexts found in dataset (expected 'train' and/or 'common_test') "
+                "No supported contexts found in dataset (expected one of "
+                "'train', 'test', 'validation', 'common_test', 'common_validation', 'ref', 'testnorm') "
                 "and no top-level 'states'/'outputs'/'controls' for raw dataset."
             )
 
@@ -326,6 +358,8 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
     def _update_fig(context, sidx, nplots, *traj_vals):
         if sidx is None:
             return go.Figure(), go.Figure()
+        # Context-specific time axis (with legacy fallbacks)
+        time, time_label = _time_for_context(f, context)
         # Build timeseries subplot figure
         rows = int(max(1, nplots))
         # Prepare subplot titles with variable names
