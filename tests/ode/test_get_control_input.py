@@ -104,6 +104,7 @@ if __name__ == "__main__":
     def ctr_func(t):
         return np.sin(1.0 * np.pi * t / ctrl_times[-1])  # oscillates between -1 and +1 over [0, 1.6]
     ctrl_inputs = torch.tensor([ctr_func(t) for t in ctrl_times], dtype=torch.float32).view(1, 1, -1)  # (batch=1, channels=1, time)
+    eps_inputs = torch.randn_like(ctrl_inputs)  # small noise for eps if needed
 
     # Dense time grid for plotting.
     t_dense = torch.linspace(float(ctrl_times[0]), float(ctrl_times[-1]), steps=1000)
@@ -113,39 +114,60 @@ if __name__ == "__main__":
           "\n Control inputs:", ctrl_inputs.squeeze()[:10], "...")
 
     u_step = []
+    eps_step = []
     u_smooth = []
+    eps_smooth = []
     for t in t_dense:
         t_float = float(t)
-        u_step.append(
-            get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=False)[0]
-            .squeeze()
-            .item()
-        )
-        u_smooth.append(
-            get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=True)[0]
-            .squeeze()
-            .item()
-        )
+        u, eps, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=False, eps=eps_inputs)
+        u_step.append(u.squeeze().item())
+        eps_step.append(eps.squeeze().item())
+        
+        u, eps, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=True, eps=eps_inputs)
+        eps_smooth.append(eps.squeeze().item())
+        u_smooth.append(u.squeeze().item())
 
     t_np = t_dense.detach().cpu().numpy()
     u_step_np = np.array(u_step)
     u_smooth_np = np.array(u_smooth)
+    eps_step_np = np.array(eps_step)
+    eps_smooth_np = np.array(eps_smooth)
 
-    plt.figure(figsize=(8, 4))
-    plt.plot(t_np, u_step_np, label="usual (step)")
-    plt.plot(t_np, u_smooth_np, label="input smoother", linestyle="--")
-    plt.scatter(
+    fig, ax = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+
+    ax[0].plot(t_np, u_step_np, label="usual (step)")
+    ax[0].plot(t_np, u_smooth_np, label="input smoother", linestyle="--")
+    ax[0].scatter(
         ctrl_times.detach().cpu().numpy(),
         ctrl_inputs.squeeze().detach().cpu().numpy(),
         color="black",
         zorder=1,
         label="control samples",
     )
-    plt.plot(t_np, ctrl_dense.squeeze().detach().cpu().numpy(), color="gray", alpha=0.5, label="true control")
-    plt.xlabel("t")
-    plt.ylabel("u(t)")
-    plt.title("Control input: usual mode vs. input smoother")
-    plt.legend()
-    plt.grid(True)
+    ax[0].plot(t_np, ctrl_dense.squeeze().detach().cpu().numpy(), color="gray", alpha=0.5, label="true control")
+    ax[0].set_xlabel("t")
+    ax[0].set_ylabel("u(t)")
+    ax[0].set_title("Control input: usual mode vs. input smoother")
+    ax[0].legend()
+    ax[0].grid(True)
+
+    ax[1].plot(t_np, u_step_np + 0.1 * eps_step_np, label="usual mode + noise")
+    ax[1].plot(t_np, u_smooth_np + 0.1 * eps_smooth_np, label="input smoother + noise", linestyle="--")
+    ax[1].scatter(
+        ctrl_times.detach().cpu().numpy(),
+        (ctrl_inputs + 0.1 * eps_inputs).squeeze().detach().cpu().numpy(),
+        color="black",
+        zorder=1,
+        label="control samples + noise",
+    )
+    ax[1].plot(t_np, ctrl_dense.squeeze().detach().cpu().numpy(), color="gray", alpha=0.5, label="true control")
+
+    ax[1].set_xlabel("t")
+    ax[1].set_ylabel("eps(t)")
+    ax[1].set_title("Noise input: usual mode vs. input smoother")
+    ax[1].legend()
+    ax[1].grid(True)
+
+
     plt.tight_layout()
     plt.show()

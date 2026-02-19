@@ -6,7 +6,8 @@ def get_control_input_at_t(
     t: float,
     ctrl_times: torch.Tensor,
     ctrl_inputs: torch.Tensor,
-    use_input_smoother: bool = False
+    use_input_smoother: bool = False,
+    eps: torch.Tensor = None,
 ) -> torch.Tensor:
     """Return control input at time ``t``.
 
@@ -29,6 +30,11 @@ def get_control_input_at_t(
           t = 1.5  -> 0.5 * (u(0) + u(1))
 
       which matches the desired behaviour you described.
+
+    - The argument ``eps`` is an idea for smoothly reparameterizing the control input and
+      and not implemented yet, as there might be implications for the state reparameterization
+      as well.
+
     """
 
     # Guard against degenerate ctrl_times
@@ -50,6 +56,8 @@ def get_control_input_at_t(
         # Clamp into valid range [0, n-1]
         idx = max(0, min(idx, ctrl_times.numel() - 1))
         u_now = ctrl_inputs[:, :, idx]
+        if eps is not None:
+            eps_now = eps[:, :, idx]
     
     else:
         # --- With input smoother ---
@@ -66,6 +74,8 @@ def get_control_input_at_t(
         # For the very first interval we cannot look back; just use ctrl[0].
         if idx == 0:
              u_now = ctrl_inputs[:, :, 0]
+             if eps is not None:
+                 eps_now = eps[:, :, 0]
         else:
             # Define interpolation between ctrl[idx-1] at t_idx and ctrl[idx] at t_{idx+1}
             t_i = float(ctrl_times[idx])
@@ -79,7 +89,16 @@ def get_control_input_at_t(
                 u_prev = ctrl_inputs[:, :, idx - 1]
                 u_curr = ctrl_inputs[:, :, idx]
                 u_now =  (1.0 - alpha) * u_prev + alpha * u_curr
+                if eps is not None:
+                    eps_prev = eps[:, :, idx - 1]
+                    eps_curr = eps[:, :, idx]
+                    eps_now = (1.0 - alpha) * eps_prev + alpha * eps_curr
             else:
                 # If there is no next time point, fall back to constant ctrl[idx]
                 u_now = ctrl_inputs[:, :, idx-1]
-    return u_now, idx
+                if eps is not None:
+                    eps_now = eps[:, :, idx-1]
+    if eps is not None:
+        return u_now, eps_now, idx
+    else:
+        return u_now, idx

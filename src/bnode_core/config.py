@@ -964,7 +964,8 @@ class base_latent_ode_training_settings_class:
         initialization_type (Optional[str]): Weight initialization scheme for NN. Options: 'xavier', none.
         initialization_type_ode (Optional[str]): Initialization scheme for ODE parts. Options: 'xavier', 'move_eigvals_matrix' (only for linear ode), 'move_eigvals_net', none.
         initialization_type_ode_matrix (Optional[str]): Initialization for ODE matrices if applicable.
-        use_input_smoother: (bool, Default False): If True, use an input smoother that applies a moving average filter as implemented in Dymola FMU export.
+        use_input_smoother: (bool, Default False): If True, use an input smoother as implemented in Dymola FMU export.
+        use_input_smoother_reparameterize: (bool, Default False): If True, the input smoother will be used for the reparameterization of the control inputs.
         ***_override (various): See *_override fields to broadcast settings into each main training phase.
         pre_training (base_neural_ode_pretraining_settings_class): Settings for the pretraining stage.
         main_training (List[latent_timestepper_training_settings]): Sequence of latent ODE training phases.
@@ -988,6 +989,7 @@ class base_latent_ode_training_settings_class:
     initialization_type_ode_matrix: Optional[str] = None
 
     use_input_smoother: bool = False
+    use_input_smoother_reparameterize: bool = False
 
     batch_size_override: Optional[int] = None
     batches_per_epoch_override: Optional[int] = None

@@ -45,7 +45,8 @@ class BalancedNeuralODE(nn.Module):
                  ode_linear: bool = False,
                  decoder_linear: bool = False,
                  lat_state_mu_independent: bool = False,
-                 use_input_smoother: bool = False
+                 use_input_smoother: bool = False,
+                 use_input_smoother_reparameterize: bool = False,
                  ):
         super().__init__()
 
@@ -92,11 +93,11 @@ class BalancedNeuralODE(nn.Module):
 
         # input smoother
         self.use_input_smoother = use_input_smoother
+        self.use_input_smoother_reparameterize = use_input_smoother_reparameterize
         
         # set additional flags for encoder and decoder
         self.controls_to_decoder = controls_to_decoder and self.include_controls
         self.predict_states = predict_states
-        
         if self.include_parameters:
             self.params_to_state_encoder= params_to_state_encoder
             self.params_to_control_encoder = params_to_control_encoder
@@ -261,9 +262,7 @@ class BalancedNeuralODE(nn.Module):
 
         if self.include_controls:
             u_lat, idx = get_control_input_at_t(t, self.current_times, self.current_lat_controls, use_input_smoother=self.use_input_smoother)
-            # TODO: could smoothly reparameterize by interpolating here
-            # eps = get_control_input_at_t(t, self.current_times, self.eps_lat_controls, use_input_smoother=False) if self.include_controls else None
-
+    
         # get latent parameters
         if self.include_params_encoder:
             lat_parameters = self.current_lat_parameters
