@@ -44,6 +44,7 @@ class BalancedNeuralODE(nn.Module):
                  ode_linear: bool = False,
                  decoder_linear: bool = False,
                  lat_state_mu_independent: bool = False,
+                 use_input_smoother: bool = False
                  ):
         super().__init__()
 
@@ -87,6 +88,9 @@ class BalancedNeuralODE(nn.Module):
         self.include_outputs = True if outputs_dim > 0 else False
         self.include_states_grad = predict_states
         self.include_outputs_grad = self.include_outputs
+
+        # input smoother
+        self.use_input_smoother = use_input_smoother
         
         # set additional flags for encoder and decoder
         self.controls_to_decoder = controls_to_decoder and self.include_controls
@@ -232,25 +236,44 @@ class BalancedNeuralODE(nn.Module):
         self.ode_fun_count += 1
 
         # determine idx in equidistant time vector and choose control input at this time
-        try:
-            idx = torch.nonzero(self.current_times > t)
-            if len(idx) == 0:
-                idx = -1
-            else:
-                idx = idx[0][0].detach() - 1
-        except Exception as e:
-            # pass if KeyboardInterrupt
-            if isinstance(e, KeyboardInterrupt):
-                raise KeyboardInterrupt
-            else:
-                raise ValueError('something went wrong when trying to get the control input at time t, using the last control input instead')
+        # try:
+        #     idx = torch.nonzero(self.current_times > t)
+        #     if len(idx) == 0:
+        #         idx = -1
+        #     else:
+        #         idx = idx[0][0].detach() - 1
+        # except Exception as e:
+        #     # pass if KeyboardInterrupt
+        #     if isinstance(e, KeyboardInterrupt):
+        #         raise KeyboardInterrupt
+        #     else:
+        #         raise ValueError('something went wrong when trying to get the control input at time t, using the last control input instead')
+        # if self.include_controls:
+        #     if self.use_adjoint is True:
+        #         u = self.current_controls[:,:,idx]
+        #         u_lat_mu, u_lat_logvar = self.controls_encoder(u)
+        #         u_lat = self.reparametrize_with_eps(u_lat_mu, u_lat_logvar, self.eps_lat_controls[:,:,idx], self.current_reparam_active)
+        #     else: 
+        #         u_lat = self.current_lat_controls[:,:,idx]
+        # else:
+        #     u_lat = None
+
         if self.include_controls:
-            if self.use_adjoint is True:
-                u = self.current_controls[:,:,idx]
-                u_lat_mu, u_lat_logvar = self.controls_encoder(u)
-                u_lat = self.reparametrize_with_eps(u_lat_mu, u_lat_logvar, self.eps_lat_controls[:,:,idx], self.current_reparam_active)
-            else: 
+            # the returned indice satisfies current_times[idx-1] <= t < current_times[idx]
+            # so at idx we have the latest set input
+            idx = torch.searchsorted(self.current_times, t, right=True)
+            if t > self.current_times[-1]: # if t is larger than the last time point, use the last control input
+                idx = len(self.current_times) - 1
+                logging.warning('t is larger than the last time point in current_times, using the last control input')
+            if self.use_input_smoother is False:
                 u_lat = self.current_lat_controls[:,:,idx]
+            else:
+                # interpolate between last and new input
+                u_last = self.current_lat_controls[:,:,idx-1]
+                t_last = self.current_times[idx-1]
+                u_new = self.current_lat_controls[:,:,idx]
+                t_new = self.current_times[idx]
+                u_lat = u_last + (u_new - u_last) * (t - t_last) / (t_new - t_last)
         else:
             u_lat = None
 
