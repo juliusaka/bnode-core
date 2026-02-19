@@ -92,6 +92,7 @@ import torchdiffeq as torchdiffeq
 from bnode_core.ode.ode_utils.initialize_model import initialize_weights_biases
 from bnode_core.nn.nn_utils.normalization import NormalizationLayer1D
 from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
+from bnode_core.ode.ode_utils.get_control import get_control_input_at_t
 from typing import Tuple, Optional
 
 
@@ -437,12 +438,14 @@ class NeuralODE(nn.Module):
                 activation: nn.Module = nn.ELU,
                 intialization: str = 'identity',
                 initialization_ode: str = 'identity',
+                use_input_smoother: bool = False
                 ): 
         super().__init__()
 
         self.include_controls = True if controls_dim > 0 else False
         self.include_parameters = True if parameters_dim > 0 else False
         self.include_outputs = True if outputs_dim > 0 else False
+        self.use_input_smoother = use_input_smoother
 
         self.ode_fun_count = 0
 
@@ -520,16 +523,7 @@ class NeuralODE(nn.Module):
 
     def forward_ODE(self, t, x):
         if self.include_controls:
-            try:
-                idx = torch.nonzero(self.current_times[0][0] > t)
-                if len(idx) == 0:
-                    idx = -1
-                else:
-                    idx = idx[0][0] - 1
-                u = self.current_controls[:,:,idx]
-            except:
-                u = self.current_controls[:,:,-1]
-                warnings.warn('something went wrong when trying to get the control input at time t, using the last control input instead')
+            u = get_control_input_at_t(t, self.current_times, self.current_controls, use_input_smoother=self.use_input_smoother)
         else:
             u = None
         # call

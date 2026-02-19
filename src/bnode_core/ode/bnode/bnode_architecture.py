@@ -10,6 +10,7 @@ import torchdiffeq as torchdiffeq
 
 from bnode_core.nn.nn_utils.kullback_leibler import kullback_leibler, count_populated_dimensions
 from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tensor
+from bnode_core.ode.ode_utils.get_control import get_control_input_at_t
 from bnode_core.ode.bnode.bnode_modules import LatentODEFunc, GeneralEncoder, Decoder
 import warnings
     
@@ -259,23 +260,9 @@ class BalancedNeuralODE(nn.Module):
         #     u_lat = None
 
         if self.include_controls:
-            # the returned indice satisfies current_times[idx-1] <= t < current_times[idx]
-            # so at idx we have the latest set input
-            idx = torch.searchsorted(self.current_times, t, right=True)
-            if t > self.current_times[-1]: # if t is larger than the last time point, use the last control input
-                idx = len(self.current_times) - 1
-                logging.warning('t is larger than the last time point in current_times, using the last control input')
-            if self.use_input_smoother is False:
-                u_lat = self.current_lat_controls[:,:,idx]
-            else:
-                # interpolate between last and new input
-                u_last = self.current_lat_controls[:,:,idx-1]
-                t_last = self.current_times[idx-1]
-                u_new = self.current_lat_controls[:,:,idx]
-                t_new = self.current_times[idx]
-                u_lat = u_last + (u_new - u_last) * (t - t_last) / (t_new - t_last)
-        else:
-            u_lat = None
+            u_lat, idx = get_control_input_at_t(t, self.current_times, self.current_lat_controls, use_input_smoother=self.use_input_smoother)
+            # TODO: could smoothly reparameterize by interpolating here
+            # eps = get_control_input_at_t(t, self.current_times, self.eps_lat_controls, use_input_smoother=False) if self.include_controls else None
 
         # get latent parameters
         if self.include_params_encoder:

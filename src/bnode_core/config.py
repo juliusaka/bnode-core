@@ -816,6 +816,7 @@ class base_neural_ode_training_settings_class():
         batch_size_test (int): Batch size to use during testing.
         initialization_type (Optional[str]): Weight initialization scheme for NN. Options: 'xavier', none.
         initialization_type_ode (Optional[str]): Initialization scheme for ODE-specific components. Options: 'xavier', none.
+        use_input_smoother (bool, Default False): If True, apply an input smoother to the controls before feeding them to the model as implemented in Dymola.
         ***_override (various): Overrides for training hyperparameters applied to all phases in main_training.
         pre_training (base_neural_ode_pretraining_settings_class): Pretraining settings.
         main_training (List[base_time_stepper_training_settings]): Sequence of per-phase settings.
@@ -835,6 +836,7 @@ class base_neural_ode_training_settings_class():
     batch_size_test: int = 48
     initialization_type: Optional[str] = None
     initialization_type_ode: Optional[str] = None
+    use_input_smoother: bool = False
 
     batch_size_override: Optional[int] = None
     batches_per_epoch_override: Optional[int] = None

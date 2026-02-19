@@ -253,7 +253,9 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
                         n_layers_output_nn=cfg.nn_model.network.n_layers_output_nn,
                         activation=eval(cfg.nn_model.network.activation),
                         intialization=cfg.nn_model.training.pre_training.initialization_type,
-                        initialization_ode=cfg.nn_model.training.initialization_type_ode,)
+                        initialization_ode=cfg.nn_model.training.initialization_type_ode,
+                        use_input_smoother=cfg.nn_model.training.use_input_smoother,
+                        )
         # initialize normalizations
         if initialize_normalization:
             model.normalization_init(hdf5_dataset)
@@ -286,6 +288,7 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
                         ode_linear = cfg.nn_model.network.ode_linear,
                         decoder_linear = cfg.nn_model.network.decoder_linear,
                         lat_state_mu_independent = cfg.nn_model.network.lat_state_mu_independent,
+                        use_input_smoother=cfg.nn_model.training.use_input_smoother,
                         )
         # initialize normalizations
         if initialize_normalization:
@@ -961,7 +964,6 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                             cfg.batch_print_interval,
                             epoch - epoch_0,
                         )
-                        dataloader_iters['train'] = train_iter
                     except AssertionError as e:
                         if 'underflow' in str(e):
                             logging.warning('Underflow in automatic mixed precision. Trying again without autocast')
@@ -980,7 +982,6 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                                 cfg.batch_print_interval,
                                 epoch - epoch_0,
                             )
-                            dataloader_iters['train'] = train_iter
                     if np.isnan(ret_vals_train['loss']):
                         if train_cfg.reload_model_if_loss_nan:
                             if not nan_counter >  49: # if not more than 25 NaNs in loss, reload the last model
