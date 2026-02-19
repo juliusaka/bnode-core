@@ -177,7 +177,12 @@ import bnode_core.filepaths as filepaths
 from bnode_core.ode.node.node_architecture import NeuralODE
 from bnode_core.ode.bnode.bnode_architecture import BalancedNeuralODE
 
-from bnode_core.nn.nn_utils.load_data import load_dataset_and_config, make_stacked_dataset, TimeSeriesDataset
+from bnode_core.nn.nn_utils.load_data import (
+    load_dataset_and_config,
+    make_stacked_dataset,
+    TimeSeriesDataset,
+    timeseries_collate_fn,
+)
 from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
 from typing import TYPE_CHECKING
 from bnode_core.config import train_test_config_class, base_training_settings_class, get_config_store
@@ -419,12 +424,14 @@ def train_all_phases(cfg: train_test_config_class):
                         datasets = {}
                         for context in ['train', 'test', 'validation', 'common_test']:
                             datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches)
-                        for context in ['testnorm']:
-                            if hdf5_dataset_norm is not None:
-                                datasets[context] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches)
+                        if hdf5_dataset_norm is not None:
+                            datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches)
+                        else:
+                            datasets['testnorm'] = None
                         if hdf5_dataset_ref is not None:
-                            for context in ['ref']: # the norm dataset should always have full length
-                                datasets[context] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
+                            datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
+                        else:
+                            datasets['ref'] = None
                         _loaded_seq_len = _load_seq_len
                         _reload_dataloaders_required = True
                     else:
@@ -447,7 +454,7 @@ def train_all_phases(cfg: train_test_config_class):
                         # create new
                         dataloaders={}
                         for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
-                            if context == 'testnorm' and 'testnorm' not in datasets.keys():
+                            if context == 'testnorm' and datasets[context] is None:
                                 dataloaders[context] = None
                                 continue
                             if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
@@ -465,13 +472,32 @@ def train_all_phases(cfg: train_test_config_class):
                                     _batch_size_here = _batch_size
                                 if len(datasets[context]) == 0:
                                     raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
-                                dataloaders[context] = torch.utils.data.DataLoader(datasets[context], batch_size=_batch_size_here, shuffle=_shuffle,
-                                                                                    num_workers = _num_workers, persistent_workers=True, 
-                                                                                    pin_memory=True, drop_last=_drop_last, prefetch_factor=cfg.prefetch_factor)
+                                dataloaders[context] = torch.utils.data.DataLoader(
+                                    datasets[context],
+                                    batch_size=_batch_size_here,
+                                    shuffle=_shuffle,
+                                    num_workers=_num_workers,
+                                    persistent_workers=True,
+                                    pin_memory=True,
+                                    # multiprocessing_context='fork',
+                                    drop_last=_drop_last,
+                                    prefetch_factor=cfg.prefetch_factor,
+                                    collate_fn=timeseries_collate_fn,
+                                )
                         if datasets['ref'] is not None:
-                            dataloaders['ref'] = torch.utils.data.DataLoader(datasets['ref'], batch_size=len(datasets['ref']), shuffle=False,
-                                                                            num_workers = 1, persistent_workers=True, 
-                                                                            pin_memory=True, drop_last=False, prefetch_factor=cfg.prefetch_factor)
+                            dataloaders['ref'] = torch.utils.data.DataLoader(
+                                datasets['ref'],
+                                batch_size=len(datasets['ref']),
+                                shuffle=False,
+                                num_workers=1,
+                                persistent_workers=True,
+                                pin_memory=True,
+                                drop_last=False,
+                                prefetch_factor=cfg.prefetch_factor,
+                                collate_fn=timeseries_collate_fn,
+                            )
+                        else: 
+                            dataloaders['ref'] = None
                         _created_datasets_and_loaders = True
                         _loaded_batch_size = _batch_size
                         # update seq_len train for this job to the actual seq_len of the dataset
@@ -625,7 +651,16 @@ def train_all_phases(cfg: train_test_config_class):
                                     # Compute mean metrics across batches
                                     ret_vals = {k: (metrics_sum[k] / max(n_batches, 1)) for k in metrics_sum.keys()}
                                 else:
-                                    ret_vals = test_or_validate_one_epoch(model, dataloaders[context], job['train_cfg'], job['pre_train'], device, all_batches=True, return_model_outputs=False)
+                                    # Full-dataset evaluation for this context; iterator is not reused.
+                                    ret_vals = test_or_validate_one_epoch(
+                                        model,
+                                        dataloaders[context],
+                                        job['train_cfg'],
+                                        job['pre_train'],
+                                        device,
+                                        all_batches=True,
+                                        return_model_outputs=False,
+                                    )
                                 # log stats with logging
                                 logging.info('Stats for context {}: {}'.format(context, ret_vals))
                                 # log stats with mlflow
@@ -656,9 +691,29 @@ def train_all_phases(cfg: train_test_config_class):
                         torch.cuda.empty_cache()
                 else:
                     raise e
-            
+
+
+def _next_batch(data_loader, iterator):
+    """Get next batch from a DataLoader using a (possibly persistent) iterator.
+
+    The caller owns the iterator reference (e.g. stored in a dict per
+    context) and is responsible for keeping it between calls. This helper
+    simply advances the iterator, recreating it on exhaustion.
+    """
+    if data_loader is None:
+        raise ValueError("No DataLoader provided to _next_batch")
+    if iterator is None:
+        iterator = iter(data_loader)
+    try:
+        batch = next(iterator)
+    except StopIteration:
+        iterator = iter(data_loader)
+        batch = next(iterator)
+    return batch, iterator
+
+
 # define train loop for one epoch
-def train_one_epoch(model, optimizer, train_loader, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase):
+def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase):
     model.train()
     _time_forward = 0
     _time_backward = 0
@@ -672,7 +727,10 @@ def train_one_epoch(model, optimizer, train_loader, scaler, train_cfg, pre_train
         train_cfg.evaluate_at_control_times = True
     _batches_this_phase = epoch_this_phase * batches_per_epoch
     for batch_idx in range(batches_per_epoch):
-        data_batch = next(iter(train_loader))
+        # Use a persistent iterator for the training DataLoader so that
+        # batches_per_epoch can be much larger than len(train_loader)
+        # without repeatedly recreating iterators.
+        data_batch, train_iter = _next_batch(train_loader, train_iter)
         # seq_len_increase_in_batches
         _batches_this_phase = epoch_this_phase * batches_per_epoch + batch_idx
         if pre_train is False:
@@ -758,9 +816,10 @@ def train_one_epoch(model, optimizer, train_loader, scaler, train_cfg, pre_train
     ret_vals_train['time_per_batch_loader'] = ret_vals_train['time_loader'] / batches_per_epoch
     if pre_train is False:
         ret_vals_train['ode_calls_backward'] = _ode_calls_backward
-    return ret_vals_train  
+    return ret_vals_train, train_iter  
 
-def test_or_validate_one_epoch(model, data_loader, train_cfg, pre_train, device, all_batches=False, return_model_outputs=False, activate_deterministic_mode=False):
+def test_or_validate_one_epoch(model, data_loader, train_cfg, pre_train, device, all_batches=False, return_model_outputs=False,
+                               activate_deterministic_mode=False, data_iter=None):
     model.eval()
     if all_batches is True:
         ret_vals = []
@@ -773,14 +832,20 @@ def test_or_validate_one_epoch(model, data_loader, train_cfg, pre_train, device,
             ret_vals = {key: np.mean([x[0][key] for x in ret_vals]) for key in ret_vals[0][0].keys()}
         else:
             ret_vals = {key: np.mean([x[key] for x in ret_vals]) for key in ret_vals[0].keys()}
+        return ret_vals if return_model_outputs is False else (ret_vals, model_outputs)
     else:
-        data_batch = next(iter(data_loader))
+        # Single-batch evaluation. Use a persistent iterator if provided;
+        # otherwise create a one-off iterator.
+        data_batch, data_iter = _next_batch(data_loader, data_iter)
         with torch.no_grad():
             ret_vals = model.model_and_loss_evaluation(data_batch, train_cfg, pre_train, device, return_model_outputs=return_model_outputs, test=True, activate_deterministic_mode=activate_deterministic_mode)
         if return_model_outputs is True:
             model_outputs = ret_vals[1]
             ret_vals = ret_vals[0]
-    return ret_vals if return_model_outputs is False else (ret_vals, model_outputs)
+        if return_model_outputs is False:
+            return ret_vals, data_iter
+        else:
+            return ret_vals, model_outputs, data_iter
 
 def append_context_to_dict_keys(dictionary: dict, context: str, pre_train: bool = False):
         if pre_train is True:
@@ -846,6 +911,8 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
         try:
             _flag_break_after_epoch = False
             _flag_first_epoch_this_phase = True
+            # persistent iterators over dataloaders per context across epochs
+            dataloader_iters = {ctx: None for ctx, dl in dataloaders.items() if dl is not None}
             for epoch in range(epoch_0, epoch_0 + max_epochs): # the upper range is a maximum value, and can be changed during training and escaped with if...break
                 if epoch == epoch_stop:
                     break
@@ -879,11 +946,41 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         epoch_stop = epoch_0 + train_cfg.max_epochs + (epoch - epoch_0) # new epoch stop
                 if not _flag_break_after_epoch and not _flag_first_epoch_this_phase:
                     try:
-                        ret_vals_train = train_one_epoch(model, optimizer, dataloaders['train'], scaler, train_cfg, pre_train, device, epoch, cfg.use_amp, cfg.use_cuda, cfg.batch_print_interval, epoch-epoch_0)
+                        ret_vals_train, dataloader_iters['train'] = train_one_epoch(
+                            model,
+                            optimizer,
+                            dataloaders['train'],
+                            dataloader_iters['train'],
+                            scaler,
+                            train_cfg,
+                            pre_train,
+                            device,
+                            epoch,
+                            cfg.use_amp,
+                            cfg.use_cuda,
+                            cfg.batch_print_interval,
+                            epoch - epoch_0,
+                        )
+                        dataloader_iters['train'] = train_iter
                     except AssertionError as e:
                         if 'underflow' in str(e):
                             logging.warning('Underflow in automatic mixed precision. Trying again without autocast')
-                            ret_vals_train = train_one_epoch(model, optimizer, dataloaders['train'], scaler, train_cfg, pre_train, device, epoch, False, cfg.use_cuda, cfg.batch_print_interval, epoch-epoch_0)
+                            ret_vals_train, train_iter = train_one_epoch(
+                                model,
+                                optimizer,
+                                dataloaders['train'],
+                                dataloader_iters['train'],
+                                scaler,
+                                train_cfg,
+                                pre_train,
+                                device,
+                                epoch,
+                                False,
+                                cfg.use_cuda,
+                                cfg.batch_print_interval,
+                                epoch - epoch_0,
+                            )
+                            dataloader_iters['train'] = train_iter
                     if np.isnan(ret_vals_train['loss']):
                         if train_cfg.reload_model_if_loss_nan:
                             if not nan_counter >  49: # if not more than 25 NaNs in loss, reload the last model
@@ -921,8 +1018,17 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         _activate_deterministic_mode = train_cfg.activate_deterministic_mode_after_this_phase and _flag_break_after_epoch
                     else:
                         _activate_deterministic_mode = False
-                    ret_vals_train = test_or_validate_one_epoch(model, dataloaders['train'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False, 
-                                                                activate_deterministic_mode=_activate_deterministic_mode)
+                    ret_vals_train, dataloader_iters['train'] = test_or_validate_one_epoch(
+                        model,
+                        dataloaders['train'],
+                        train_cfg,
+                        pre_train,
+                        device,
+                        all_batches=False,
+                        return_model_outputs=False,
+                        activate_deterministic_mode=_activate_deterministic_mode,
+                        data_iter=dataloader_iters['train']
+                    )
                     if _activate_deterministic_mode:
                         logging.info('Activated deterministic mode')
                         model.save(path=_path_best_model)
@@ -931,7 +1037,16 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                     ret_vals_train['ode_calls_backward'] = 0 # to avoid error in logging
                     ret_vals_train['seq_len_now'] = train_cfg.seq_len_train # to better see in mlflow the change
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train', pre_train), step=epoch)
-                ret_vals_validation = test_or_validate_one_epoch(model, dataloaders['validation'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
+                ret_vals_validation, dataloader_iters['validation'] = test_or_validate_one_epoch(
+                    model,
+                    dataloaders['validation'],
+                    train_cfg,
+                    pre_train,
+                    device,
+                    all_batches=False,
+                    return_model_outputs=False,
+                    data_iter=dataloader_iters['validation'],
+                )
                 early_stopping(ret_vals_validation['loss'], model, epoch, optimizer)
                 # count stable epochs to end seq_len_increase early
                 if ret_vals_validation['loss'] < 2 * ret_vals_train['loss']:
@@ -941,19 +1056,46 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                 else:
                     _stable_epochs = 0
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation', pre_train), step=epoch)
-                ret_vals_test = test_or_validate_one_epoch(model, dataloaders['test'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
+                ret_vals_test, dataloader_iters['test'] = test_or_validate_one_epoch(
+                    model,
+                    dataloaders['test'],
+                    train_cfg,
+                    pre_train,
+                    device,
+                    all_batches=False,
+                    return_model_outputs=False,
+                    data_iter=dataloader_iters['test'],
+                )
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
                 if dataloaders['ref'] is not None:
                     if epoch % cfg.nn_model.training.ref_and_testnorm_every_n_epochs == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
                         logging.info('Testing ref dataset')
-                        ret_vals_ref = test_or_validate_one_epoch(model, dataloaders['ref'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
+                        ret_vals_ref, dataloader_iters['ref'] = test_or_validate_one_epoch(
+                            model,
+                            dataloaders['ref'],
+                            train_cfg,
+                            pre_train,
+                            device,
+                            all_batches=False,
+                            return_model_outputs=False,
+                            data_iter=dataloader_iters['ref'],
+                        )
                         _res = append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train)
                         logging.info(_res)
                         mlflow.log_metrics(_res, step=epoch)
                 if dataloaders['testnorm'] is not None:
                     if epoch % cfg.nn_model.training.ref_and_testnorm_every_n_epochs == 0 or _flag_break_after_epoch or _flag_max_epoch or _flag_first_epoch_this_phase:
                         logging.info('Testing testnorm dataset')
-                        ret_vals_testnorm = test_or_validate_one_epoch(model, dataloaders['testnorm'], train_cfg, pre_train, device, all_batches=False, return_model_outputs=False)
+                        ret_vals_testnorm, dataloader_iters['testnorm'] = test_or_validate_one_epoch(
+                            model,
+                            dataloaders['testnorm'],
+                            train_cfg,
+                            pre_train,
+                            device,
+                            all_batches=False,
+                            return_model_outputs=False,
+                            data_iter=dataloader_iters['testnorm'],
+                        )
                         _res = append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train)
                         logging.info(_res)
                         mlflow.log_metrics(_res, step=epoch)

@@ -64,6 +64,21 @@ plotly =[
 
 [project.optional-dependencies]
 # torch is defined here and in dependency gropus
+
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "ty",
+    "twine",
+    "build",
+    "pre-commit",
+    "rich",
+    "pytest-xdist>=3.8.0",
+    "pytest-html>=4.1.1",
+    "pytest-dependency>=0.6.0",
+]
+
 torch =[
     "mlflow>=3.5.0",
     "onnx>=1.19.1",
