@@ -9,7 +9,7 @@ from bnode_core.nn.nn_utils.load_data import (
 )
 
 
-def _build_dummy_datasets(N: int = 3, T: int = 10, seq_len: int = 4):
+def _build_dummy_datasets(N: int = 3, T: int = 10, seq_len: int = 4, stride: int = 1):
     """Create matching LegacyTimeSeriesDataset and TimeSeriesDataset on random data."""
     torch.manual_seed(0)
 
@@ -25,6 +25,7 @@ def _build_dummy_datasets(N: int = 3, T: int = 10, seq_len: int = 4):
 
     legacy = LegacyTimeSeriesDataset(
         seq_len,
+        stride,
         time=time,
         states=states,
         states_der=states_der,
@@ -35,6 +36,7 @@ def _build_dummy_datasets(N: int = 3, T: int = 10, seq_len: int = 4):
 
     modern = TimeSeriesDataset(
         seq_len,
+        stride,
         time=time,
         states=states,
         states_der=states_der,
@@ -92,6 +94,49 @@ def test_timeseries_dataset_getitems_matches_legacy():
     assert isinstance(modern_batch, dict)
 
     # Convert legacy list-of-dicts to dict-of-batches and compare
+    keys = legacy_samples[0].keys()
+    assert keys == modern_batch.keys()
+
+    for key in keys:
+        stacked_legacy = torch.stack([s[key] for s in legacy_samples], dim=0)
+        v_modern = modern_batch[key]
+        assert stacked_legacy.shape == v_modern.shape
+        diff = (stacked_legacy - v_modern).abs().max().item() if stacked_legacy.numel() > 0 else 0.0
+        assert diff <= 1e-6, f"Mismatch in __getitems__ for key {key}: max diff {diff} > 1e-6"
+
+
+def test_timeseries_dataset_stride_len_matches_legacy():
+    legacy, modern = _build_dummy_datasets(T=11, seq_len=4, stride=3)
+    assert len(legacy) == len(modern)
+
+
+def test_timeseries_dataset_stride_getitem_matches_legacy():
+    legacy, modern = _build_dummy_datasets(T=11, seq_len=4, stride=3)
+
+    n = len(legacy)
+    indices = [0, 1, n // 2, n - 2, n - 1]
+    indices = sorted(set(i for i in indices if 0 <= i < n))
+
+    for idx in indices:
+        sample_legacy = legacy[idx]
+        sample_modern = modern[idx]
+        _assert_sample_equal(sample_legacy, sample_modern)
+
+
+def test_timeseries_dataset_stride_getitems_matches_legacy():
+    legacy, modern = _build_dummy_datasets(T=11, seq_len=4, stride=3)
+
+    n = len(legacy)
+    indices = [0, 1, 3, n - 3, n - 1]
+    indices = sorted(set(i for i in indices if 0 <= i < n))
+
+    legacy_samples = legacy.__getitems__(indices)
+    assert isinstance(legacy_samples, list)
+    assert len(legacy_samples) == len(indices)
+
+    modern_batch = modern.__getitems__(indices)
+    assert isinstance(modern_batch, dict)
+
     keys = legacy_samples[0].keys()
     assert keys == modern_batch.keys()
 
