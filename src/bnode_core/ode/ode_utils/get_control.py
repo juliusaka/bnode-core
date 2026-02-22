@@ -7,7 +7,7 @@ def get_control_input_at_t(
     ctrl_times: torch.Tensor,
     ctrl_inputs: torch.Tensor,
     use_input_smoother: bool = False,
-    eps: torch.Tensor = None,
+    **kwargs
 ) -> torch.Tensor:
     """Return control input at time ``t``.
 
@@ -36,6 +36,8 @@ def get_control_input_at_t(
       as well.
 
     """
+    if kwargs is not None:
+        kwargs_res = {}
 
     # Guard against degenerate ctrl_times
     if ctrl_times.numel() == 0:
@@ -44,9 +46,9 @@ def get_control_input_at_t(
     t_eff = float(t)
     last_time = float(ctrl_times[-1])
     if t_eff > last_time:
-        logging.warning(
-            "t is larger than the last time point in ctrl_times, using the last control value"
-        )
+        # logging.warning(
+        #     "t is larger than the last time point in ctrl_times, using the last control value"
+        # )
         t_eff = last_time
 
     # --- No input smoother: piecewise constant with value ctrl[i] on [t_i, t_{i+1}) ---
@@ -56,8 +58,8 @@ def get_control_input_at_t(
         # Clamp into valid range [0, n-1]
         idx = max(0, min(idx, ctrl_times.numel() - 1))
         u_now = ctrl_inputs[:, :, idx]
-        if eps is not None:
-            eps_now = eps[:, :, idx]
+        for key in kwargs:
+            kwargs_res[key] = kwargs[key][:, :, idx]
     
     else:
         # --- With input smoother ---
@@ -73,9 +75,9 @@ def get_control_input_at_t(
 
         # For the very first interval we cannot look back; just use ctrl[0].
         if idx == 0:
-             u_now = ctrl_inputs[:, :, 0]
-             if eps is not None:
-                 eps_now = eps[:, :, 0]
+            u_now = ctrl_inputs[:, :, 0]
+            for key in kwargs:
+                kwargs_res[key] = kwargs[key][:, :, 0]
         else:
             # Define interpolation between ctrl[idx-1] at t_idx and ctrl[idx] at t_{idx+1}
             t_i = float(ctrl_times[idx])
@@ -89,16 +91,16 @@ def get_control_input_at_t(
                 u_prev = ctrl_inputs[:, :, idx - 1]
                 u_curr = ctrl_inputs[:, :, idx]
                 u_now =  (1.0 - alpha) * u_prev + alpha * u_curr
-                if eps is not None:
-                    eps_prev = eps[:, :, idx - 1]
-                    eps_curr = eps[:, :, idx]
-                    eps_now = (1.0 - alpha) * eps_prev + alpha * eps_curr
+                for key in kwargs:
+                    val_prev = kwargs[key][:, :, idx - 1]
+                    val_curr = kwargs[key][:, :, idx]
+                    kwargs_res[key] = (1.0 - alpha) * val_prev + alpha * val_curr
             else:
                 # If there is no next time point, fall back to constant ctrl[idx]
                 u_now = ctrl_inputs[:, :, idx-1]
-                if eps is not None:
-                    eps_now = eps[:, :, idx-1]
-    if eps is not None:
-        return u_now, eps_now, idx
+                for key in kwargs:
+                    kwargs_res[key] = kwargs[key][:, :, idx-1]
+    if len(kwargs_res) > 0:
+        return u_now, idx, *kwargs_res.values()
     else:
         return u_now, idx

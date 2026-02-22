@@ -94,6 +94,55 @@ def test_get_control_input_batches_and_channels():
     assert torch.allclose(u_smooth, expected_smooth)
 
 
+def test_kwargs_tensors_match_as_ctrl_inputs():
+    """Tensors passed via kwargs should behave like ctrl_inputs.
+
+    For a given auxiliary tensor `aux`, using
+
+        get_control_input_at_t(..., ctrl_inputs, aux=aux)
+
+    must produce the same `aux` output (in kwargs_res) as when
+    calling
+
+        get_control_input_at_t(..., aux)
+
+    directly as `ctrl_inputs`, for the same `t` and `use_input_smoother`.
+    """
+    ctrl_times, ctrl_inputs = _make_simple_ctrl_data(batch_size=2, channels=3)
+    aux = torch.randn_like(ctrl_inputs)
+
+    # Use a few representative times: first sample, a midpoint, and a later sample.
+    t_samples = [
+        float(ctrl_times[1]),
+        0.5 * (float(ctrl_times[2]) + float(ctrl_times[3])),
+        float(ctrl_times[5]),
+    ]
+
+    for use_smoother in (False, True):
+        for t in t_samples:
+            # Call with auxiliary tensor in kwargs
+            u_main, idx1, aux_main = get_control_input_at_t(
+                t,
+                ctrl_times,
+                ctrl_inputs,
+                use_input_smoother=use_smoother,
+                aux=aux,
+            )
+
+            # Call treating the same auxiliary tensor as the primary ctrl_inputs
+            u_aux, idx2 = get_control_input_at_t(
+                t,
+                ctrl_times,
+                aux,
+                use_input_smoother=use_smoother,
+            )
+
+            # Indices must match, and kwarg result must equal the
+            # value we would obtain when using the tensor as ctrl_inputs.
+            assert idx1 == idx2
+            assert torch.allclose(aux_main, u_aux)
+
+
 if __name__ == "__main__":
     # Visualization: compare input smoother vs. usual mode for a sign-like control signal.
     import numpy as np
@@ -105,6 +154,7 @@ if __name__ == "__main__":
         return np.sin(1.0 * np.pi * t / ctrl_times[-1])  # oscillates between -1 and +1 over [0, 1.6]
     ctrl_inputs = torch.tensor([ctr_func(t) for t in ctrl_times], dtype=torch.float32).view(1, 1, -1)  # (batch=1, channels=1, time)
     eps_inputs = torch.randn_like(ctrl_inputs)  # small noise for eps if needed
+    ctrl_inputs_noise = ctrl_inputs + 0.1 * eps_inputs
 
     # Dense time grid for plotting.
     t_dense = torch.linspace(float(ctrl_times[0]), float(ctrl_times[-1]), steps=1000)
@@ -114,28 +164,40 @@ if __name__ == "__main__":
           "\n Control inputs:", ctrl_inputs.squeeze()[:10], "...")
 
     u_step = []
-    eps_step = []
     u_smooth = []
+    u_step_noise = []
+    u_smooth_noise = []
+    eps_step = []
     eps_smooth = []
+    
     for t in t_dense:
         t_float = float(t)
-        u, eps, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=False, eps=eps_inputs)
-        u_step.append(u.squeeze().item())
-        eps_step.append(eps.squeeze().item())
-        
-        u, eps, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=True, eps=eps_inputs)
-        eps_smooth.append(eps.squeeze().item())
+        u, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=False)
+        u_step.append(u.squeeze().item())        
+        u, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs, use_input_smoother=True)
         u_smooth.append(u.squeeze().item())
+        ## noise case
+        u, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs_noise, use_input_smoother=False)
+        u_step_noise.append(u.squeeze().item())
+        u, _ = get_control_input_at_t(t_float, ctrl_times, ctrl_inputs_noise, use_input_smoother=True)
+        u_smooth_noise.append(u.squeeze().item())
+        ## eps case
+        eps, _ = get_control_input_at_t(t_float, ctrl_times, eps_inputs, use_input_smoother=False)
+        eps_step.append(eps.squeeze().item())
+        eps, _ = get_control_input_at_t(t_float, ctrl_times, eps_inputs, use_input_smoother=True)
+        eps_smooth.append(eps.squeeze().item())
 
     t_np = t_dense.detach().cpu().numpy()
     u_step_np = np.array(u_step)
     u_smooth_np = np.array(u_smooth)
+    u_step_noise_np = np.array(u_step_noise)
+    u_smooth_noise_np = np.array(u_smooth_noise)
     eps_step_np = np.array(eps_step)
     eps_smooth_np = np.array(eps_smooth)
 
-    fig, ax = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    fig, ax = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
 
-    ax[0].plot(t_np, u_step_np, label="usual (step)")
+    ax[0].step(t_np, u_step_np, label="usual (step)")
     ax[0].plot(t_np, u_smooth_np, label="input smoother", linestyle="--")
     ax[0].scatter(
         ctrl_times.detach().cpu().numpy(),
@@ -151,11 +213,11 @@ if __name__ == "__main__":
     ax[0].legend()
     ax[0].grid(True)
 
-    ax[1].plot(t_np, u_step_np + 0.1 * eps_step_np, label="usual mode + noise")
-    ax[1].plot(t_np, u_smooth_np + 0.1 * eps_smooth_np, label="input smoother + noise", linestyle="--")
+    ax[1].step(t_np, u_step_noise_np, label="usual mode + noise")
+    ax[1].plot(t_np, u_smooth_noise_np, label="input smoother + noise", linestyle="--")
     ax[1].scatter(
         ctrl_times.detach().cpu().numpy(),
-        (ctrl_inputs + 0.1 * eps_inputs).squeeze().detach().cpu().numpy(),
+        ctrl_inputs_noise.squeeze().detach().cpu().numpy(),
         color="black",
         zorder=1,
         label="control samples + noise",
@@ -163,10 +225,27 @@ if __name__ == "__main__":
     ax[1].plot(t_np, ctrl_dense.squeeze().detach().cpu().numpy(), color="gray", alpha=0.5, label="true control")
 
     ax[1].set_xlabel("t")
-    ax[1].set_ylabel("eps(t)")
-    ax[1].set_title("Noise input: usual mode vs. input smoother")
+    ax[1].set_ylabel("u(t)")
+    ax[1].set_title("Control input with noise: usual mode vs. input smoother")
     ax[1].legend()
     ax[1].grid(True)
+
+    ax[2].step(t_np, eps_step_np, label="usual mode")
+    ax[2].plot(t_np, eps_smooth_np, label="input smoother", linestyle="--")
+    ax[2].scatter(
+        ctrl_times.detach().cpu().numpy(),
+        eps_inputs.squeeze().detach().cpu().numpy(),
+        color="black",
+        zorder=1,
+        label="eps samples",
+    )
+    ax[2].set_xlabel("t")
+    ax[2].set_ylabel("eps(t)")
+    ax[2].set_title("Noise input: usual mode vs. input smoother")
+    ax[2].legend()
+    ax[2].grid(True)
+
+
 
 
     plt.tight_layout()

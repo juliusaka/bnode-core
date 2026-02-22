@@ -1121,6 +1121,8 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         _flag_out_of_seq_len_increase = True
                         early_stopping.reset_counter()
                 mlflow.log_metric('EarlyStopping_counter', early_stopping.counter, step=epoch)
+                if early_stopping.counter == 0:
+                    mlflow.log_metric('EarlyStopping_best_loss', early_stopping.best_score, step=epoch)
         except KeyboardInterrupt:
             logging.info('Interrupted by user')
             mlflow.log_param('ended by', 'keyboard interrupt')

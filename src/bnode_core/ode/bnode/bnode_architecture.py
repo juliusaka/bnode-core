@@ -261,7 +261,14 @@ class BalancedNeuralODE(nn.Module):
         #     u_lat = None
 
         if self.include_controls:
-            u_lat, idx = get_control_input_at_t(t, self.current_times, self.current_lat_controls, use_input_smoother=self.use_input_smoother)
+            u_lat_now, idx, eps_lat_states_now = get_control_input_at_t(t, self.current_times, self.current_lat_controls, use_input_smoother=self.use_input_smoother, eps=self.eps_lat_states)
+            if self.use_input_smoother is True and self.use_input_smoother_reparameterize is False:
+                eps_lat_states_now = self.eps_lat_states[:,:,idx]
+        else: 
+            # we reuse the control input value for the epsilons, as the function itself is easier to understand for the input smoothing case.
+            eps_lat_states_now, idx = get_control_input_at_t(t, self.current_times, self.eps_lat_states, use_input_smoother=self.use_input_smoother) 
+            u_lat_now = None
+            
     
         # get latent parameters
         if self.include_params_encoder:
@@ -274,14 +281,15 @@ class BalancedNeuralODE(nn.Module):
 
         # put noise on states for the different lat_ode_types
         if self.lat_ode_type == 'variance_constant': 
-            lat_states = self.reparametrize_with_eps(lat_states, self.lat_state_0_logvar, self.eps_lat_states[:,:,idx], self.current_reparam_active, self.alpha_mu)
+            lat_states = self.reparametrize_with_eps(lat_states, self.lat_state_0_logvar, eps_lat_states_now, self.current_reparam_active, self.alpha_mu)
+
         elif self.lat_ode_type == 'variance_dynamic':
             # split state vector
             lat_states_mu = lat_states[:, :self.lat_states_mu_dim]
             lat_states_logvar = lat_states[:, self.lat_states_mu_dim:]
             # get eps
-            eps_mu = self.eps_lat_states[:, :self.lat_states_mu_dim, idx]
-            eps_logvar = self.eps_lat_states[:, self.lat_states_mu_dim:, idx]
+            eps_mu = eps_lat_states_now[:, :self.lat_states_mu_dim]
+            eps_logvar = eps_lat_states_now[:, self.lat_states_mu_dim:]
             # reparameterize
             lat_states_mu_w_noise = self.reparametrize_with_eps(lat_states_mu, lat_states_logvar, eps_mu, self.current_reparam_active, self.alpha_mu)
             lat_states_logvar_w_noise = self.reparametrize_with_eps(lat_states_logvar.mul(0.5).exp(), lat_states_logvar.mul(0.5).exp(),
@@ -292,7 +300,7 @@ class BalancedNeuralODE(nn.Module):
             lat_states = lat_states
 
         # call latent ode function with lat_states, lat_parameters, u_lat
-        lat_states_dot = self.latent_ode_func(lat_states, lat_parameters, u_lat,
+        lat_states_dot = self.latent_ode_func(lat_states, lat_parameters, u_lat_now,
                                                 self.A_from_param, self.B_from_param)
                                               
 
