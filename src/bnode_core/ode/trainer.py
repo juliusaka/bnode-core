@@ -391,12 +391,8 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Created job list: {}'.format(job_list))
 
     # flags
-    _created_datasets_and_loaders=False
-    _loaded_seq_len=-1
-    _loaded_batch_size=-1
     _created_model=False
     _epoch_0 = 0
-    _reload_dataloaders_required = False
     for idx, job in enumerate(job_list):
         while True: # loop to catch memory errors
             try:
@@ -412,102 +408,87 @@ def train_all_phases(cfg: train_test_config_class):
                     if job['pre_train'] is True:
                         _load_seq_len = job['train_cfg'].load_seq_len
                         _seq_len_batches = 1
+                        _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
                     elif job['test'] is True:
                         _load_seq_len = None
                         _seq_len_batches = None
+                        _stride_valid_test = 1
                     else:
                         _load_seq_len = job['train_cfg'].load_seq_len
                         _seq_len_batches = job['train_cfg'].seq_len_train
-                    if _created_datasets_and_loaders is False or _load_seq_len != _loaded_seq_len: 
-                        if _created_datasets_and_loaders is True:
-                            _keys = list(datasets.keys())
-                            for key in _keys:
-                                del datasets[key]
-                        # make torch tensor datasets
-                        datasets = {}
-                        for context in ['train', 'test', 'validation', 'common_test']:
-                            datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches)
-                        if hdf5_dataset_norm is not None:
-                            datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches)
-                        else:
-                            datasets['testnorm'] = None
-                        if hdf5_dataset_ref is not None:
-                            datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
-                        else:
-                            datasets['ref'] = None
-                        _loaded_seq_len = _load_seq_len
-                        _reload_dataloaders_required = True
+                        _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
+                    # make torch tensor datasets for this phase
+                    datasets = {}
+                    for context in ['train', 'test', 'validation', 'common_test']:
+                        _stride = 1 if context == 'train' else _stride_valid_test
+                        datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride)
+                    if hdf5_dataset_norm is not None:
+                        datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches, stride=_stride_valid_test)
                     else:
-                        for context in ['train', 'test', 'validation', 'common_test']:
-                            datasets[context].set_seq_len(_seq_len_batches)
-                        for context in ['testnorm']:
-                            if hdf5_dataset_norm is not None:
-                                datasets[context].set_seq_len(_seq_len_batches)
-                        _reload_dataloaders_required = True # TODO; check if this is necessary
-                    _batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+                        datasets['testnorm'] = None
+
+                    if hdf5_dataset_ref is not None:
+                        datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
+                    else:
+                        datasets['ref'] = None
+                    
                     _drop_last = True if job['test'] is False else False
                     _shuffle = True if job['test'] is False else False
-                    if _created_datasets_and_loaders is False or _loaded_batch_size != _batch_size or _reload_dataloaders_required is True or job['test'] is True:
-                        # initialiaze batch_loader, as batch size can't be set to a new value
-                        if _created_datasets_and_loaders is True:
-                            #del dataloaders
-                            _keys = list(dataloaders.keys())
-                            for key in _keys:
-                                del dataloaders[key]
-                        # create new
-                        dataloaders={}
-                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
-                            if context == 'testnorm' and datasets[context] is None:
-                                dataloaders[context] = None
-                                continue
-                            if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
-                                # TODO: I believe this is never reached
-                                dataloaders[context] = None
-                                logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
+                    # create new dataloaders for this phase
+                    dataloaders={}
+                    for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
+                        _batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+                        if context == 'validation':
+                            _batch_size = _batch_size * 4
+                        if context == 'testnorm' and datasets[context] is None:
+                            dataloaders[context] = None
+                            continue
+                        if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
+                            # TODO: I believe this is never reached
+                            dataloaders[context] = None
+                            logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
+                        else:
+                            _num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
+                            if context == 'train' and job['pre_train'] is True:
+                                _num_workers = 1 * _num_workers
+                            if _batch_size > len(datasets[context]):
+                                _batch_size_here = len(datasets[context])
+                                logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(_batch_size, len(datasets[context]), context, _batch_size_here))
                             else:
-                                _num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
-                                if context == 'train' and job['pre_train'] is True:
-                                    _num_workers = 1 * _num_workers
-                                if _batch_size > len(datasets[context]):
-                                    _batch_size_here = int(len(datasets[context])/2)+3
-                                    logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(_batch_size, len(datasets[context]), context, _batch_size_here))
-                                else:
-                                    _batch_size_here = _batch_size
-                                if len(datasets[context]) == 0:
-                                    raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
-                                dataloaders[context] = torch.utils.data.DataLoader(
-                                    datasets[context],
-                                    batch_size=_batch_size_here,
-                                    shuffle=_shuffle,
-                                    num_workers=_num_workers,
-                                    persistent_workers=True,
-                                    pin_memory=True,
-                                    # multiprocessing_context='fork',
-                                    drop_last=_drop_last,
-                                    prefetch_factor=cfg.prefetch_factor,
-                                    collate_fn=timeseries_collate_fn,
-                                )
-                        if datasets['ref'] is not None:
-                            dataloaders['ref'] = torch.utils.data.DataLoader(
-                                datasets['ref'],
-                                batch_size=len(datasets['ref']),
-                                shuffle=False,
-                                num_workers=1,
+                                _batch_size_here = _batch_size
+                            if len(datasets[context]) == 0:
+                                raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
+                            dataloaders[context] = torch.utils.data.DataLoader(
+                                datasets[context],
+                                batch_size=_batch_size_here,
+                                shuffle=_shuffle,
+                                num_workers=_num_workers,
                                 persistent_workers=True,
                                 pin_memory=True,
-                                drop_last=False,
+                                # multiprocessing_context='fork',
+                                drop_last=_drop_last,
                                 prefetch_factor=cfg.prefetch_factor,
                                 collate_fn=timeseries_collate_fn,
                             )
-                        else: 
-                            dataloaders['ref'] = None
-                        _created_datasets_and_loaders = True
-                        _loaded_batch_size = _batch_size
-                        # update seq_len train for this job to the actual seq_len of the dataset
-                        if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (with map)
-                            job['train_cfg'].seq_len_train = datasets['train'].seq_len
-                        else:
-                            job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
+                    if datasets['ref'] is not None:
+                        dataloaders['ref'] = torch.utils.data.DataLoader(
+                            datasets['ref'],
+                            batch_size=len(datasets['ref']),
+                            shuffle=False,
+                            num_workers=1,
+                            persistent_workers=True,
+                            pin_memory=True,
+                            drop_last=False,
+                            prefetch_factor=cfg.prefetch_factor,
+                            collate_fn=timeseries_collate_fn,
+                        )
+                    else: 
+                        dataloaders['ref'] = None
+                    # update seq_len train for this job to the actual seq_len of the dataset
+                    if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (with map)
+                        job['train_cfg'].seq_len_train = datasets['train'].seq_len
+                    else:
+                        job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
 
                     
                     _created_model_this_job = False	
@@ -1038,13 +1019,13 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                     ret_vals_train['ode_calls_backward'] = 0 # to avoid error in logging
                     ret_vals_train['seq_len_now'] = train_cfg.seq_len_train # to better see in mlflow the change
                 mlflow.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train', pre_train), step=epoch)
-                ret_vals_validation, dataloader_iters['validation'] = test_or_validate_one_epoch(
+                ret_vals_validation = test_or_validate_one_epoch(
                     model,
                     dataloaders['validation'],
                     train_cfg,
                     pre_train,
                     device,
-                    all_batches=False,
+                    all_batches=True,
                     return_model_outputs=False,
                     data_iter=dataloader_iters['validation'],
                 )
