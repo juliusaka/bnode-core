@@ -396,8 +396,9 @@ def run_data_preperation(cfg: data_gen_config):
                 idx_upper = (temp_raw_data[dataset_name][:, idx] > value[1])
                 idx = np.logical_or(idx_lower, idx_upper)
                 if np.sum(idx) > 0:
-                    logging.info(f'Found {np.sum(idx)} runs that do not match the filter for {key}. Removing them.')
-                    _remove_runs.append(np.nonzero(idx)[0])
+                    _remove_runs.append(np.unique(np.nonzero(idx)[0]))
+                    logging.info(f'Found {len(_remove_runs[-1])} runs that do not match the filter for {key}. Removing them.')
+                    
     if len(cfg.pModel.dataset_prep.filter_trajectories_expression) > 0:
         raise NotImplementedError('Filtering by expression is implementd, but not yet tested. Please use with caution.')
         logging.info('Filtering trajectories in raw data according to filter_trajectories_by_expression config.')
