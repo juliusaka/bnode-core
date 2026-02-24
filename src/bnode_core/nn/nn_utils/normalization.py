@@ -114,7 +114,7 @@ class NormalizationLayer1D(nn.Module):
         self.register_buffer('std', torch.zeros((num_features)))
         self.register_buffer('mu', torch.zeros(num_features))
     
-    def initialize_normalization(self, x, eps = 1e-5, verbose = False, name = None):
+    def initialize_normalization(self, x, eps = 1e-7, verbose = False, name = None):
         """Compute and store mean and std from input data.
         
         Calculates per-feature statistics across batch dimension. Adds epsilon to variance
@@ -122,7 +122,7 @@ class NormalizationLayer1D(nn.Module):
         
         Args:
             x (torch.Tensor or np.ndarray): Input data with shape (batch_size, num_features).
-            eps (float, optional): Small constant added to variance for stability. Defaults to 1e-5.
+            eps (float, optional): Small constant added to variance for stability. Defaults to 1e-7.
             verbose (bool, optional): If True, logs initialization info. Defaults to False.
             name (str, optional): Name for logging output. Defaults to None.
         
