@@ -54,8 +54,8 @@ Notes:
 Example:
     uv run plot_gui --dataset_path ./data/my_dataset.hdf5 -n 4
 """
-
 from pathlib import Path
+import json
 import h5py
 import numpy as np
 import argparse
@@ -252,10 +252,25 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
 
     channel_options = _build_channel_options(f, is_raw=is_raw, primary_context=primary_context)
 
+    # Settings file (per dataset) for storing GUI configuration (nplots + selected trajectories)
+    settings_file = dataset_path.with_suffix(dataset_path.suffix + ".plotsettings.json")
+    saved_nplots = None
+    saved_trajs = None
+    if settings_file.exists():
+        try:
+            with open(settings_file, "r") as sf:
+                _cfg = json.load(sf)
+            saved_nplots = _cfg.get("nplots")
+            saved_trajs = _cfg.get("trajectories") or None
+        except Exception as e:
+            print(f"Warning: could not load settings from {settings_file}: {e}")
+
     # Pre-create dropdowns up to a reasonable maximum; user can choose how many plots to display
     MAX_ROWS = min(8, max(1, len(channel_options)))
     # defaults for each row: first channels
     default_rows = [channel_options[min(i, len(channel_options)-1)][1] for i in range(MAX_ROWS)]
+    default_values = [f"{dt}|{ch}" for (dt, ch) in default_rows]
+    valid_values = {f"{dt}|{ch}" for (_lbl, (dt, ch)) in channel_options}
 
     app = Dash(__name__)
 
@@ -269,6 +284,11 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
     context_default = contexts[0]
     sample_default_count = _get_sample_count(f, context_default)
     sample_default = 0 if sample_default_count > 0 else None
+
+    # Initial number of plots, possibly overridden by saved settings
+    initial_nplots = min(n_trajectory_rows, MAX_ROWS)
+    if isinstance(saved_nplots, int) and 1 <= saved_nplots <= MAX_ROWS:
+        initial_nplots = saved_nplots
 
     controls = [
         html.Div([
@@ -285,23 +305,28 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
         ], style={'width': '24%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1rem'}),
         html.Div([
             html.Label('Number of plots'),
-            dcc.Dropdown(id='nplots-dd', options=[{'label': str(i), 'value': i} for i in range(1, MAX_ROWS+1)], value=min(n_trajectory_rows, MAX_ROWS), clearable=False)
+            dcc.Dropdown(id='nplots-dd', options=[{'label': str(i), 'value': i} for i in range(1, MAX_ROWS+1)], value=initial_nplots, clearable=False)
         ], style={'width': '24%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1rem'}),
     ]
 
     # One trajectory dropdown per row
     for i in range(MAX_ROWS):
+        if saved_trajs and i < len(saved_trajs) and isinstance(saved_trajs[i], str) and saved_trajs[i] in valid_values:
+            _row_value = saved_trajs[i]
+        else:
+            _row_value = default_values[i]
         controls.append(
             html.Div([
                 html.Label(f'Trajectory row {i+1}'),
                 dcc.Dropdown(id=f'traj-dd-{i}', options=dropdown_options(channel_options),
-                             value=f"{default_rows[i][0]}|{default_rows[i][1]}", clearable=False)
+                             value=_row_value, clearable=False)
             ], style={'width': '24%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginLeft': '1rem', 'marginBottom': '0.75rem'})
         )
 
     app.layout = html.Div([
         html.H3('BNODE Timeseries Viewer (Plotly)'),
         dcc.Store(id='sample-index', data=sample_default or 0),
+        dcc.Store(id='settings-store'),
         html.Div(controls),
         dcc.Graph(id='timeseries-graph'),
         dcc.Graph(id='parameters-graph')
@@ -378,7 +403,7 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
                 truth_line_style = dict(color='green')
                 truth_line_mode = 'lines'
             else:
-                truth_line_style = dict(color='red', dash='dash')
+                truth_line_style = dict(color='red') #, dash='dash')
                 truth_line_mode = 'lines'
             fig.add_trace(go.Scatter(x=time, y=y, name=f"{dtype}[{ch}]", mode=truth_line_mode, line=truth_line_style),
                           row=i+1, col=1)
@@ -436,6 +461,22 @@ def plot_gui(dataset_path: Path, n_trajectory_rows: int = 3, port: int = 8050):
             pfig.update_xaxes(showgrid=True, gridcolor='black')
             pfig.update_yaxes(showgrid=True, gridcolor='black')
         return fig, pfig
+
+    # Persist GUI settings (number of plots + selected trajectories) to a local JSON file
+    @app.callback(Output('settings-store', 'data'),
+                  Input('nplots-dd', 'value'),
+                  *[Input(f'traj-dd-{i}', 'value') for i in range(MAX_ROWS)])
+    def _save_settings(nplots, *traj_vals):
+        cfg = {
+            'nplots': int(nplots) if nplots is not None else None,
+            'trajectories': list(traj_vals),
+        }
+        try:
+            with open(settings_file, 'w') as sf:
+                json.dump(cfg, sf)
+        except Exception as e:
+            print(f"Warning: could not save settings to {settings_file}: {e}")
+        return cfg
 
     # Run app
     app.run(debug=False, port=port)
