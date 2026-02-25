@@ -425,7 +425,8 @@ def train_all_phases(cfg: train_test_config_class):
                     datasets = {}
                     for context in ['train', 'test', 'validation', 'common_test']:
                         _stride = 1 if context == 'train' else _stride_valid_test
-                        datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride)
+                        _max_samples = None if context != 'validation' else _max_samples_valid
+                        datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride, max_samples=_max_samples)
                     
                     if hdf5_dataset_norm is not None:
                         datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches, stride=_stride_valid_test)
