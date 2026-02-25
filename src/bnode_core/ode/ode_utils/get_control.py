@@ -43,8 +43,8 @@ def get_control_input_at_t(
     if ctrl_times.numel() == 0:
         raise ValueError("ctrl_times must contain at least one element")
 
-    t_eff = float(t)
-    last_time = float(ctrl_times[-1])
+    t_eff = t
+    last_time = ctrl_times[-1]
     if t_eff > last_time:
         # logging.warning(
         #     "t is larger than the last time point in ctrl_times, using the last control value"
@@ -54,7 +54,7 @@ def get_control_input_at_t(
     # --- No input smoother: piecewise constant with value ctrl[i] on [t_i, t_{i+1}) ---
     if not use_input_smoother or ctrl_times.numel() < 2:
         # Use right=True so that t == ctrl_times[i] maps to index i
-        idx = torch.searchsorted(ctrl_times, torch.tensor(t_eff, dtype=ctrl_times.dtype), right=True).item() - 1
+        idx = torch.searchsorted(ctrl_times, t_eff, right=True).item() - 1
         # Clamp into valid range [0, n-1]
         idx = max(0, min(idx, ctrl_times.numel() - 1))
         u_now = ctrl_inputs[:, :, idx]
@@ -70,7 +70,7 @@ def get_control_input_at_t(
         # between ctrl[i-1] (at t_i) and ctrl[i] (at t_{i+1}).
 
         # First determine the interval index i such that t in [t_i, t_{i+1})
-        idx = torch.searchsorted(ctrl_times, torch.tensor(t_eff, dtype=ctrl_times.dtype), right=True).item() - 1
+        idx = torch.searchsorted(ctrl_times, t_eff, right=True).item() - 1
         idx = max(0, min(idx, ctrl_times.numel() - 1))
 
         # For the very first interval we cannot look back; just use ctrl[0].
@@ -80,9 +80,9 @@ def get_control_input_at_t(
                 kwargs_res[key] = kwargs[key][:, :, 0]
         else:
             # Define interpolation between ctrl[idx-1] at t_idx and ctrl[idx] at t_{idx+1}
-            t_i = float(ctrl_times[idx])
+            t_i = ctrl_times[idx]
             if idx + 1 < ctrl_times.numel():
-                t_ip1 = float(ctrl_times[idx + 1])
+                t_ip1 = ctrl_times[idx + 1]
                 if t_ip1 == t_i:
                     raise ValueError(
                         f"ctrl_times contains duplicate entries at indices {idx} and {idx+1}, which is not allowed for smoothing"
