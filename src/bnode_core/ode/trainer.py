@@ -417,11 +417,16 @@ def train_all_phases(cfg: train_test_config_class):
                         _load_seq_len = job['train_cfg'].load_seq_len
                         _seq_len_batches = job['train_cfg'].seq_len_train
                         _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
+                        # we later set the batch size for validation and test to be 4 times
+                        # higher then for training (less memory as no backprop),
+                        # so this is a quarter in terms of batches of train.
+                        _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
                     # make torch tensor datasets for this phase
                     datasets = {}
                     for context in ['train', 'test', 'validation', 'common_test']:
                         _stride = 1 if context == 'train' else _stride_valid_test
                         datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride)
+                    
                     if hdf5_dataset_norm is not None:
                         datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches, stride=_stride_valid_test)
                     else:
@@ -436,10 +441,14 @@ def train_all_phases(cfg: train_test_config_class):
                     _shuffle = True if job['test'] is False else False
                     # create new dataloaders for this phase
                     dataloaders={}
+
+                    _batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+                    _batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
                     for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
-                        _batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-                        if context == 'validation':
-                            _batch_size = _batch_size * 4
+                        if context in ['validation', 'test', 'testnorm']:
+                            _batch_size = _batch_size_valid_test
+                        else:
+                            _batch_size = _batch_size_train
                         if context == 'testnorm' and datasets[context] is None:
                             dataloaders[context] = None
                             continue
@@ -449,15 +458,16 @@ def train_all_phases(cfg: train_test_config_class):
                             logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
                         else:
                             _num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
-                            if context == 'train' and job['pre_train'] is True:
-                                _num_workers = 1 * _num_workers
+                            
                             if _batch_size > len(datasets[context]):
                                 _batch_size_here = len(datasets[context])
                                 logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(_batch_size, len(datasets[context]), context, _batch_size_here))
                             else:
                                 _batch_size_here = _batch_size
+
                             if len(datasets[context]) == 0:
                                 raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
+                            
                             dataloaders[context] = torch.utils.data.DataLoader(
                                 datasets[context],
                                 batch_size=_batch_size_here,
