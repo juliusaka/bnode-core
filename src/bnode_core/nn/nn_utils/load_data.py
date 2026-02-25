@@ -11,6 +11,7 @@ import h5py
 import torch
 from pathlib import Path
 import logging
+import numpy as np
 from omegaconf import OmegaConf
 from bnode_core.config import base_pModelClass, train_test_config_class
 from bnode_core.filepaths import filepath_dataset_config_from_name, filepath_dataset_from_config
@@ -96,7 +97,8 @@ def make_stacked_dataset(
     context: str, 
     seq_len_from_file: Optional[int] = None, 
     seq_len_batches: Optional[int] = None,
-    stride: int = 1
+    stride: int = 1, 
+    max_samples: Optional[int] = None
 ) -> Union[torch.utils.data.StackDataset, 'TimeSeriesDataset']:
     """Create a PyTorch dataset from HDF5 data with optional time series batching.
     
@@ -114,6 +116,8 @@ def make_stacked_dataset(
         seq_len_batches (int, optional): If provided, returns a TimeSeriesDataset that extracts
             subsequences of this length via sliding window. If None, returns standard StackDataset
             with full sequences. Defaults to None.
+        max_samples (int, optional): If provided, limits the number of samples in the returned dataset.
+            Defaults to None (no limit). Only applicable if seq_len_batches is not None.
     
     Returns:
         torch.utils.data.StackDataset or TimeSeriesDataset: A dataset that yields dictionaries
@@ -151,7 +155,7 @@ def make_stacked_dataset(
         return kwargs
 
     # make torch dataset with dict as output
-    dataset_type = torch.utils.data.StackDataset if seq_len_batches is None else lambda *args, **kwargs: TimeSeriesDataset(seq_len_batches, stride=stride, *args, **kwargs)
+    dataset_type = torch.utils.data.StackDataset if seq_len_batches is None else lambda *args, **kwargs: TimeSeriesDataset(seq_len_batches, stride=stride, max_samples=max_samples, *args, **kwargs)
     torch_dataset = dataset_type(
         **_delete_nones(
             time = torch.tensor(time, dtype=torch.float32).unsqueeze(0).expand(states.shape[0], -1).unsqueeze(1),
@@ -184,13 +188,14 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
         _length_old (int): Original number of samples before windowing.
         _n_windows_per_sample (int): Number of windows per original sample.
     """
-    def __init__(self, seq_len: int, stride: int = 1, *args, **kwargs):
+    def __init__(self, seq_len: int, stride: int = 1, max_samples: int = None, *args, **kwargs):
         """Initialize TimeSeriesDataset with sliding window parameters.
         
         Args:
             seq_len (int): Length of subsequences to extract. If larger than available
                 time series length, will be clamped to maximum available length.
             stride (int): Stride for sliding window positions. Default is 1.
+            max_number_of_samples (int, optional): If provided, limits the number of samples in the dataset.
             *args: Positional arguments passed to parent StackDataset.
             **kwargs: Keyword arguments passed to parent StackDataset. Must result in
                 a dict-style dataset with a 'time' key.
@@ -206,10 +211,59 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
             Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
             seq_len = self.datasets['time'].shape[2]
         self.seq_len = seq_len
+        self.max_samples = max_samples
+        # calculate effective stride to be at or below max_samples if needed
+        if max_samples is not None:
+            stride = self.calculate_effective_stride(
+                N=self._length_old,
+                T=self.datasets['time'].shape[2],
+                seq_len=seq_len,
+                stride=stride,
+                max_samples=max_samples,
+            )
+            logging.info(f'Calculated effective stride {stride} to limit number of samples to {max_samples}')
         self.stride = stride
-        # build sliding-window tensor views for all time-series tensors
-        self._build_window_views(seq_len, stride)
 
+        # build sliding-window tensor views for all time-series tensors
+        self._build_window_views(seq_len, self.stride)
+
+    @staticmethod
+    def calculate_effective_stride(N: int, T: int, seq_len: int, stride: int, max_samples: Optional[int] = None) -> int:
+        """Compute an effective stride so that total windows do not exceed ``max_samples``.
+
+        Uses the same window-counting convention as ``_build_window_views``:
+        full_windows_per_sample = T - (seq_len - 1)
+        windows_per_sample(stride) = full_windows_per_sample // stride.
+        """
+        if max_samples is None:
+            return stride
+
+        assert N > 0, "N must be positive"
+        assert stride > 0, "stride must be positive"
+
+        full_windows_per_sample = T - (seq_len - 1)
+        assert full_windows_per_sample > 0, "seq_len must be <= time series length"
+
+        # windows for the initial stride
+        windows_per_sample = full_windows_per_sample // stride
+        if windows_per_sample <= 0:
+            windows_per_sample = 1
+
+        total_windows = windows_per_sample * N
+        if total_windows <= max_samples:
+            return stride
+
+        # Maximum windows per sample allowed under the global max_samples constraint
+        max_windows_per_sample = max_samples // N
+        if max_windows_per_sample <= 0:
+            max_windows_per_sample = 1
+
+        # Factor by which we need to increase the stride: use ceiling
+        # so that windows_per_sample / factor <= max_windows_per_sample.
+        factor = int(np.ceil(windows_per_sample / max_windows_per_sample))
+        effective_stride = stride * max(1, factor)
+        return effective_stride
+    
     def set_seq_len(self, seq_len: int):
         """Change the subsequence length and rebuild the sliding window mapping.
         
@@ -222,6 +276,17 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
             seq_len = self.datasets['time'].shape[2]
         self.seq_len = seq_len
         # rebuild sliding-window tensor views
+        # validate stride with max_samples if needed
+        if self.max_samples is not None:
+            new_stride = self.calculate_effective_stride(
+                N=self._length_old,
+                T=self.datasets['time'].shape[2],
+                seq_len=seq_len,
+                stride=self.stride,
+                max_samples=self.max_samples,
+            )
+            logging.info(f'Calculated effective stride {new_stride} to limit number of samples to {self.max_samples}')
+            self.stride = new_stride
         self._build_window_views(seq_len, self.stride)
 
     def _build_window_views(self, seq_len: int, stride: int = 1) -> None:

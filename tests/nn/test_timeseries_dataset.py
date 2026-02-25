@@ -48,6 +48,34 @@ def _build_dummy_datasets(N: int = 3, T: int = 10, seq_len: int = 4, stride: int
     return legacy, modern
 
 
+def _build_dummy_modern_dataset_with_max_samples(N: int, T: int, seq_len: int, stride: int, max_samples: int):
+    """Create only the modern TimeSeriesDataset with a max_samples constraint."""
+    torch.manual_seed(0)
+
+    time_base = torch.arange(T, dtype=torch.float32)
+    time = time_base.unsqueeze(0).expand(N, -1).unsqueeze(1)
+
+    states = torch.randn(N, 2, T)
+    states_der = torch.randn(N, 2, T)
+    controls = torch.randn(N, 1, T)
+    outputs = torch.randn(N, 1, T)
+    parameters = torch.randn(N, 1)
+
+    modern = TimeSeriesDataset(
+        seq_len,
+        stride,
+        max_samples=max_samples,
+        time=time,
+        states=states,
+        states_der=states_der,
+        controls=controls,
+        outputs=outputs,
+        parameters=parameters,
+    )
+
+    return modern
+
+
 def _assert_sample_equal(sample_legacy: dict, sample_modern: dict, atol: float = 1e-6):
     assert sample_legacy.keys() == sample_modern.keys()
     for key in sample_legacy.keys():
@@ -146,6 +174,38 @@ def test_timeseries_dataset_stride_getitems_matches_legacy():
         assert stacked_legacy.shape == v_modern.shape
         diff = (stacked_legacy - v_modern).abs().max().item() if stacked_legacy.numel() > 0 else 0.0
         assert diff <= 1e-6, f"Mismatch in __getitems__ for key {key}: max diff {diff} > 1e-6"
+
+
+def test_timeseries_dataset_max_samples_effective_stride_and_length():
+    """Validate effective stride computation with max_samples constraint.
+
+    For N=10, T=100, seq_len=5, initial stride=1 and max_samples=40, the
+    effective stride should be increased such that the resulting number of
+    samples (windows) does not exceed max_samples.
+    """
+
+    N, T, seq_len, stride, max_samples = 10, 100, 5, 1, 40
+
+    modern = _build_dummy_modern_dataset_with_max_samples(
+        N=N,
+        T=T,
+        seq_len=seq_len,
+        stride=stride,
+        max_samples=max_samples,
+    )
+    # check that we respect the limits
+    assert len(modern) <= max_samples
+    assert modern.stride == 24
+
+    # also cross-check via the helper
+    eff_stride = TimeSeriesDataset.calculate_effective_stride(
+        N=N,
+        T=T,
+        seq_len=seq_len,
+        stride=stride,
+        max_samples=max_samples,
+    )
+    assert eff_stride == modern.stride
 
 
 def test_timeseries_dataset_timing_comparison():
