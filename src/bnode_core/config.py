@@ -442,13 +442,13 @@ class base_training_settings_class:
         initialization_type (Optional[str]): Optional weight initialization scheme identifier.
     """
     batch_size: int = 64
-    max_epochs: int = 30000
+    max_epochs: int = 1500
     lr_start: float = 0.001
     beta1_adam: Optional[float] = 0.9
     beta2_adam: Optional[float] = 0.999
     weight_decay: float = 0.0
     clip_grad_norm: float = 100.0
-    early_stopping_patience: int = 1000
+    early_stopping_patience: int = 50
     early_stopping_threshold: float = 0.000
     early_stopping_threshold_mode: str = 'abs'
     initialization_type: Optional[str] = None
@@ -708,7 +708,7 @@ class base_neural_ode_pretraining_settings_class(base_training_settings_class):
     """
     method: str = 'collocation'
     batch_size: int = 1024
-    batches_per_epoch: int = 12
+    batches_per_epoch: int = 240
     max_epochs: int = 100
     lr_start: float = 0.001
     weight_decay: float = 1e-4
@@ -751,7 +751,7 @@ class base_time_stepper_training_settings(base_training_settings_class):
         seq_len_epoch_start (Optional[int]): Internal tracker for the starting sequence length of this phase.
     """
     evaluate_at_control_times: Optional[bool] = False
-    batches_per_epoch: Optional[int] = 12
+    batches_per_epoch: Optional[int] = 240
     reload_optimizer: Optional[bool] = True
     load_seq_len: Optional[int] = None
     seq_len_train: Optional[int] = None
@@ -832,7 +832,7 @@ class base_neural_ode_training_settings_class():
     path_pretrained_model: Optional[str] = None
     path_trained_model: Optional[str] = None 
 
-    ref_and_testnorm_every_n_epochs: int = 32
+    ref_and_testnorm_every_n_epochs: int = 16
     batch_size_test: int = 48
     initialization_type: Optional[str] = None
     initialization_type_ode: Optional[str] = None
