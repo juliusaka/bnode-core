@@ -1132,7 +1132,7 @@ class train_test_config_class:
     verbose: bool = False
     n_workers_train_loader: int = 5
     n_workers_other_loaders: int = 1
-    prefetch_factor: int = 2
+    prefetch_factor: Optional[int] = 2
 
     @field_validator('dataset_path')
     @classmethod
