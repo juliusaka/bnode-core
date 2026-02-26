@@ -51,10 +51,10 @@ dev = [
 torch =[
     "mlflow>=3.5.0",
     "onnx>=1.19.1",
-    "torch>=2.7.0",
-    "torchaudio>=2.8.0",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
     "torchdiffeq>=0.2.5",
-    "torchvision>=0.22.0",
+    "torchvision>=0.22.1",
 ]
 
 plotly =[
@@ -82,10 +82,10 @@ dev = [
 torch =[
     "mlflow>=3.5.0",
     "onnx>=1.19.1",
-    "torch>=2.7.0",
-    "torchaudio>=2.8.0",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
     "torchdiffeq>=0.2.5",
-    "torchvision>=0.22.0",
+    "torchvision>=0.22.1",
 ]
 
 plotly =[
