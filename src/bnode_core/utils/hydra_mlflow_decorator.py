@@ -1,3 +1,5 @@
+import os
+
 import mlflow
 from omegaconf import DictConfig, OmegaConf
 import hydra
@@ -7,6 +9,7 @@ from omegaconf import DictConfig
 import json
 from pathlib import Path
 import sys
+import os
 import io
 import shutil
 import logging
@@ -30,7 +33,13 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       logging.warning('mlflow_tracking_uri is None, using file-based mlflow in root directory')
       logging.warning('If the training is running here, you might have set an environment variable MLflow_TRACKING_URI that overrides the config value.')
     mlflow.set_experiment(cfg.mlflow_experiment_name)
-    mlflow.start_run(log_system_metrics=True)
+    system_info = os.uname()
+    mlflow.start_run(log_system_metrics=True,
+      tags ={ 
+        'host': system_info.nodename,
+        'os': system_info.sysname + ' ' + system_info.release + ' ' + system_info.version,
+        'machine': system_info.machine
+      }) # log computer name and os as tags
 
     hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
 
