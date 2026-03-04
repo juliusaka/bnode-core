@@ -763,7 +763,7 @@ class base_time_stepper_training_settings(base_training_settings_class):
     solver_rtol: Optional[float] = 1e-3
     solver_atol: Optional[float] = 1e-4
     solver_norm: Optional[str] = 'mixed' # max or mixed
-    solver_min_step: Optional[float] = None # only used for adaptive step size solvers, sets the minimum allowed step size, None means the solver default
+    solver_min_step: float = 1e-4 # only used for adaptive step size solvers, sets the minimum allowed step size, None means the solver default
     solver_step_size: Optional[float] = None # if None, the solver will use default settings
     break_after_loss_of: Optional[float] = None
     reload_model_if_loss_nan: bool = True # should be always True, only set to false e.g. for writing iclr paper
