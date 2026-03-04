@@ -76,6 +76,8 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       logging.error(traceback.format_exc())
       if cfg.raise_exception:
           raise e
+    # if no exception, log error as False
+    mlflow.log_param('error', False)
     
     # log hydra config as artifacts to mlflow, this includes all loggings
     # see https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory/

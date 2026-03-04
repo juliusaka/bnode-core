@@ -743,6 +743,7 @@ class base_time_stepper_training_settings(base_training_settings_class):
         solver_rtol (Optional[float]): Relative tolerance for adaptive step size solver.
         solver_atol (Optional[float]): Absolute tolerance for adaptive step size solver.
         solver_norm (Optional[str]): Norm used for adaptive step ('max' or 'mixed'). Default is 'mixed', that uses rmse per sample and max over batch.
+        solver_min_step (Optional[float]): Minimum step size for adaptive step size solvers. None means the solver default (=0).
         solver_step_size (Optional[float]): Fixed step size; None uses solver defaults. Only used for fixed-step solvers, should the dataset time step should be a multiple of this step size.
         break_after_loss_of (Optional[float]): Early break threshold on loss value.
         reload_model_if_loss_nan (bool): Reload last checkpoint if loss becomes NaN.
@@ -762,6 +763,7 @@ class base_time_stepper_training_settings(base_training_settings_class):
     solver_rtol: Optional[float] = 1e-3
     solver_atol: Optional[float] = 1e-4
     solver_norm: Optional[str] = 'mixed' # max or mixed
+    solver_min_step: Optional[float] = None # only used for adaptive step size solvers, sets the minimum allowed step size, None means the solver default
     solver_step_size: Optional[float] = None # if None, the solver will use default settings
     break_after_loss_of: Optional[float] = None
     reload_model_if_loss_nan: bool = True # should be always True, only set to false e.g. for writing iclr paper
@@ -861,6 +863,7 @@ class base_neural_ode_training_settings_class():
     solver_rtol_override: Optional[float] = None
     solver_atol_override: Optional[float] = None
     solver_step_size_override: Optional[float] = None
+    solver_min_step_override: Optional[float] = None
     solver_norm_override: Optional[str] = None
     # no override for break_after_loss_of as this should only used for one training phase    pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
     
@@ -876,8 +879,9 @@ class base_neural_ode_training_settings_class():
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
-                        'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override','solver_rtol_override', 'solver_atol_override', 'solver_step_size_override',
-                        'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override', 'solver_norm_override']:
+                        'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override','solver_rtol_override', 
+                        'solver_atol_override', 'solver_step_size_override', 'solver_min_step_override', 'solver_norm_override',
+                        'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override',]:
                 if info.data[key] is not None:
                     # print warning if override is set and non-default value is used
                     if v[i].__getattribute__(key.split('_override')[0]) != default_class.__getattribute__(key.split('_override')[0]):
@@ -1015,6 +1019,7 @@ class base_latent_ode_training_settings_class:
     solver_atol_override: Optional[float] = None
     solver_step_size_override: Optional[float] = None
     solver_norm_override: Optional[str] = None
+    solver_min_step_override: Optional[float] = None
     # no override for break_after_loss_of as this should only used for one training phase
     # no override for activate_deterministic_mode_after_this_phase as this should only used for one training phase
 
@@ -1045,7 +1050,8 @@ class base_latent_ode_training_settings_class:
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
-                        'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override', 'solver_rtol_override', 'solver_atol_override', 'solver_step_size_override',
+                        'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override', 'solver_rtol_override', 
+                        'solver_atol_override', 'solver_step_size_override', 'solver_min_step_override',
                         'beta_start_override', 'alpha_mu_override', 'alpha_sigma_override',
                         'n_passes_override', 'threshold_count_populated_dimensions_override',
                         'include_reconstruction_loss_state0_override', 'include_reconstruction_loss_outputs0_override',

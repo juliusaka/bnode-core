@@ -448,6 +448,9 @@ class BalancedNeuralODE(nn.Module):
             if train_cfg.solver_step_size is not None:
                 if train_cfg.solver in _fixed_step_solvers:
                     _base_options['step_size'] = train_cfg.solver_step_size
+            if train_cfg.solver_min_step is not None:
+                if not (train_cfg.solver in _fixed_step_solvers):
+                    _base_options['min_step'] = train_cfg.solver_min_step
             options = _base_options.copy()       
             if train_cfg.use_adjoint is True:           
                 adjoint_options = _base_options.copy()
