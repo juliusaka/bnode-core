@@ -1043,7 +1043,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                     else:
                         _stable_epochs = 0
                     mlflow.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation', pre_train), step=epoch)
-                except Exception as e:
+                except AssertionError as e:
                     if 'non-finite values in' in str(e):
                         logging.warning('Error in validation: {}'.format(e))
                         ret_vals_validation = {key: float('nan') for key in ret_vals_train.keys()} # to avoid error in logging
@@ -1060,7 +1060,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         return_model_outputs=False,
                         data_iter=dataloader_iters['test'],
                     )
-                except Exception as e:
+                except AssertionError as e:
                     if 'non-finite values in' in str(e):
                         logging.warning('Error in test: {}'.format(e))
                         ret_vals_test = {key: float('nan') for key in ret_vals_train.keys()} # to avoid error in logging
@@ -1081,10 +1081,11 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                                 return_model_outputs=False,
                                 data_iter=dataloader_iters['ref'],
                             )
-                        except Exception as e:
+                        except AssertionError as e:
                             if 'non-finite values in' in str(e):
                                 logging.warning('Error in ref test: {}'.format(e))
                                 ret_vals_ref = {key: float('nan') for key in ret_vals_train.keys()} # to avoid error in logging
+                            else:
                                 raise e
                         _res = append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train)
                         logging.info(_res)
@@ -1103,7 +1104,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                                 return_model_outputs=False,
                                 data_iter=dataloader_iters['testnorm'],
                             )
-                        except Exception as e:
+                        except AssertionError as e:
                             if 'non-finite values in' in str(e):
                                 logging.warning('Error in testnorm test: {}'.format(e))
                                 ret_vals_testnorm = {key: float('nan') for key in ret_vals_train.keys()} # to avoid error in logging
