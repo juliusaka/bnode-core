@@ -440,9 +440,17 @@ class base_training_settings_class:
         early_stopping_threshold (float): Improvement threshold for early stopping.
         early_stopping_threshold_mode (str): Threshold mode, typically 'rel' or 'abs'.
         use_lr_scheduler (bool): Enable learning rate scheduler for this phase.
-        lr_scheduler_type (Optional[str]): Learning rate scheduler type identifier (e.g. 'cosine').
+        lr_scheduler_type (Optional[str]): Learning rate scheduler type identifier (e.g. 'cosine', 'plateau').
         cosine_T_max (Optional[int]): Cosine scheduler horizon in epochs; if None, defaults to max_epochs/5.
         cosine_eta_min (float): Minimum learning rate for cosine scheduler.
+        plateau_mode (str): Mode for ReduceLROnPlateau ('min' or 'max').
+        plateau_factor (float): Multiplicative factor of learning rate reduction on plateau.
+        plateau_patience (int): Number of epochs with no improvement before reducing LR. If none (default), set patience based on heuristic
+        plateau_threshold (float): Threshold for measuring new optimum.
+        plateau_threshold_mode (str): Threshold mode for plateau scheduler ('rel' or 'abs').
+        plateau_cooldown (int): Number of epochs to wait before resuming normal operation after LR has been reduced.
+        plateau_min_lr (float): Minimum learning rate for plateau scheduler.
+        plateau_eps (float): Minimal decay applied to LR.
         initialization_type (Optional[str]): Optional weight initialization scheme identifier.
     """
     batch_size: int = 64
@@ -460,6 +468,14 @@ class base_training_settings_class:
     lr_scheduler_type: Optional[str] = None
     cosine_T_max: Optional[int] = None
     cosine_eta_min: float = 1e-5
+    plateau_mode: str = 'min'
+    plateau_factor: float = 0.5
+    plateau_patience: Optional[float] = None # if none, set patience based on heuristic
+    plateau_threshold: float = 5e-5
+    plateau_threshold_mode: str = 'abs'
+    plateau_cooldown: int = 0
+    plateau_min_lr: float = 5e-5
+    plateau_eps: float = 0
     initialization_type: Optional[str] = None
 
 @dataclass
@@ -866,6 +882,14 @@ class base_neural_ode_training_settings_class():
     lr_scheduler_type_override: Optional[str] = None
     cosine_T_max_override: Optional[int] = None
     cosine_eta_min_override: Optional[float] = None
+    plateau_mode_override: Optional[str] = None
+    plateau_factor_override: Optional[float] = None
+    plateau_patience_override: Optional[int] = None
+    plateau_threshold_override: Optional[float] = None
+    plateau_threshold_mode_override: Optional[str] = None
+    plateau_cooldown_override: Optional[int] = None
+    plateau_min_lr_override: Optional[float] = None
+    plateau_eps_override: Optional[float] = None
 
     reload_optimizer_override: Optional[bool] = None    
     solver_override: Optional[str] = None
@@ -895,6 +919,9 @@ class base_neural_ode_training_settings_class():
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override',
                         'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'plateau_mode_override', 'plateau_factor_override', 'plateau_patience_override',
+                        'plateau_threshold_override', 'plateau_threshold_mode_override', 'plateau_cooldown_override',
+                        'plateau_min_lr_override', 'plateau_eps_override',
                         'reload_optimizer_override','solver_override', 'load_seq_len_override', 
                         'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override','solver_rtol_override', 
                         'solver_atol_override', 'solver_step_size_override', 'solver_min_step_override', 'solver_norm_override',
@@ -1045,6 +1072,14 @@ class base_latent_ode_training_settings_class:
     lr_scheduler_type_override: Optional[str] = None
     cosine_T_max_override: Optional[int] = None
     cosine_eta_min_override: Optional[float] = None
+    plateau_mode_override: Optional[str] = None
+    plateau_factor_override: Optional[float] = None
+    plateau_patience_override: Optional[int] = None
+    plateau_threshold_override: Optional[float] = None
+    plateau_threshold_mode_override: Optional[str] = None
+    plateau_cooldown_override: Optional[int] = None
+    plateau_min_lr_override: Optional[float] = None
+    plateau_eps_override: Optional[float] = None
 
     # additional to base_neural_ode_training_settings_class
     beta_start_override: Optional[float] = None
@@ -1081,7 +1116,10 @@ class base_latent_ode_training_settings_class:
                         'multi_shooting_condition_multiplier_override',
                         'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override', 'solver_norm_override',
                         'include_states_grad_loss_override', 'include_outputs_grad_loss_override',
-                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override']:
+                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'plateau_mode_override', 'plateau_factor_override', 'plateau_patience_override',
+                        'plateau_threshold_override', 'plateau_threshold_mode_override', 'plateau_cooldown_override',
+                        'plateau_min_lr_override', 'plateau_eps_override']:
                 if info.data[key] is not None:
                     # print warning if override is set and non-default value is used
                     if v[i].__getattribute__(key.split('_override')[0]) != default_class.__getattribute__(key.split('_override')[0]):

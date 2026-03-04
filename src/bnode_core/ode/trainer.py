@@ -172,11 +172,12 @@ import copy
 
 from h5py import Dataset as hdf5_dataset_class
 from torch.nn.utils import clip_grad_norm_
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 import bnode_core.filepaths as filepaths
 from bnode_core.ode.node.node_architecture import NeuralODE
 from bnode_core.ode.bnode.bnode_architecture import BalancedNeuralODE
+from bnode_core.nn.nn_utils.lr_scheduler import lr_on_plateau_iterations_to_min_lr
 
 from bnode_core.nn.nn_utils.load_data import (
     load_dataset_and_config,
@@ -709,7 +710,7 @@ def _next_batch(data_loader, iterator):
 
 
 # define train loop for one epoch
-def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase, scheduler=None):
+def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase, lr_schedulers=None):
     model.train()
     _time_forward = 0
     _time_backward = 0
@@ -782,9 +783,13 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
         #     raise AssertionError('Gradient norm is NaN, model is not trainable')
         scaler.step(optimizer)
         scaler.update()
-        # step learning-rate scheduler once per optimizer update (per batch)
-        if scheduler is not None:
-            scheduler.step()
+        # step learning-rate scheduler(s) once per optimizer update (per batch)
+        if lr_schedulers:
+            # For now only cosine-type schedulers are stepped per batch; others
+            # will typically be stepped at epoch level using validation metrics.
+            for key in lr_schedulers.keys():
+                if key == 'cosine':
+                    lr_schedulers[key].step()
         _time_step += pyTime.time() - _time
         if batch_idx % batch_print_interval == 0:
             _total_time = _time_forward + _time_backward + _time_step + _time_loader
@@ -900,8 +905,8 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
         max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
         epoch_stop = epoch_0 + max_epochs # can be changed after seq_len increase has stopped.
 
-        # optional cosine learning-rate scheduler (per phase, stepped per batch)
-        scheduler = None
+        # optional learning-rate scheduler(s) (per phase)
+        lr_schedulers = {}
         if test is False and pre_train is False and getattr(train_cfg, 'use_lr_scheduler', False):
             if train_cfg.lr_scheduler_type == 'cosine':
                 # user-facing T_max is in epochs; internally we schedule over batches
@@ -912,10 +917,39 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                     T_max_epochs = max(1, train_cfg.max_epochs // 5)
                 T_max_batches = max(1, int(T_max_epochs * _batches_per_epoch))
                 eta_min = getattr(train_cfg, 'cosine_eta_min', 0.0)
-                scheduler = CosineAnnealingLR(optimizer, T_max=T_max_batches, eta_min=eta_min)
+                lr_schedulers['cosine'] = CosineAnnealingLR(optimizer, T_max=T_max_batches, eta_min=eta_min)
                 logging.info(f'Initialized cosine LR scheduler (per batch): T_max_batches={T_max_batches}, eta_min={eta_min}')
+            elif train_cfg.lr_scheduler_type == 'plateau':
+                if train_cfg.plateau_patience is None:
+                    _iters = lr_on_plateau_iterations_to_min_lr(
+                        lr_start=train_cfg.lr_start,
+                        lr_min=train_cfg.plateau_min_lr,
+                        factor=train_cfg.plateau_factor,
+                        eps=train_cfg.plateau_eps
+                    )
+                    _patience = (train_cfg.max_epochs / 2) // _iters
+                else:
+                    _patience = train_cfg.plateau_patience
+                lr_schedulers['plateau'] = ReduceLROnPlateau(
+                    optimizer,
+                    mode=train_cfg.plateau_mode,
+                    factor=train_cfg.plateau_factor,
+                    patience=_patience,
+                    threshold=train_cfg.plateau_threshold,
+                    threshold_mode=train_cfg.plateau_threshold_mode,
+                    cooldown=train_cfg.plateau_cooldown,
+                    min_lr=train_cfg.plateau_min_lr,
+                    eps=train_cfg.plateau_eps,
+                )
+                logging.info('Initialized ReduceLROnPlateau LR scheduler: '
+                             f"mode={train_cfg.plateau_mode}, factor={train_cfg.plateau_factor}, "
+                             f"patience={_patience}, threshold={train_cfg.plateau_threshold}, "
+                             f"threshold_mode={train_cfg.plateau_threshold_mode}, cooldown={train_cfg.plateau_cooldown}, "
+                             f"min_lr={train_cfg.plateau_min_lr}, eps={train_cfg.plateau_eps}")
             else:
                 raise ValueError(f'LR scheduler type {train_cfg.lr_scheduler_type} not recognized')
+        if len(lr_schedulers) == 0:
+            lr_schedulers = None
         # flag to not early stop if seq_len_increase is active
         if pre_train is False:
             if epochs_for_seq_len_increase == 0:
@@ -978,7 +1012,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                             cfg.use_cuda,
                             cfg.batch_print_interval,
                             epoch - epoch_0,
-                            scheduler,
+                            lr_schedulers,
                         )
                         _reload_assertion_error = False
                     except AssertionError as e:
@@ -1056,6 +1090,11 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         return_model_outputs=False,
                         data_iter=dataloader_iters['validation'],
                     )
+                    # step epoch-based LR schedulers (e.g., ReduceLROnPlateau) on validation loss
+                    if lr_schedulers and 'plateau' in lr_schedulers.keys():
+                        val_loss = ret_vals_validation.get('loss', None)
+                        if val_loss is not None and not (np.isnan(val_loss) or np.isinf(val_loss)):
+                            lr_schedulers['plateau'].step(val_loss)
                     early_stopping(ret_vals_validation['loss'], model, epoch, optimizer)
                                     # count stable epochs to end seq_len_increase early
                     if ret_vals_validation['loss'] < 2 * ret_vals_train['loss']:
