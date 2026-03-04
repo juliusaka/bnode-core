@@ -956,25 +956,13 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                             cfg.batch_print_interval,
                             epoch - epoch_0,
                         )
+                        _reload_assertion_error = False
                     except AssertionError as e:
-                        if 'underflow' in str(e):
-                            logging.warning('Underflow in automatic mixed precision. Trying again without autocast')
-                            ret_vals_train, train_iter = train_one_epoch(
-                                model,
-                                optimizer,
-                                dataloaders['train'],
-                                dataloader_iters['train'],
-                                scaler,
-                                train_cfg,
-                                pre_train,
-                                device,
-                                epoch,
-                                False,
-                                cfg.use_cuda,
-                                cfg.batch_print_interval,
-                                epoch - epoch_0,
-                            )
-                    if np.isnan(ret_vals_train['loss']):
+                        logging.error('Assertion error during training: {}'.format(e))
+                        logging.error('This is likely to happen because of the odeint integration in the model.')
+                        logging.error('Aborting training of this epoch and reloading last working model to continue with next epoch.')
+                        _reload_assertion_error = True
+                    if np.isnan(ret_vals_train['loss']) or np.isinf(ret_vals_train['loss']) or _reload_assertion_error:
                         if train_cfg.reload_model_if_loss_nan:
                             if not nan_counter >  49: # if not more than 25 NaNs in loss, reload the last model
                                 try:
@@ -997,6 +985,9 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                                 optimizer.load_state_dict(torch.load(_path_optimizer_best_model))
                                 logging.warning('Loss is NaN. Loaded last best model and corresponding optimizer from {}'.format(_path_best_model))
                                 mlflow.log_metric('loss_nan_reload', 1, step=epoch)
+                                if nan_counter > 55:
+                                    logging.error('Loss is NaN for more than 55 epochs, even after reloading last best model. Aborting training.')
+                                    raise ValueError('Loss is NaN for more than 55 epochs, even after reloading last best model. Aborting training.')
                         else: # e.g. if train_cfg.reload_model_if_loss_nan is False:
                             logging.warning('Loss is NaN. Continuing with current model and optimizer as reload_model_if_loss_nan is False')
                         nan_counter += 1
