@@ -439,6 +439,10 @@ class base_training_settings_class:
         early_stopping_patience (int): Patience before early stopping.
         early_stopping_threshold (float): Improvement threshold for early stopping.
         early_stopping_threshold_mode (str): Threshold mode, typically 'rel' or 'abs'.
+        use_lr_scheduler (bool): Enable learning rate scheduler for this phase.
+        lr_scheduler_type (Optional[str]): Learning rate scheduler type identifier (e.g. 'cosine').
+        cosine_T_max (Optional[int]): Cosine scheduler horizon in epochs; if None, defaults to max_epochs/5.
+        cosine_eta_min (float): Minimum learning rate for cosine scheduler.
         initialization_type (Optional[str]): Optional weight initialization scheme identifier.
     """
     batch_size: int = 64
@@ -451,6 +455,11 @@ class base_training_settings_class:
     early_stopping_patience: int = 50
     early_stopping_threshold: float = 0.000
     early_stopping_threshold_mode: str = 'abs'
+    # optional learning-rate scheduler configuration (shared across models)
+    use_lr_scheduler: bool = False
+    lr_scheduler_type: Optional[str] = None
+    cosine_T_max: Optional[int] = None
+    cosine_eta_min: float = 1e-5
     initialization_type: Optional[str] = None
 
 @dataclass
@@ -852,6 +861,12 @@ class base_neural_ode_training_settings_class():
     early_stopping_threshold_override: Optional[float] = None
     early_stopping_threshold_mode_override: Optional[str] = None
 
+    # learning-rate scheduler overrides (applied to all main_training phases)
+    use_lr_scheduler_override: Optional[bool] = None
+    lr_scheduler_type_override: Optional[str] = None
+    cosine_T_max_override: Optional[int] = None
+    cosine_eta_min_override: Optional[float] = None
+
     reload_optimizer_override: Optional[bool] = None    
     solver_override: Optional[str] = None
     load_seq_len_override: Optional[int] = None
@@ -878,7 +893,9 @@ class base_neural_ode_training_settings_class():
             for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'lr_start_override',
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
-                        'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
+                        'early_stopping_threshold_mode_override',
+                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'reload_optimizer_override','solver_override', 'load_seq_len_override', 
                         'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override','solver_rtol_override', 
                         'solver_atol_override', 'solver_step_size_override', 'solver_min_step_override', 'solver_norm_override',
                         'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override',]:
@@ -1023,6 +1040,12 @@ class base_latent_ode_training_settings_class:
     # no override for break_after_loss_of as this should only used for one training phase
     # no override for activate_deterministic_mode_after_this_phase as this should only used for one training phase
 
+    # learning-rate scheduler overrides (applied to all main_training phases)
+    use_lr_scheduler_override: Optional[bool] = None
+    lr_scheduler_type_override: Optional[str] = None
+    cosine_T_max_override: Optional[int] = None
+    cosine_eta_min_override: Optional[float] = None
+
     # additional to base_neural_ode_training_settings_class
     beta_start_override: Optional[float] = None
     alpha_mu_override: Optional[float] = None
@@ -1057,7 +1080,8 @@ class base_latent_ode_training_settings_class:
                         'include_reconstruction_loss_state0_override', 'include_reconstruction_loss_outputs0_override',
                         'multi_shooting_condition_multiplier_override',
                         'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override', 'solver_norm_override',
-                        'include_states_grad_loss_override', 'include_outputs_grad_loss_override']:
+                        'include_states_grad_loss_override', 'include_outputs_grad_loss_override',
+                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override']:
                 if info.data[key] is not None:
                     # print warning if override is set and non-default value is used
                     if v[i].__getattribute__(key.split('_override')[0]) != default_class.__getattribute__(key.split('_override')[0]):
