@@ -1004,7 +1004,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         _activate_deterministic_mode = train_cfg.activate_deterministic_mode_after_this_phase and _flag_break_after_epoch
                     else:
                         _activate_deterministic_mode = False
-                    ret_vals_train, dataloader_iters['train'] = non-finite values in state `y`
+                    ret_vals_train, dataloader_iters['train'] = test_or_validate_one_epoch(
                         model,
                         dataloaders['train'],
                         train_cfg,
@@ -1014,7 +1014,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         return_model_outputs=False,
                         activate_deterministic_mode=_activate_deterministic_mode,
                         data_iter=dataloader_iters['train']
-                    )
+                        )
                     if _activate_deterministic_mode:
                         logging.info('Activated deterministic mode')
                         model.save(path=_path_best_model)
