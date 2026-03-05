@@ -432,6 +432,7 @@ class base_training_settings_class:
         batch_size (int): Training mini-batch size.
         max_epochs (int): Maximum number of epochs.
         lr_start (float): Initial learning rate.
+        optimizer (str): Optimizer type identifier ('adam' or 'lbfgs').
         beta1_adam (float): Adam beta1 parameter.
         beta2_adam (float): Adam beta2 parameter.
         weight_decay (float): L2 weight decay.
@@ -451,11 +452,18 @@ class base_training_settings_class:
         plateau_cooldown (int): Number of epochs to wait before resuming normal operation after LR has been reduced.
         plateau_min_lr (float): Minimum learning rate for plateau scheduler.
         plateau_eps (float): Minimal decay applied to LR.
+        lbfgs_max_iter (int): Maximum number of iterations per LBFGS step.
+        lbfgs_history_size (int): History size for LBFGS.
+        lbfgs_tolerance_grad (float): LBFGS gradient tolerance for convergence.
+        lbfgs_tolerance_change (float): LBFGS parameter-change tolerance for convergence.
+        lbfgs_line_search_fn (Optional[str]): Optional LBFGS line search function name.
+        lbfgs_n_steps_per_batch (int): Number of LBFGS steps to perform per batch.
         initialization_type (Optional[str]): Optional weight initialization scheme identifier.
     """
     batch_size: int = 64
     max_epochs: int = 1500
     lr_start: float = 0.001
+    optimizer: str = 'adam'
     beta1_adam: Optional[float] = 0.9
     beta2_adam: Optional[float] = 0.999
     weight_decay: float = 0.0
@@ -476,6 +484,12 @@ class base_training_settings_class:
     plateau_cooldown: int = 0
     plateau_min_lr: float = 5e-5
     plateau_eps: float = 0
+    lbfgs_max_iter: int = 20
+    lbfgs_history_size: int = 100
+    lbfgs_tolerance_grad: float = 1e-7
+    lbfgs_tolerance_change: float = 1e-9
+    lbfgs_line_search_fn: Optional[str] = None
+    lbfgs_n_steps_per_batch: int = 1
     initialization_type: Optional[str] = None
 
 @dataclass
@@ -868,6 +882,7 @@ class base_neural_ode_training_settings_class():
     batch_size_override: Optional[int] = None
     batches_per_epoch_override: Optional[int] = None
     max_epochs_override: Optional[int] = None
+    optimizer_override: Optional[str] = None
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
@@ -914,7 +929,7 @@ class base_neural_ode_training_settings_class():
     def set_overrides(cls, v, info: ValidationInfo):
         default_class = base_time_stepper_training_settings()
         for i, training_settings in enumerate(v):
-            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'lr_start_override',
+            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override',
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override',
@@ -1042,6 +1057,7 @@ class base_latent_ode_training_settings_class:
     batch_size_override: Optional[int] = None
     batches_per_epoch_override: Optional[int] = None
     max_epochs_override: Optional[int] = None
+    optimizer_override: Optional[str] = None
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
@@ -1104,7 +1120,7 @@ class base_latent_ode_training_settings_class:
     def set_overrides(cls, v, info: ValidationInfo):
         default_class = latent_timestepper_training_settings()
         for i, training_settings in enumerate(v):
-            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'lr_start_override', 
+            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override', 
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 

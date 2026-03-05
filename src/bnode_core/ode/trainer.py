@@ -172,6 +172,7 @@ import copy
 
 from h5py import Dataset as hdf5_dataset_class
 from torch.nn.utils import clip_grad_norm_
+from torch.optim import LBFGS
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 import bnode_core.filepaths as filepaths
@@ -745,15 +746,56 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
             _seq_len_now = 1
         _time_loader += pyTime.time() - _time_l
         _time = pyTime.time()
-        optimizer.zero_grad()
-        with torch.cuda.amp.autocast(enabled=use_amp and use_cuda):
-            #model_and_loss_evaluation(self, data_batch, train_cfg, pre_train, device, return_model_outputs, test = False):
-            ret_vals_train = model.model_and_loss_evaluation(data_batch, train_cfg, pre_train, device, return_model_outputs = False, test = False, last_batch = batch_idx == batches_per_epoch-1)
-        loss = ret_vals_train['loss']
-        _time_forward += pyTime.time() - _time
-        _time = pyTime.time()
-        scaler.scale(loss).backward()
-        #loss.backward()
+
+        # Branch on optimizer type: standard first-order optimizers vs LBFGS
+        is_lbfgs = isinstance(optimizer, LBFGS)
+
+        if not is_lbfgs:
+            optimizer.zero_grad()
+            # Standard optimizers (e.g., Adam): single forward/backward pass
+            with torch.cuda.amp.autocast(enabled=use_amp and use_cuda):
+                ret_vals_train = model.model_and_loss_evaluation(
+                    data_batch,
+                    train_cfg,
+                    pre_train,
+                    device,
+                    return_model_outputs=False,
+                    test=False,
+                    last_batch=batch_idx == batches_per_epoch - 1,
+                )
+            loss = ret_vals_train['loss']
+            _time_forward += pyTime.time() - _time
+            _time = pyTime.time()
+            scaler.scale(loss).backward()
+        else:
+            # LBFGS: closure-based optimization; disable AMP for simplicity
+            ret_vals_train = {}
+
+            def _closure():
+                optimizer.zero_grad()
+                out = model.model_and_loss_evaluation(
+                    data_batch,
+                    train_cfg,
+                    pre_train,
+                    device,
+                    return_model_outputs=False,
+                    test=False,
+                    last_batch=batch_idx == batches_per_epoch - 1,
+                )
+                loss_closure = out['loss']
+                loss_closure.backward()
+                # optionally apply gradient clipping inside the closure
+                clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
+                # store last returned values for logging
+                nonlocal ret_vals_train
+                ret_vals_train = out
+                return loss_closure
+
+            # Run a single LBFGS step for this batch; internal iterations
+            # are controlled via train_cfg.lbfgs_max_iter.
+            loss = optimizer.step(_closure)
+            _time_forward += pyTime.time() - _time
+            _time = pyTime.time()
         _flag_break_cuda_memory = False
         if use_cuda:
             mlflow.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024^3), step=epoch)
@@ -773,16 +815,19 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
         _ode_calls_backward = model.ode_fun_count if hasattr(model, 'ode_fun_count') else 0
         _time_backward += pyTime.time() - _time
         _time = pyTime.time()
-        scaler.unscale_(optimizer)
-        # clip gradients
-        _norm = clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
-        if _norm > train_cfg.clip_grad_norm:
-            logging.info('Gradient norm {} is larger than clip_grad_norm {}. Clipping Gradient.'.format(_norm, train_cfg.clip_grad_norm))
-        # if torch.isnan(_norm):
-        #     logging.error('Gradient norm is NaN. Aborting.')
-        #     raise AssertionError('Gradient norm is NaN, model is not trainable')
-        scaler.step(optimizer)
-        scaler.update()
+
+        # For LBFGS, step and clipping are handled in the closure; for others,
+        # unscale, clip and step via the GradScaler.
+        if not is_lbfgs:
+            scaler.unscale_(optimizer)
+            _norm = clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
+            if _norm > train_cfg.clip_grad_norm:
+                logging.info('Gradient norm {} is larger than clip_grad_norm {}. Clipping Gradient.'.format(_norm, train_cfg.clip_grad_norm))
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            # For LBFGS, report the most recent gradient norm for logging.
+            _norm = clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
         # step learning-rate scheduler(s) once per optimizer update (per batch)
         if lr_schedulers:
             # For now only cosine-type schedulers are stepped per batch; others
@@ -862,9 +907,29 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
     logging.info('Start next training phase....')
     
     if test is False:
-        optimizer = torch.optim.Adam(model.parameters(), lr=train_cfg.lr_start, weight_decay=train_cfg.weight_decay, betas=(train_cfg.beta1_adam, train_cfg.beta2_adam))
-        # LFBGS
-        # optimizer = torch.optim.LBFGS(model.parameters(), lr=train_cfg.lr_start)
+        # Select optimizer based on config (default: Adam)
+        optimizer_name = train_cfg.optimizer
+        optimizer_name_lower = optimizer_name.lower()
+        if optimizer_name_lower == 'adam':
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=train_cfg.lr_start,
+                weight_decay=train_cfg.weight_decay,
+                betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            )
+        elif optimizer_name_lower == 'lbfgs':
+            optimizer = LBFGS(
+                model.parameters(),
+                lr=train_cfg.lr_start,
+                max_iter=train_cfg.lbfgs_max_iter,
+                history_size=train_cfg.lbfgs_history_size,
+                tolerance_grad=train_cfg.lbfgs_tolerance_grad,
+                tolerance_change=train_cfg.lbfgs_tolerance_change,
+                line_search_fn=train_cfg.lbfgs_line_search_fn,
+            )
+            logging.info('Using LBFGS optimizer')
+        else:
+            raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'lbfgs'.")
         if pre_train is False:
             if train_cfg.reload_optimizer is True:
                 try:
@@ -907,7 +972,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
 
         # optional learning-rate scheduler(s) (per phase)
         lr_schedulers = {}
-        if test is False and pre_train is False and getattr(train_cfg, 'use_lr_scheduler', False):
+        if test is False and pre_train is False and train_cfg.use_lr_scheduler:
             if train_cfg.lr_scheduler_type == 'cosine':
                 # user-facing T_max is in epochs; internally we schedule over batches
                 if train_cfg.cosine_T_max is not None:
