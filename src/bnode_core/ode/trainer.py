@@ -914,9 +914,9 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                     T_max_epochs = train_cfg.cosine_T_max
                 else:
                     # default horizon: decay over first fifth of configured max_epochs
-                    T_max_epochs = max(1, train_cfg.max_epochs // 5)
+                    T_max_epochs = max(1, train_cfg.max_epochs // 10)
                 T_max_batches = max(1, int(T_max_epochs * _batches_per_epoch))
-                eta_min = getattr(train_cfg, 'cosine_eta_min', 0.0)
+                eta_min = train_cfg.cosine_eta_min
                 lr_schedulers['cosine'] = CosineAnnealingLR(optimizer, T_max=T_max_batches, eta_min=eta_min)
                 logging.info(f'Initialized cosine LR scheduler (per batch): T_max_batches={T_max_batches}, eta_min={eta_min}')
             elif train_cfg.lr_scheduler_type == 'plateau':
