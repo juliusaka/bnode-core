@@ -662,6 +662,7 @@ class latent_ode_network_class(base_network_class):
         lat_states_dim (int): Dimension of latent state space.
         lat_parameters_dim (int): Dimension of latent parameter space.
         lat_controls_dim (int): Dimension of latent control space.
+        feedthrough_controls (Optional[List[Union[str, int]]]): List of control variable names (str) or indices (int) to pass directly to the decoder. When set, these controls are passed raw (normalized) to the decoder in addition to being encoded through the control encoder. This enables direct feed-through paths for selected control signals. Variable names are matched against the 'controls_names' stored in the HDF5 dataset. Defaults to None (no feedthrough).
     """
     n_linear_layers: int = 4
     linear_hidden_dim: int = 128
@@ -687,6 +688,15 @@ class latent_ode_network_class(base_network_class):
     lat_states_dim: int = 64
     lat_parameters_dim: int = 64
     lat_controls_dim: int = 64
+
+    feedthrough_controls: Optional[List[Union[str, int]]] = None
+    """List of control variable names (str) or indices (int) to pass directly to the decoder.
+    
+    When set, these controls are passed raw (normalized) to the decoder in addition to
+    being encoded through the control encoder. This enables direct feed-through paths
+    for selected control signals. Variable names are matched against the 'controls_names'
+    stored in the HDF5 dataset. Defaults to None (no feedthrough).
+    """
 
     # check field lat_ode_type
     @field_validator('lat_ode_type')

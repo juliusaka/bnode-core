@@ -177,7 +177,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 import bnode_core.filepaths as filepaths
 from bnode_core.ode.node.node_architecture import NeuralODE
-from bnode_core.ode.bnode.bnode_architecture import BalancedNeuralODE
+from bnode_core.ode.bnode.bnode_architecture import BalancedNeuralODE, build_feedthrough_mask
 from bnode_core.nn.nn_utils.lr_scheduler import lr_on_plateau_iterations_to_min_lr
 
 from bnode_core.nn.nn_utils.load_data import (
@@ -263,6 +263,21 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
         if initialize_normalization:
             model.normalization_init(hdf5_dataset)
     elif model_type == 'bnode':
+        # Build feedthrough controls mask if configured
+        if cfg.nn_model.network.feedthrough_controls:
+            controls_dim = train_dataset[0]['controls'].shape[0] if 'controls' in train_dataset[0].keys() else 0
+            if controls_dim > 0 and 'controls_names' in hdf5_dataset:
+                control_names = [s.decode() if isinstance(s, bytes) else str(s) for s in hdf5_dataset['controls_names'][:]]
+                feedthrough_mask = build_feedthrough_mask(
+                    control_names, 
+                    cfg.nn_model.network.feedthrough_controls, 
+                    controls_dim
+                )
+            else:
+                raise ValueError('feedthrough_controls configured but no controls_names found in dataset or no controls in dataset')
+        else:
+            feedthrough_mask = None
+        
         model = BalancedNeuralODE(
                         states_dim=train_dataset[0]['states'].shape[0],
                         lat_states_mu_dim=cfg.nn_model.network.lat_states_dim,
@@ -292,6 +307,7 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
                         decoder_linear = cfg.nn_model.network.decoder_linear,
                         lat_state_mu_independent = cfg.nn_model.network.lat_state_mu_independent,
                         use_input_smoother=cfg.nn_model.training.use_input_smoother,
+                        feedthrough_controls_mask=feedthrough_mask,
                         )
         # initialize normalizations
         if initialize_normalization:

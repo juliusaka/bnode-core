@@ -6,6 +6,7 @@ from pathlib import Path
 import time as pyTime
 from torchdiffeq import odeint, odeint_adjoint
 import torchdiffeq as torchdiffeq
+from typing import List, Optional, Union
 
 
 from bnode_core.nn.nn_utils.kullback_leibler import kullback_leibler, count_populated_dimensions
@@ -13,6 +14,53 @@ from bnode_core.ode.ode_utils.mixed_norm_for_torchdiffeq import _mixed_norm_tens
 from bnode_core.ode.ode_utils.get_control import get_control_input_at_t
 from bnode_core.ode.bnode.bnode_modules import LatentODEFunc, GeneralEncoder, Decoder
 import warnings
+
+
+def build_feedthrough_mask(
+    control_names: List[str],
+    feedthrough_config: List[Union[str, int]],
+    controls_dim: int
+) -> torch.Tensor:
+    """Build a boolean mask indicating which control signals are feedthrough.
+    
+    Args:
+        control_names: List of control variable names from the HDF5 dataset.
+        feedthrough_config: List of variable names (str) or indices (int) to mark as feedthrough.
+        controls_dim: Total number of control dimensions.
+        
+    Returns:
+        Boolean tensor of shape [controls_dim] where True indicates feedthrough.
+        
+    Raises:
+        ValueError: If a name is not found or an index is out of range.
+    """
+    mask = torch.zeros(controls_dim, dtype=torch.bool)
+    
+    for item in feedthrough_config:
+        if isinstance(item, str):
+            # Find index by name
+            if item not in control_names:
+                raise ValueError(
+                    f"Feedthrough control '{item}' not found in dataset. "
+                    f"Available controls: {control_names}"
+                )
+            idx = control_names.index(item)
+            mask[idx] = True
+        elif isinstance(item, int):
+            # Direct index
+            if item < 0 or item >= controls_dim:
+                raise ValueError(
+                    f"Feedthrough control index {item} out of range. "
+                    f"Valid range: 0 to {controls_dim - 1}"
+                )
+            mask[item] = True
+        else:
+            raise ValueError(
+                f"feedthrough_controls must contain strings or integers, got {type(item)}"
+            )
+    
+    logging.info(f"Built feedthrough mask: {mask.sum().item()} of {controls_dim} controls are feedthrough")
+    return mask
     
 class BalancedNeuralODE(nn.Module): 
     
@@ -47,6 +95,7 @@ class BalancedNeuralODE(nn.Module):
                  lat_state_mu_independent: bool = False,
                  use_input_smoother: bool = False,
                  use_input_smoother_reparameterize: bool = False,
+                 feedthrough_controls_mask: Optional[torch.Tensor] = None,
                  ):
         super().__init__()
 
@@ -116,6 +165,15 @@ class BalancedNeuralODE(nn.Module):
         else:
             self.controls_to_state_encoder = False
 
+        # feedthrough controls setup
+        if feedthrough_controls_mask is not None:
+            self.feedthrough_controls_dim = int(feedthrough_controls_mask.sum().item())
+            self.register_buffer("feedthrough_controls_mask", feedthrough_controls_mask)
+        else:
+            self.feedthrough_controls_dim = 0
+            self.register_buffer("feedthrough_controls_mask", torch.zeros(controls_dim, dtype=torch.bool) if controls_dim > 0 else None)
+        self.include_feedthrough_controls = self.feedthrough_controls_dim > 0
+
         # initialize models
         self.latent_ode_func = LatentODEFunc(lat_states_mu_dim, 
                                              lat_controls_dim if self.include_controls else 0,
@@ -143,7 +201,8 @@ class BalancedNeuralODE(nn.Module):
                                states_dim if self.predict_states else 0, 
                                outputs_dim, hidden_dim, n_layers, activation, 
                                initialization_type, linear=decoder_linear,
-                               include_states_grad=self.include_states_grad, include_outputs_grad=self.include_outputs_grad)
+                               include_states_grad=self.include_states_grad, include_outputs_grad=self.include_outputs_grad,
+                               feedthrough_controls_dim=self.feedthrough_controls_dim)
 
         # initialize boolean for deterministic mode
         self.register_buffer("deterministic_mode_active_masks_set", torch.tensor(False))
@@ -193,6 +252,13 @@ class BalancedNeuralODE(nn.Module):
             self.controls_encoder.normalization.initialize_normalization(_controls)
             if self.state_encoder.include_controls:
                 self.state_encoder.normalization_controls.initialize_normalization(_controls)
+
+        # feedthrough controls (raw controls passed directly to decoder)
+        if self.include_feedthrough_controls:
+            _controls_raw = dataset['train']['controls'][:]  # [n_samples, controls_dim, seq_len]
+            _feedthrough_controls = _controls_raw[:, self.feedthrough_controls_mask.cpu().numpy(), :]
+            _feedthrough_controls = reshape_array(_feedthrough_controls)
+            self.decoder.feedthrough_normalization.initialize_normalization(_feedthrough_controls)
 
         # outputs
         if self.include_outputs:
@@ -504,9 +570,18 @@ class BalancedNeuralODE(nn.Module):
             _lat_states = lat_states.permute(0,2,1).reshape(lat_states.shape[0]*lat_states.shape[2], lat_states.shape[1])
             _lat_parameters = lat_parameters.unsqueeze(2).expand(-1, -1, lat_states.shape[2]).permute(0,2,1).reshape(lat_parameters.shape[0]*lat_states.shape[2], lat_parameters.shape[1]) if self.include_params_encoder else None
             _lat_controls = lat_controls.permute(0,2,1).reshape(lat_controls.shape[0]*lat_controls.shape[2], lat_controls.shape[1]) if self.include_controls else None
+            # Extract feedthrough controls (raw, un-encoded) using the mask
+            if self.include_feedthrough_controls:
+                # controls shape: [batch, controls_dim, seq]
+                _feedthrough_controls = controls[:, self.feedthrough_controls_mask, :]
+                _feedthrough_controls = _feedthrough_controls.permute(0,2,1).reshape(_feedthrough_controls.shape[0]*_feedthrough_controls.shape[2], _feedthrough_controls.shape[1])
+            else:
+                _feedthrough_controls = None
+            
             _res = self.decoder(_lat_states, 
                                 _lat_parameters if self.params_to_decoder else None,
-                                _lat_controls)
+                                _lat_controls,
+                                feedthrough_controls=_feedthrough_controls)
             _res = _res.reshape(lat_states.shape[0], lat_states.shape[2], -1).permute(0,2,1)
             states_hat, outputs_hat, states_hat_norm, outputs_hat_norm = self.decoder.split_return(_res)
             
