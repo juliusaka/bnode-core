@@ -789,6 +789,7 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
                 # store last returned values for logging
                 nonlocal ret_vals_train
                 ret_vals_train = out
+                logging.info(' LBFGS step closure: batch {}, loss {:.4f}'.format(batch_idx, loss_closure.item()))
                 return loss_closure
 
             # Run a single LBFGS step for this batch; internal iterations
@@ -1097,7 +1098,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                                 except:
                                     logging.error('Loss is NaN. Could not load last model and corresponding optimizer from {}'.format(_path_current_model))
                                     logging.error('The reason for this is that not even the first epoch had stable resuls. Aborting.')
-                                    raise ValueError('Loss is NaN. First epoch did not have stable results.')
+                                    raise ValueError('Loss is NaN. First training epoch did not have stable results.')
                                 if grad_norm_last_reduced_counter > 2:
                                     train_cfg.clip_grad_norm = train_cfg.clip_grad_norm * 0.7
                                     logging.info('Reducing clip_grad_norm to {}'.format(train_cfg.clip_grad_norm))
