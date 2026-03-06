@@ -477,7 +477,7 @@ class base_training_settings_class:
     cosine_T_max: Optional[int] = None
     cosine_eta_min: float = 1e-5
     plateau_mode: str = 'min'
-    plateau_factor: float = 0.5
+    plateau_factor: float = 0.7
     plateau_patience: Optional[float] = None # if none, set patience based on heuristic
     plateau_threshold: float = 5e-5
     plateau_threshold_mode: str = 'abs'
