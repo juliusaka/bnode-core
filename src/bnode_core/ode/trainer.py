@@ -1009,6 +1009,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         factor=train_cfg.plateau_factor,
                         eps=train_cfg.plateau_eps
                     )
+                    _iters = max(_iters, 1)
                     _patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // _iters) 
                 else:
                     _patience = train_cfg.plateau_patience
