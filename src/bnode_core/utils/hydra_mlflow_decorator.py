@@ -43,6 +43,9 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
 
     hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
 
+    mlflow.log_metric('hydra_output_dir_rel', str(hydra_output_dir))
+    mlflow.log_metric('hydra_output_dir_absolute', str(hydra_output_dir.resolve()))
+
     # make dataclass from config
     cfg = convert_cfg_to_dataclass(cfg)
 
