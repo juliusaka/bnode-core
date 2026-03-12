@@ -196,7 +196,7 @@ from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 torch.backends.cudnn.benchmark = True
 
 def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesDataset, hdf5_dataset: hdf5_dataset_class, 
-                     initialize_normalization=True, model_type: str = None):
+                     initialize_normalization=True):
     """Initialize and configure NODE or BNODE model with dataset statistics.
     
     Automatically detects model type from config and initializes normalization
@@ -235,15 +235,13 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
     logging.info("---> Training with cuda: {}".format(cfg.use_cuda))
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     # create model (insert specific creations here)
-    from bnode_core.config import neural_ode_network_class, latent_ode_network_class
-    if model_type == None:
-        if type(cfg.nn_model.network) is neural_ode_network_class:
+    if cfg.nn_model.model_type == 'node':
             model_type='node'
-        elif type(cfg.nn_model.network) is latent_ode_network_class:
+    elif cfg.nn_model.model_type == 'bnode':
             model_type='bnode'
-        else: 
-            raise ValueError('The neural network class could not be resolved')
-        assert model_type in ['node', 'bnode']
+    else: 
+        raise ValueError(f"Unknown nn_model.model_type: '{cfg.nn_model.model_type}'. Expected 'node' or 'bnode'.")
+    assert model_type in ['node', 'bnode']
     if model_type == 'node':
         model = NeuralODE(states_dim=train_dataset[0]['states'].shape[0],
                         controls_dim=train_dataset[0]['controls'].shape[0] if 'controls' in train_dataset[0].keys() else 0,

@@ -496,8 +496,12 @@ class base_training_settings_class:
 class abstract_nn_model_class:
     """
     Marker base class for neural-network configuration objects.
+
+    Attributes:
+        model_type (Optional[str]): Discriminator for the nn_model variant
+            ('node', 'bnode', or None for simple feed-forward).
     """
-    pass
+    model_type: Optional[str] = None
 
 @dataclass
 class base_nn_model_class(abstract_nn_model_class):
@@ -967,6 +971,7 @@ class base_ode_nn_model_class(abstract_nn_model_class):
         network (base_network_class): NN backbone used for the ODE model.
         training (base_neural_ode_training_settings_class): ODE training schedule and overrides.
     """
+    model_type: str = 'node'
     network: base_network_class = field(default_factory=base_network_class)
     training: base_neural_ode_training_settings_class = field(default_factory=base_neural_ode_training_settings_class)
 
@@ -1178,6 +1183,7 @@ class base_latent_ode_nn_model_class(abstract_nn_model_class):
         network (latent_ode_network_class): Latent ODE network hyperparameters.
         training (base_latent_ode_training_settings_class): Latent ODE training configuration.
     """
+    model_type: str = 'bnode'
     network: latent_ode_network_class = field(default_factory=latent_ode_network_class)
     training: base_latent_ode_training_settings_class = field(default_factory=base_latent_ode_training_settings_class)
 
@@ -1378,7 +1384,14 @@ def get_config_store() -> ConfigStore:
 
 def convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass:
     '''
-    Converts a hydra config object to a dataclass
+    Converts a hydra config object to a dataclass.
+
+    When the DictConfig has structured config backing (normal Hydra composition
+    with ``defaults:``), ``OmegaConf.to_object`` returns a Pydantic dataclass
+    directly.  When loading a flat validated YAML (no ``defaults:`` list),
+    ``OmegaConf.to_object`` returns a plain dict instead.  In that case we
+    reconstruct the proper Pydantic dataclass hierarchy using the
+    ``nn_model.model_type`` discriminator field.
     
     Args:
         cfg: hydra config object / that is omegaconf.dictconfig.DictConfig
@@ -1387,9 +1400,31 @@ def convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass:
         cfg: dataclass
     '''
     logging.info('Validating config...')
-    cfg = OmegaConf.to_object(cfg)
-    logging.info('Validatied config and converted to dataclass')
-    return cfg
+    obj = OmegaConf.to_object(cfg)
+
+    if not isinstance(obj, dict):
+        # Structured config backing present — already a Pydantic dataclass
+        logging.info('Validated config and converted to dataclass')
+        return obj
+
+    # Flat YAML without structured backing — construct Pydantic dataclasses
+    logging.info('Config resolved to plain dict, reconstructing dataclasses via model_type...')
+    nn_model_dict = obj.get('nn_model', {})
+    model_type = nn_model_dict.get('model_type')
+
+    if model_type == 'node':
+        nn_model_obj = base_ode_nn_model_class(**nn_model_dict)
+    elif model_type == 'bnode':
+        nn_model_obj = base_latent_ode_nn_model_class(**nn_model_dict)
+    elif model_type is None:
+        nn_model_obj = base_nn_model_class(**nn_model_dict)
+    else:
+        raise ValueError(f"Unknown nn_model.model_type: '{model_type}'. Expected 'node', 'bnode', or None.")
+
+    obj['nn_model'] = nn_model_obj
+    result = train_test_config_class(**obj)
+    logging.info('Validated config and converted to dataclass')
+    return result
 
 def save_dataclass_as_yaml(cfg: dataclass, path: str):
     '''

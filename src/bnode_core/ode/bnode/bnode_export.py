@@ -209,6 +209,7 @@ import shutil
 import bnode_core.filepaths as filepaths
 from bnode_core.filepaths import config_dir_auto_recognize
 from bnode_core.ode.trainer import initialize_model
+from bnode_core.ode.bnode.bnode_export_modules_reduced import encoder_wrapped, decoder_wrapped, ode_wrapped, ssm_from_param_wrapped, _to_bool_mask
 from bnode_core.nn.nn_utils.load_data import make_stacked_dataset
 from bnode_core.config import onnx_export_config_class, get_config_store
 
@@ -311,8 +312,8 @@ def load_trained_latent_ode(cfg_export):
     else:
         raise FileNotFoundError(f'Dataset file {path_dataset} not found. Please provide a valid dataset path.')
     dataset = make_stacked_dataset(dataset_file, 'train')
-    model = initialize_model(cfg, train_dataset=dataset, hdf5_dataset=None, 
-                             initialize_normalization=False, model_type='bnode')
+    model = initialize_model(cfg, train_dataset=dataset, hdf5_dataset=dataset_file, 
+                             initialize_normalization=False)
     
     # load latest checkpoint
     if cfg_export.model_checkpoint_path is None:
@@ -410,7 +411,6 @@ def log_shapes_of_dict(d, name=''):
                 logging.info(f"\t[{i}]: {value}")
     else:
         logging.info(f"\t{type(d)}: {d}")
-
 
 
 def export_bnode(cfg_export: onnx_export_config_class):
@@ -529,6 +529,12 @@ def export_bnode(cfg_export: onnx_export_config_class):
     model, cfg, dataset_file, dataset = res['model'], res['cfg'], res['dataset_file'], res['dataset']
     temp_dir = res['temp_dir']
     model.eval()
+
+    # get masks for wrapped export modules if deterministic mode is active
+    masks_set = bool(model.deterministic_mode_active_masks_set.item())
+    mask_lat_states = _to_bool_mask(model.state_encoder.mask) if masks_set else None
+    mask_lat_controls = _to_bool_mask(model.controls_encoder.mask) if masks_set and model.include_controls else None
+    mask_lat_parameters = _to_bool_mask(model.parameter_encoder.mask) if masks_set and model.include_params_encoder else None
     
     # determine output dir
     dir_output = Path(cfg_export.output_dir) if cfg_export.output_dir is not None else filepaths.dir_current_hydra_output()
@@ -544,12 +550,32 @@ def export_bnode(cfg_export: onnx_export_config_class):
     test_state = dataset[0]['states'][:,0].unsqueeze(0)
     test_control = dataset[0]['controls'][:,0].unsqueeze(0) if model.include_controls else None
     test_parameters = dataset[0]['parameters'].unsqueeze(0) if model.include_parameters else None
+    if model.include_feedthrough_controls:
+        _feedthrough_mask = model.feedthrough_controls_mask.cpu().numpy()
+        test_feedthrough_controls = dataset[0]['controls'][_feedthrough_mask, 0].unsqueeze(0) if model.include_feedthrough_controls else None
 
     # export the encoders
-    encoders = {'states': model.state_encoder, 
-                'controls': model.controls_encoder if model.include_controls else None,
-                'parameters': model.parameter_encoder if model.include_params_encoder else None
-            }
+    if masks_set is False:
+        encoders = {'states': model.state_encoder, 
+                    'controls': model.controls_encoder if model.include_controls else None,
+                    'parameters': model.parameter_encoder if model.include_params_encoder else None
+                }
+    else:
+        encoders = {
+            'states': encoder_wrapped(
+                model.state_encoder,
+                mask_lat_states,
+                mask_controls=mask_lat_controls if model.controls_to_state_encoder else None,
+                mask_parameters=mask_lat_parameters if model.params_to_state_encoder else None,
+            ),
+            'controls': encoder_wrapped(
+                model.controls_encoder,
+                mask_lat_controls,
+                mask_parameters=mask_lat_parameters if model.params_to_control_encoder else None,
+            ) if model.include_controls else None,
+            'parameters': encoder_wrapped(model.parameter_encoder, mask_lat_parameters) if model.include_params_encoder else None,
+        }
+
     # construct test inputs for graph construction
     inputs_dict = {
         'states': {'x': test_state},
@@ -574,7 +600,11 @@ def export_bnode(cfg_export: onnx_export_config_class):
             logging.info(f'Test result {res}')
             # export
             input_names = list(inputs_dict[key].keys())
-            output_names=['latent_' + key + '_mu', 'latent_' + key + '_logvar']
+            if masks_set:
+                # wrapped encoder returns only mu (single tensor)
+                output_names=['latent_' + key + '_mu']
+            else:
+                output_names=['latent_' + key + '_mu', 'latent_' + key + '_logvar']
             dynamic_axes={}
             for name in input_names:
                 dynamic_axes[name] = {0: 'batch_size'}
@@ -595,14 +625,22 @@ def export_bnode(cfg_export: onnx_export_config_class):
             path_example_io = dir_output / f'encoder_{key}_example_io.hdf5'
             export_example_io_data(res, inputs_dict[key], path_example_io)
             # save latent variable
-            latents_dict[key] = res[0] # the first is mu
+            if masks_set:
+                latents_dict[key] = res  # wrapped encoder returns only mu tensor
+            else:
+                latents_dict[key] = res[0]  # unwrapped returns (mu, logvar) tuple
 
     # export ssm from parameters model and get A_from_param and B_from_param for the latent ODE function
-    ode = model.latent_ode_func
-    if ode.include_parameters is True and ode.linear is True:
+    ode_base = model.latent_ode_func
+    ode = ode_base
+    if masks_set is True:
+        ode = ode_wrapped(ode, mask_lat_states, mask_controls=mask_lat_controls, mask_parameters=mask_lat_parameters)
+    if ode_base.include_parameters is True and ode_base.linear is True:
         # this is only possible if the model is linear and has parameters
         logging.info('Exporting SSM from parameters')
-        ssm = model.latent_ode_func.ssm_from_param
+        ssm = ode_base.ssm_from_param
+        if masks_set is True:
+            ssm = ssm_from_param_wrapped(ssm, mask_lat_states, mask_controls=mask_lat_controls, mask_parameters=mask_lat_parameters)
         path_ssm = dir_output / 'latent_ode_ssm_from_param.onnx'
         logging.info(f'Export latent ODE SSM from parameters to {path_ssm}')
         # construct test input
@@ -616,7 +654,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
         logging.info(f'Test result {res}')
         # export
         input_names=['lat_parameters']
-        output_names=['A', 'B'] if ode.include_controls else ['A']
+        output_names=['A', 'B'] if ode_base.include_controls else ['A']
         dynamic_axes={}
         for name in input_names:
             dynamic_axes[name] = {0: 'batch_size'}
@@ -632,7 +670,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
                           dynamo=False)
         logging.info(f'Exported latent ODE SSM from parameters successfully')
         # get A_from_param and B_from_param
-        if ode.include_controls:
+        if ode_base.include_controls:
             A_from_param, B_from_param = res
         else:
             A_from_param = res
@@ -643,10 +681,10 @@ def export_bnode(cfg_export: onnx_export_config_class):
     # construct test input
     inputs = {
         'lat_states': latents_dict['states'],
-        'lat_parameters': latents_dict['parameters'] if ode.include_parameters is True else None,
-        'lat_controls': latents_dict['controls'] if ode.include_controls is True else None,
-        'A_from_param': A_from_param if ode.include_parameters is True and ode.linear else None,
-        'B_from_param': B_from_param if ode.include_parameters is True and ode.linear and ode.include_controls else None,
+        'lat_parameters': latents_dict['parameters'] if ode_base.include_parameters is True else None,
+        'lat_controls': latents_dict['controls'] if ode_base.include_controls is True else None,
+        'A_from_param': A_from_param if ode_base.include_parameters is True and ode_base.linear else None,
+        'B_from_param': B_from_param if ode_base.include_parameters is True and ode_base.linear and ode_base.include_controls else None,
     }
     # test model
     log_shapes_of_dict(inputs, 'Inputs for latent ODE')
@@ -684,15 +722,19 @@ def export_bnode(cfg_export: onnx_export_config_class):
 
     # export the decoder
     # TODO: What to with split return? because we have to tak the first n elements for states etc now... implement other function for this? / optional argument?
-    decoder = model.decoder
-    decoder.onnx_export = True  # disable concatenation of outputs for ONNX export
+    decoder_base = model.decoder
+    decoder = decoder_base
+    if masks_set is True:
+        decoder = decoder_wrapped(decoder, mask_lat_states, mask_controls=mask_lat_controls, mask_parameters=mask_lat_parameters)
+    decoder_base.onnx_export = True  # disable concatenation of outputs for ONNX export
     path_decoder = dir_output / 'decoder.onnx'
     logging.info(f'Export decoder to {path_decoder}')
     # construct test input
     inputs = {
         'lat_state': latents_dict['states'],
-        'lat_parameters': latents_dict['parameters'] if decoder.include_parameters is True else None,
-        'lat_controls': latents_dict['controls'] if decoder.include_controls is True else None,
+        'lat_parameters': latents_dict['parameters'] if decoder_base.include_parameters is True else None,
+        'lat_controls': latents_dict['controls'] if decoder_base.include_controls is True else None,
+        'feedthrough_controls': test_feedthrough_controls if decoder_base.include_feedthrough_controls is True else None,
     }
     # test model
     log_shapes_of_dict(inputs, 'Inputs for decoder')
@@ -704,11 +746,11 @@ def export_bnode(cfg_export: onnx_export_config_class):
     for key in inputs.keys():
         if inputs[key] != None:
             input_names.append(key)
-    if decoder.include_outputs and decoder.include_states:
+    if decoder_base.include_outputs and decoder_base.include_states:
         output_names = ['states', 'outputs']
-    elif decoder.include_outputs:
+    elif decoder_base.include_outputs:
         output_names = ['outputs']
-    elif decoder.include_states:
+    elif decoder_base.include_states:
         output_names = ['states']
     dynamic_axes={}
     for name in input_names:

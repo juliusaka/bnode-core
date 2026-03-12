@@ -5,15 +5,12 @@ from omegaconf import DictConfig, OmegaConf
 import hydra
 from functools import wraps
 from typing import Callable
-from omegaconf import DictConfig
 import json
 from pathlib import Path
 import sys
-import os
 import io
 import shutil
 import logging
-from pathlib import Path
 import traceback
 
 def log_hydra_to_mlflow(func: Callable) -> Callable:
@@ -52,18 +49,18 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     # save validated yaml in hydra folder
     OmegaConf.save(config=OmegaConf.structured(cfg), f=hydra_output_dir / '.hydra/config_validated.yaml')
     
-    def convert_to_dict(cfg):
-      json_str = json.dumps(cfg, default=lambda o: o.__dict__, indent=4) # adapted with chatgpt
-      return json.loads(json_str)
+    def convert_to_dict(obj):
+      '''Convert a Pydantic dataclass / OmegaConf config to a flat dict safe for mlflow.log_params.'''
+      return OmegaConf.to_container(OmegaConf.structured(obj), resolve=True)
 
     # log Network config to mlflow
     if type(cfg) == train_test_config_class:
       mlflow.log_params(convert_to_dict(cfg.nn_model.network))
       mlflow.log_params(convert_to_dict(cfg.nn_model.training))
-      if 'pre_training' in cfg.nn_model.training.__pydantic_fields__ and cfg.nn_model.training.pre_train is True: # check if pre_training is in training config
+      if hasattr(cfg.nn_model.training, 'pre_training') and cfg.nn_model.training.pre_train is True:
         # append pre_training to keys:
         mlflow.log_params({'pre_training_' + k: v for k,v in convert_to_dict(cfg.nn_model.training.pre_training).items()})
-      if 'main_training' in cfg.nn_model.training.__pydantic_fields__: # check if main_training is in training config
+      if hasattr(cfg.nn_model.training, 'main_training'):
         for i, settings in enumerate(cfg.nn_model.training.main_training):
           # append main_training to keys:
           mlflow.log_params({'main_training_' + str(i) + '_' + k: v for k,v in convert_to_dict(settings).items()})
@@ -71,16 +68,20 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     mlflow.log_param('dataset_name', cfg.dataset_name)  
     
     # run function
+    had_error = False
+    res = None
     try:
       res = func(cfg) # pass cfg to decorated function
     except Exception as e:
+      had_error = True
       mlflow.log_param('error', True)
       logging.error('Exception occured: {}'.format(e))
       logging.error(traceback.format_exc())
       if cfg.raise_exception:
           raise e
     # if no exception, log error as False
-    mlflow.log_param('error', False)
+    if not had_error:
+      mlflow.log_param('error', False)
     
     # log hydra config as artifacts to mlflow, this includes all loggings
     # see https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory/
