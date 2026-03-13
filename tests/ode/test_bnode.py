@@ -175,7 +175,7 @@ def test_only_initial_states_linear_mpc():
 
 # Deterministic mode tests (simplified - complex nested list override skipped as requested)
 
-def test_determistic_mode():
+def test_deterministic_mode():
     """Test activate_deterministic_mode_after_this_phase=true """
     ode_training('deterministic_mode_after_phase1', overrides=[
         'nn_model=bnode_pytest_det',

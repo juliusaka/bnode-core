@@ -764,7 +764,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
         shutil.copytree(dir_hydra_current, dir_hydra_output_copy, dirs_exist_ok=True)
         logging.info('Hydra directory copied successfully')
     else: 
-       Warning(f'Current Hydra directory {dir_hydra_current} not found and could not be copied.')
+       logging.warning(f'Skipping Hydra directory copy (nested or not found): {dir_hydra_current}')
 
 
 def main():

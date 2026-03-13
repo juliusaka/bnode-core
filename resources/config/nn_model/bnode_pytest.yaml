@@ -25,24 +25,24 @@ training:
   weight_decay_override: 1e-5 # TODO: can be removed? Is none by default
   beta_start_override: 0.1
   save_predictions_in_dataset: false
-  batches_per_epoch_override: 12
+  batches_per_epoch_override: 2
 
   main_training:
 
   # pre training with 3 steps
-  - batch_size: 800
+  - batch_size: 128
     solver: euler
     lr_start: 1e-3
-    max_epochs: 100
+    max_epochs: 10
     early_stopping_patience: 80
     load_seq_len: null
     seq_len_train: 3
 
   # increase seq len to 10 steps
-  - batch_size: 400
+  - batch_size: 32
     solver: rk4
     lr_start: 1e-3
-    max_epochs: 100
+    max_epochs: 10
     early_stopping_patience: 10
     seq_len_train: null
     seq_len_increase_in_batches: 100

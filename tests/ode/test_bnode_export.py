@@ -41,10 +41,9 @@ def ode_export_test(test_name: str, training_overrides: list[str] = [], export_o
                 '--config-dir=resources/config',
                 '--config-name=onnx_export_pytest',
                 'model_directory=' + str(test_dir.absolute()),
-                'output_dir=' + str(test_dir.absolute() / 'test_export' / 'onnx'),
-                f"hydra.run.dir={str(test_dir.absolute() / 'test_export')}",
+                'output_dir=' + str(test_dir.absolute() / 'test_export_onnx'),
+                f"hydra.run.dir={str(test_dir.absolute() / 'test_export_hydra')}",
                 'dataset_path=' + dataset_path,
-                'config_path=' + str(test_dir.absolute() / '.hydra' / 'config_validated.yaml'),
                 ]
     sys.argv += export_overrides
     bnode_export_main()
@@ -91,3 +90,33 @@ def test_bnode_export_no_parameter_encoder():
                         'nn_model.network.include_params_encoder=false'
                     ],
                     dataset_path=parameter_dataset_path)
+
+
+def test_bnode_export_deterministic_mode():
+    """Test BNODE export with deterministic mode activated after phase."""
+    ode_export_test('bnode_export_det_mode',
+                    training_overrides=[
+                        'nn_model=bnode_pytest_det',
+                    ],
+                    dataset_path=dataset_path)
+
+
+def test_bnode_export_deterministic_mode_from_state0():
+    """Test BNODE export with deterministic_mode_from_state0=true."""
+    ode_export_test('bnode_export_det_from_state0',
+                    training_overrides=[
+                        'nn_model=bnode_pytest_det',
+                        'nn_model.training.main_training.1.deterministic_mode_from_state0=true',
+                    ],
+                    dataset_path=dataset_path)
+
+
+def test_bnode_export_deterministic_linear_mpc():
+    """Test BNODE export with deterministic mode and linear_mode=mpc_mode_for_controls."""
+    ode_export_test('bnode_export_det_linear_mpc',
+                    training_overrides=[
+                        'nn_model=bnode_pytest_det',
+                        'nn_model.network.linear_mode=mpc_mode_for_controls',
+                        'nn_model.training.main_training.1.threshold_count_populated_dimensions=0.1',
+                    ],
+                    dataset_path=dataset_path)

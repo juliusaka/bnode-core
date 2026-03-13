@@ -395,6 +395,19 @@ class BalancedNeuralODE(nn.Module):
             std = logvar.mul(0.5).exp() * alpha
             z_latent = eps.mul(std).add_(mu)
         return z_latent
+
+    @staticmethod
+    def _encode(encoder, *args):
+        """Call encoder and always return (mu, logvar).
+
+        In deterministic mode (mask_set), encoders return a single tensor,
+        so then this returns (mu, None). 
+        In normal mode they return a (mu, logvar) tuple.
+        """
+        result = encoder(*args)
+        if isinstance(result, torch.Tensor):
+            return result, None
+        return result
     
     def model_and_loss_evaluation(self, data_batch, train_cfg, pre_train, device, return_model_outputs, test = False, last_batch = True, activate_deterministic_mode = False):
         # check if reparametrization is active
@@ -437,23 +450,15 @@ class BalancedNeuralODE(nn.Module):
             '''Encode data'''
             # encode states and parameters
             # In deterministic mode, encoders return single tensor (mu only, reduced dim)
-            # In normal mode, they return (mu, logvar) tuple
-            # @Copilot: could we make this more elegant without repeating the calls? We could extract the returned values depending on determinisic_mode active.
-            if deterministic_mode_active:
-                lat_state_0_mu = self.state_encoder(states[:,:,0], parameters if self.params_to_state_encoder else None, 
-                                                    controls[:,:,0] if self.state_encoder.include_controls else None)
-                lat_state_0_logvar = None
-                lat_state_last_mu = self.state_encoder(states[:,:,-1], parameters if self.params_to_state_encoder else None, 
-                                                      controls[:,:,-1] if self.state_encoder.include_controls else None)
-                lat_state_last_logvar = None
-                lat_parameters_mu = self.parameter_encoder(parameters) if self.include_params_encoder else None
-                lat_parameters_logvar = None
-            else:
-                lat_state_0_mu, lat_state_0_logvar = self.state_encoder(states[:,:,0], parameters if self.params_to_state_encoder else None, 
-                                                                        controls[:,:,0] if self.state_encoder.include_controls else None)
-                lat_state_last_mu, lat_state_last_logvar = self.state_encoder(states[:,:,-1], parameters if self.params_to_state_encoder else None, 
-                                                                              controls[:,:,-1] if self.state_encoder.include_controls else None)
-                lat_parameters_mu, lat_parameters_logvar = self.parameter_encoder(parameters) if self.include_params_encoder else (None, None)
+            # In normal mode, they return (mu, logvar) tuple — _encode() normalizes both to (mu, logvar)
+            _enc_params = parameters if self.params_to_state_encoder else None
+            lat_state_0_mu, lat_state_0_logvar = self._encode(
+                self.state_encoder, states[:,:,0], _enc_params,
+                controls[:,:,0] if self.state_encoder.include_controls else None)
+            lat_state_last_mu, lat_state_last_logvar = self._encode(
+                self.state_encoder, states[:,:,-1], _enc_params,
+                controls[:,:,-1] if self.state_encoder.include_controls else None)
+            lat_parameters_mu, lat_parameters_logvar = self._encode(self.parameter_encoder, parameters) if self.include_params_encoder else (None, None)
 
             # encode controls 
             if self.include_controls: # we need this anyways for the decoder, both if we use odeint or odeint_adjoint
@@ -468,15 +473,9 @@ class BalancedNeuralODE(nn.Module):
                 #   reshape it back to [batch_size, time_steps, feature_dim] and permute it back to [batch_size, feature_dim, time_steps]
                 _controls = controls.permute(0,2,1).reshape(controls.shape[0]*controls.shape[2], controls.shape[1])
                 _parameters = parameters.unsqueeze(2).expand(-1, -1, controls.shape[2]).permute(0,2,1).reshape(parameters.shape[0]*controls.shape[2], parameters.shape[1]) if self.params_to_control_encoder else None
-                # @copilot: could we make this more elegant?
-                if deterministic_mode_active:
-                    _lat_controls_mu = self.controls_encoder(_controls, _parameters)
-                    lat_controls_mu = _lat_controls_mu.reshape(controls.shape[0], controls.shape[2], self.lat_controls_dim).permute(0,2,1)
-                    lat_controls_logvar = None
-                else:
-                    _lat_controls_mu, _lat_controls_logvar = self.controls_encoder(_controls, _parameters)
-                    lat_controls_mu = _lat_controls_mu.reshape(controls.shape[0], controls.shape[2], self.lat_controls_dim).permute(0,2,1)
-                    lat_controls_logvar = _lat_controls_logvar.reshape(controls.shape[0], controls.shape[2], self.lat_controls_dim).permute(0,2,1)
+                _lat_controls_mu, _lat_controls_logvar = self._encode(self.controls_encoder, _controls, _parameters)
+                lat_controls_mu = _lat_controls_mu.reshape(controls.shape[0], controls.shape[2], self.lat_controls_dim).permute(0,2,1)
+                lat_controls_logvar = _lat_controls_logvar.reshape(controls.shape[0], controls.shape[2], self.lat_controls_dim).permute(0,2,1) if _lat_controls_logvar is not None else None
             else:
                 lat_controls_mu, lat_controls_logvar = None, None
 
@@ -799,13 +798,19 @@ class BalancedNeuralODE(nn.Module):
             }
             if return_model_outputs:
                 # calculate KL loss per dimension
-                kl_lat_state_0_per_dim = kullback_leibler(lat_state_0_mu, lat_state_0_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None)
-                kl_lat_parameters_per_dim = kullback_leibler(lat_parameters_mu, lat_parameters_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None) if self.include_params_encoder else None
-                kl_lat_controls_per_dim = kullback_leibler(lat_controls_mu, lat_controls_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None) if self.include_controls else None
-                if self.lat_ode_type == 'variance_constant':
-                    kl_lat_states_per_dim = kullback_leibler(lat_states_mu, lat_state_0_logvar.unsqueeze(2).repeat(1,1,lat_states_mu.shape[2]), per_dimension=True, reduce=False, time_series_aggregation_mode=None)
-                elif self.lat_ode_type == 'variance_dynamic':
-                    kl_lat_states_per_dim = kullback_leibler(lat_states_mu, lat_states_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None) 
+                if deterministic_mode_active:
+                    kl_lat_state_0_per_dim = None
+                    kl_lat_parameters_per_dim = None
+                    kl_lat_controls_per_dim = None
+                    kl_lat_states_per_dim = None
+                else:
+                    kl_lat_state_0_per_dim = kullback_leibler(lat_state_0_mu, lat_state_0_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None)
+                    kl_lat_parameters_per_dim = kullback_leibler(lat_parameters_mu, lat_parameters_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None) if self.include_params_encoder else None
+                    kl_lat_controls_per_dim = kullback_leibler(lat_controls_mu, lat_controls_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None) if self.include_controls else None
+                    if self.lat_ode_type == 'variance_constant':
+                        kl_lat_states_per_dim = kullback_leibler(lat_states_mu, lat_state_0_logvar.unsqueeze(2).repeat(1,1,lat_states_mu.shape[2]), per_dimension=True, reduce=False, time_series_aggregation_mode=None)
+                    elif self.lat_ode_type == 'variance_dynamic':
+                        kl_lat_states_per_dim = kullback_leibler(lat_states_mu, lat_states_logvar, per_dimension=True, reduce=False, time_series_aggregation_mode=None)
                 
                 model_outputs={
                     'lat_state_0_mu': lat_state_0_mu,
@@ -901,13 +906,44 @@ class BalancedNeuralODE(nn.Module):
         logging.debug('\t \t \tSaved model to {}'.format(path))
     
     def load(self, path: Path, device: torch.device):
-        self.load_state_dict(torch.load(path, map_location=device), strict=False)
-        # Re-derive set_mask attributes from loaded mask buffers
-        # (load_state_dict restores mask/mask_set buffers but not the
-        #  derived Python attrs like _reduced_indices and overwritten dims)
+        state_dict = torch.load(path, map_location=device)
+        model_sd = self.state_dict()
+        # Separate keys with matching vs mismatched shapes.
+        # Shape mismatches occur when loading a trimmed deterministic-mode
+        # checkpoint into a freshly-initialized full-size model.
+        # load_state_dict raises RuntimeError on size mismatches even with
+        # strict=False, so we must load them in two phases.
+        compatible = {}
+        deferred = {}
+        for k, v in state_dict.items():
+            if k in model_sd and model_sd[k].shape != v.shape:
+                deferred[k] = v
+            else:
+                compatible[k] = v
+        # Phase 1: Load compatible keys (includes mask buffers, normalization, etc.)
+        self.load_state_dict(compatible, strict=False)
+        # Rebuild non-tensor dimension attributes from loaded mask buffers.
         if self.deterministic_mode_active_masks_set.item():
             mask_lat_states = self.state_encoder.mask
             mask_lat_controls = self.controls_encoder.mask if self.include_controls else None
             mask_lat_parameters = self.parameter_encoder.mask if self.include_params_encoder else None
+            if deferred:
+                # mask_set flags were loaded as True from the checkpoint,
+                # but the model weights are still full-size.  Reset the
+                # flags so activate_deterministic_mode actually trims.
+                self._reset_mask_set_flags()
             self.activate_deterministic_mode(mask_lat_states, mask_lat_controls, mask_lat_parameters)
+        # Phase 2: Load deferred (trimmed) weights — shapes now match
+        if deferred:
+            self.load_state_dict(deferred, strict=False)
         logging.info('\tLoaded model from {}'.format(path))
+
+    def _reset_mask_set_flags(self):
+        """Reset mask_set flags on all sub-modules so set_mask will perform trimming."""
+        self.state_encoder.mask_set.set_(torch.tensor(False))
+        self.latent_ode_func.mask_set.set_(torch.tensor(False))
+        self.decoder.mask_set.set_(torch.tensor(False))
+        if self.include_controls:
+            self.controls_encoder.mask_set.set_(torch.tensor(False))
+        if self.include_params_encoder:
+            self.parameter_encoder.mask_set.set_(torch.tensor(False))

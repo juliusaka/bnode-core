@@ -861,6 +861,7 @@ class base_neural_ode_training_settings_class():
         save_predictions_for (Optional[List[str]]): Dataset contexts for which predictions are saved when
             save_predictions_in_dataset is True. Typical entries are
             ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref'].
+        test (bool): Enable a post-training test run.
         test_save_internal_variables (bool): Store internal variables during test for analysis.
         test_save_internal_variables_for (Optional[List[str]]): Dataset contexts for which internal
             variables are stored during testing. Uses the same context labels as save_predictions_for.
@@ -881,6 +882,7 @@ class base_neural_ode_training_settings_class():
     load_trained_model_for_test: bool = False
     save_predictions_in_dataset: bool = True
     save_predictions_for: Optional[List[str]] = field(default_factory=lambda: ['test']) # contexts: 'train', 'test', 'validation', 'common_test', 'testnorm', 'ref'
+    test: bool = True
     test_save_internal_variables: bool = False
     test_save_internal_variables_for: Optional[List[str]] = field(default_factory=lambda: ['test'])
     pre_trained_model_seq_len: Optional[int] = None
@@ -1171,7 +1173,14 @@ class base_latent_ode_training_settings_class:
                     logging.warning('otherwise excess states in latent ode are not learned to be ignored and the model fails')
         if n > 1:
             raise ValueError('Only one phase can have activate_deterministic_mode_after_this_phase set to True')
-        
+        # If phase i activates deterministic mode, force reload_optimizer=False on
+        # the next phase — the old optimizer state has stale momentum buffers for
+        # the pre-trimming parameter shapes.
+        for i, training_settings in enumerate(v):
+            if training_settings.activate_deterministic_mode_after_this_phase and i + 1 < len(v):
+                if v[i + 1].reload_optimizer is True:
+                    logging.warning('Setting reload_optimizer=False for phase %d (follows deterministic-mode activation)', i + 1)
+                    v[i + 1].reload_optimizer = False
         return v
 
 @dataclass

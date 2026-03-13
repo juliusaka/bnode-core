@@ -426,10 +426,12 @@ def train_all_phases(cfg: train_test_config_class):
                         _load_seq_len = job['train_cfg'].load_seq_len
                         _seq_len_batches = 1
                         _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
+                        _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
                     elif job['test'] is True:
                         _load_seq_len = None
                         _seq_len_batches = None
                         _stride_valid_test = 1
+                        _max_samples_valid = None
                     else:
                         _load_seq_len = job['train_cfg'].load_seq_len
                         _seq_len_batches = job['train_cfg'].seq_len_train
@@ -767,7 +769,7 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
         if not is_lbfgs:
             optimizer.zero_grad()
             # Standard optimizers (e.g., Adam): single forward/backward pass
-            with torch.cuda.amp.autocast(enabled=use_amp and use_cuda):
+            with torch.amp.autocast('cuda', enabled=use_amp and use_cuda):
                 ret_vals_train = model.model_and_loss_evaluation(
                     data_batch,
                     train_cfg,
@@ -966,7 +968,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                                          trace_func=logging.info)
         nan_counter = 0
         grad_norm_last_reduced_counter = 0
-        scaler = torch.cuda.amp.GradScaler(enabled=cfg.use_cuda and cfg.use_amp)
+        scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
         logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
         if pre_train is True:
             _batches_per_epoch = len(dataloaders['train'])

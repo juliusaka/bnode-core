@@ -78,7 +78,9 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       logging.error('Exception occured: {}'.format(e))
       logging.error(traceback.format_exc())
       if cfg.raise_exception:
-          raise e
+          # Ensure no active run leaks into the next pytest case.
+          mlflow.end_run()
+          raise
     # if no exception, log error as False
     if not had_error:
       mlflow.log_param('error', False)
