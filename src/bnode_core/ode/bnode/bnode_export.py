@@ -205,11 +205,12 @@ import h5py
 import torch
 from omegaconf import OmegaConf
 import shutil
+import onnx
+from onnx import shape_inference
 
 import bnode_core.filepaths as filepaths
 from bnode_core.filepaths import config_dir_auto_recognize
 from bnode_core.ode.trainer import initialize_model
-from bnode_core.ode.bnode.bnode_export_modules_reduced import encoder_wrapped, decoder_wrapped, ode_wrapped, ssm_from_param_wrapped, _to_bool_mask
 from bnode_core.nn.nn_utils.load_data import make_stacked_dataset
 from bnode_core.config import onnx_export_config_class, get_config_store
 
@@ -530,11 +531,8 @@ def export_bnode(cfg_export: onnx_export_config_class):
     temp_dir = res['temp_dir']
     model.eval()
 
-    # get masks for wrapped export modules if deterministic mode is active
+    # check if deterministic mode (reduced dims) is active
     masks_set = bool(model.deterministic_mode_active_masks_set.item())
-    mask_lat_states = _to_bool_mask(model.state_encoder.mask) if masks_set else None
-    mask_lat_controls = _to_bool_mask(model.controls_encoder.mask) if masks_set and model.include_controls else None
-    mask_lat_parameters = _to_bool_mask(model.parameter_encoder.mask) if masks_set and model.include_params_encoder else None
     
     # determine output dir
     dir_output = Path(cfg_export.output_dir) if cfg_export.output_dir is not None else filepaths.dir_current_hydra_output()
@@ -554,27 +552,11 @@ def export_bnode(cfg_export: onnx_export_config_class):
         _feedthrough_mask = model.feedthrough_controls_mask.cpu().numpy()
         test_feedthrough_controls = dataset[0]['controls'][_feedthrough_mask, 0].unsqueeze(0) if model.include_feedthrough_controls else None
 
-    # export the encoders
-    if masks_set is False:
-        encoders = {'states': model.state_encoder, 
-                    'controls': model.controls_encoder if model.include_controls else None,
-                    'parameters': model.parameter_encoder if model.include_params_encoder else None
-                }
-    else:
-        encoders = {
-            'states': encoder_wrapped(
-                model.state_encoder,
-                mask_lat_states,
-                mask_controls=mask_lat_controls if model.controls_to_state_encoder else None,
-                mask_parameters=mask_lat_parameters if model.params_to_state_encoder else None,
-            ),
-            'controls': encoder_wrapped(
-                model.controls_encoder,
-                mask_lat_controls,
-                mask_parameters=mask_lat_parameters if model.params_to_control_encoder else None,
-            ) if model.include_controls else None,
-            'parameters': encoder_wrapped(model.parameter_encoder, mask_lat_parameters) if model.include_params_encoder else None,
-        }
+    # export the encoders — modules handle reduced dims natively in deterministic mode
+    encoders = {'states': model.state_encoder, 
+                'controls': model.controls_encoder if model.include_controls else None,
+                'parameters': model.parameter_encoder if model.include_params_encoder else None
+            }
 
     # construct test inputs for graph construction
     inputs_dict = {
@@ -601,7 +583,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
             # export
             input_names = list(inputs_dict[key].keys())
             if masks_set:
-                # wrapped encoder returns only mu (single tensor)
+                # encoder returns only mu (single tensor) in deterministic mode
                 output_names=['latent_' + key + '_mu']
             else:
                 output_names=['latent_' + key + '_mu', 'latent_' + key + '_logvar']
@@ -620,27 +602,24 @@ def export_bnode(cfg_export: onnx_export_config_class):
                               dynamic_axes=dynamic_axes,
                               dynamo=False
             )
+            onnx.save(shape_inference.infer_shapes(onnx.load(path_encoder)), path_encoder)
             logging.info(f'Exported {key} encoder successfully')
             # export also example io
             path_example_io = dir_output / f'encoder_{key}_example_io.hdf5'
             export_example_io_data(res, inputs_dict[key], path_example_io)
             # save latent variable
             if masks_set:
-                latents_dict[key] = res  # wrapped encoder returns only mu tensor
+                latents_dict[key] = res  # encoder returns only mu tensor in deterministic mode
             else:
-                latents_dict[key] = res[0]  # unwrapped returns (mu, logvar) tuple
+                latents_dict[key] = res[0]  # returns (mu, logvar) tuple
 
     # export ssm from parameters model and get A_from_param and B_from_param for the latent ODE function
     ode_base = model.latent_ode_func
     ode = ode_base
-    if masks_set is True:
-        ode = ode_wrapped(ode, mask_lat_states, mask_controls=mask_lat_controls, mask_parameters=mask_lat_parameters)
     if ode_base.include_parameters is True and ode_base.linear is True:
         # this is only possible if the model is linear and has parameters
         logging.info('Exporting SSM from parameters')
         ssm = ode_base.ssm_from_param
-        if masks_set is True:
-            ssm = ssm_from_param_wrapped(ssm, mask_lat_states, mask_controls=mask_lat_controls, mask_parameters=mask_lat_parameters)
         path_ssm = dir_output / 'latent_ode_ssm_from_param.onnx'
         logging.info(f'Export latent ODE SSM from parameters to {path_ssm}')
         # construct test input
@@ -668,6 +647,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
                           output_names=output_names, 
                           dynamic_axes=dynamic_axes,
                           dynamo=False)
+        onnx.save(shape_inference.infer_shapes(onnx.load(path_ssm)), path_ssm)
         logging.info(f'Exported latent ODE SSM from parameters successfully')
         # get A_from_param and B_from_param
         if ode_base.include_controls:
@@ -715,6 +695,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
                       output_names=output_names, 
                       dynamic_axes=dynamic_axes,
                       dynamo=False)
+    onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
     logging.info(f'Exported latent ODE successfully')
     # export also example io
     path_example_io = dir_output / f'latent_ode_example_io.hdf5'
@@ -722,19 +703,16 @@ def export_bnode(cfg_export: onnx_export_config_class):
 
     # export the decoder
     # TODO: What to with split return? because we have to tak the first n elements for states etc now... implement other function for this? / optional argument?
-    decoder_base = model.decoder
-    decoder = decoder_base
-    if masks_set is True:
-        decoder = decoder_wrapped(decoder, mask_lat_states, mask_controls=mask_lat_controls, mask_parameters=mask_lat_parameters)
-    decoder_base.onnx_export = True  # disable concatenation of outputs for ONNX export
+    decoder = model.decoder
+    decoder.onnx_export = True  # disable concatenation of outputs for ONNX export
     path_decoder = dir_output / 'decoder.onnx'
     logging.info(f'Export decoder to {path_decoder}')
     # construct test input
     inputs = {
         'lat_state': latents_dict['states'],
-        'lat_parameters': latents_dict['parameters'] if decoder_base.include_parameters is True else None,
-        'lat_controls': latents_dict['controls'] if decoder_base.include_controls is True else None,
-        'feedthrough_controls': test_feedthrough_controls if decoder_base.include_feedthrough_controls is True else None,
+        'lat_parameters': latents_dict['parameters'] if decoder.include_parameters is True else None,
+        'lat_controls': latents_dict['controls'] if decoder.include_controls is True else None,
+        'feedthrough_controls': test_feedthrough_controls if decoder.include_feedthrough_controls is True else None,
     }
     # test model
     log_shapes_of_dict(inputs, 'Inputs for decoder')
@@ -746,11 +724,11 @@ def export_bnode(cfg_export: onnx_export_config_class):
     for key in inputs.keys():
         if inputs[key] != None:
             input_names.append(key)
-    if decoder_base.include_outputs and decoder_base.include_states:
+    if decoder.include_outputs and decoder.include_states:
         output_names = ['states', 'outputs']
-    elif decoder_base.include_outputs:
+    elif decoder.include_outputs:
         output_names = ['outputs']
-    elif decoder_base.include_states:
+    elif decoder.include_states:
         output_names = ['states']
     dynamic_axes={}
     for name in input_names:
@@ -767,6 +745,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
                       output_names=output_names, 
                       dynamic_axes=dynamic_axes,
                       dynamo=False)
+    onnx.save(shape_inference.infer_shapes(onnx.load(path_decoder)), path_decoder)
     logging.info(f'Exported decoder successfully')
     # export also example io
     path_example_io = dir_output / f'decoder_example_io.hdf5'

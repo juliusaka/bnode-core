@@ -25,6 +25,7 @@ training:
   weight_decay_override: 1e-5 # TODO: can be removed? Is none by default
   beta_start_override: 0.1
   save_predictions_in_dataset: false
+  batches_per_epoch_override: 12
 
   main_training:
 
