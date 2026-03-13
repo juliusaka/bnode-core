@@ -438,6 +438,7 @@ class BalancedNeuralODE(nn.Module):
             # encode states and parameters
             # In deterministic mode, encoders return single tensor (mu only, reduced dim)
             # In normal mode, they return (mu, logvar) tuple
+            # @Copilot: could we make this more elegant without repeating the calls? We could extract the returned values depending on determinisic_mode active.
             if deterministic_mode_active:
                 lat_state_0_mu = self.state_encoder(states[:,:,0], parameters if self.params_to_state_encoder else None, 
                                                     controls[:,:,0] if self.state_encoder.include_controls else None)
@@ -467,6 +468,7 @@ class BalancedNeuralODE(nn.Module):
                 #   reshape it back to [batch_size, time_steps, feature_dim] and permute it back to [batch_size, feature_dim, time_steps]
                 _controls = controls.permute(0,2,1).reshape(controls.shape[0]*controls.shape[2], controls.shape[1])
                 _parameters = parameters.unsqueeze(2).expand(-1, -1, controls.shape[2]).permute(0,2,1).reshape(parameters.shape[0]*controls.shape[2], parameters.shape[1]) if self.params_to_control_encoder else None
+                # @copilot: could we make this more elegant?
                 if deterministic_mode_active:
                     _lat_controls_mu = self.controls_encoder(_controls, _parameters)
                     lat_controls_mu = _lat_controls_mu.reshape(controls.shape[0], controls.shape[2], self.lat_controls_dim).permute(0,2,1)
@@ -492,7 +494,8 @@ class BalancedNeuralODE(nn.Module):
             elif self.lat_ode_type == 'variance_dynamic':
                 if deterministic_mode_active:
                     # in deterministic mode, logvar is not available; use zeros of reduced dim
-                    lat_state_0 = torch.cat([lat_state_0_mu, torch.zeros_like(lat_state_0_mu)], dim=1)
+                    # lat_state_0 = torch.cat([lat_state_0_mu, torch.zeros_like(lat_state_0_mu)], dim=1)
+                    raise NotImplementedError('for dynamic variance, no determinsitic mode is implemented yet. Please check the implemenation for this.')
                 else:
                     lat_state_0 = torch.cat([lat_state_0_mu, lat_state_0_logvar], dim=1)
             elif self.lat_ode_type == 'vanilla':

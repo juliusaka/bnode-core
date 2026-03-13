@@ -204,6 +204,7 @@ resources/data/datasets/*
 mlruns/*
 mlruns/*
 mlflow/*
+mlflow.db
 
 # Coverage reports
 tests/_results/*

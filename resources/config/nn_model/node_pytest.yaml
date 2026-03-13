@@ -22,6 +22,7 @@ training:
   path_trained_model: ''
 
   weight_decay_override: 1e-5
+  batches_per_epoch_override: 12
 
 
   pre_training:
