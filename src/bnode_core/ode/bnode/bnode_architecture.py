@@ -673,6 +673,7 @@ class BalancedNeuralODE(nn.Module):
             reconstruction_loss_scaler = 1 / ( float(self.predict_states) + float(self.include_outputs) + float(train_cfg.include_reconstruction_loss_state0) + float(train_cfg.include_reconstruction_loss_outputs0) + float(train_cfg.include_states_grad_loss) + float(train_cfg.include_outputs_grad_loss) )
             # reconstruction_loss_scaler += float(train_cfg.include_reconstruction_loss_state0)
             reconstruction_loss = reconstruction_loss_states + reconstruction_loss_outputs
+            reconstruction_loss_states_outputs = (reconstruction_loss_states + reconstruction_loss_outputs ) * 1/( float(self.predict_states) + float(self.include_outputs))
             if train_cfg.include_reconstruction_loss_state0 is True:
                 reconstruction_loss += reconstruction_loss_state_0
             if train_cfg.include_reconstruction_loss_outputs0 is True:
@@ -695,6 +696,7 @@ class BalancedNeuralODE(nn.Module):
                 ms_loss = 0
             
             # calculate RMSE
+            rmse_states_outputs = torch.sqrt(reconstruction_loss_states_outputs)
             rmse_state_0 = torch.sqrt(reconstruction_loss_state_0) if self.predict_states else 0
             rmse_states = torch.sqrt(reconstruction_loss_states) if self.predict_states else 0
             rmse_outputs_0 = torch.sqrt(reconstruction_loss_outputs_0) if self.include_outputs else 0
@@ -771,6 +773,7 @@ class BalancedNeuralODE(nn.Module):
                 'loss': loss,
                 'reconstruction_loss': reconstruction_loss,
                 'kl_loss': kl_loss,
+                'reconstruction_loss_states_outputs': reconstruction_loss_states_outputs,
                 'reconstruction_loss_state_0': reconstruction_loss_state_0,
                 'reconstruction_loss_states': reconstruction_loss_states,
                 'reconstruction_loss_outputs_0': reconstruction_loss_outputs_0,
@@ -789,6 +792,7 @@ class BalancedNeuralODE(nn.Module):
                 'time_odeint': time_odeint,
                 'time_outputs': time_outputs,
                 'ode_calls_forward': _ode_calls_forward,
+                'rmse_states_outputs': rmse_states_outputs,
                 'rmse_state_0': rmse_state_0,
                 'rmse_states': rmse_states,
                 'rmse_outputs_0': rmse_outputs_0,

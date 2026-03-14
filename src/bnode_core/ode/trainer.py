@@ -1179,7 +1179,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                         val_loss = ret_vals_validation.get('loss', None)
                         if val_loss is not None and not (np.isnan(val_loss) or np.isinf(val_loss)):
                             lr_schedulers['plateau'].step(val_loss)
-                    early_stopping(ret_vals_validation['loss'], model, epoch, optimizer)
+                    early_stopping(ret_vals_validation['loss'], model, epoch, optimizer, corresponding_loss = ret_vals_validation['rmse_states_outputs'])
                                     # count stable epochs to end seq_len_increase early
                     if ret_vals_validation['loss'] < 2 * ret_vals_train['loss']:
                         _stable_epochs += 1
@@ -1281,6 +1281,7 @@ def train_one_phase(cfg: train_test_config_class, model: torch.nn.Module, datalo
                 mlflow.log_metric('EarlyStopping_counter', early_stopping.counter, step=epoch)
                 if early_stopping.counter == 0:
                     mlflow.log_metric('EarlyStopping_best_loss', early_stopping.best_score, step=epoch)
+                    mlflow.log_metric('best_rmse_states_outputs', early_stopping.corresponding_score, step=epoch)
         except KeyboardInterrupt:
             logging.info('Interrupted by user')
             mlflow.log_param('ended by', 'keyboard interrupt')
