@@ -12,6 +12,39 @@ import io
 import shutil
 import logging
 import traceback
+import subprocess
+
+
+def _resolve_git_hash() -> str:
+  """Return the current commit hash using git."""
+  candidate_dirs = []
+  try:
+    candidate_dirs.append(Path(hydra.utils.get_original_cwd()))
+  except Exception:
+    pass
+  candidate_dirs.append(Path.cwd())
+
+  seen = set()
+  for directory in candidate_dirs:
+    dir_str = str(directory.resolve())
+    if dir_str in seen:
+      continue
+    seen.add(dir_str)
+    try:
+      completed = subprocess.run(
+        ['git', '-C', dir_str, 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=2,
+      )
+      git_hash = completed.stdout.strip()
+      if git_hash:
+        return git_hash
+    except Exception:
+      continue
+
+  return 'unknown'
 
 def log_hydra_to_mlflow(func: Callable) -> Callable:
   '''
@@ -30,13 +63,16 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       logging.warning('mlflow_tracking_uri is None, using file-based mlflow in root directory')
       logging.warning('If the training is running here, you might have set an environment variable MLflow_TRACKING_URI that overrides the config value.')
     mlflow.set_experiment(cfg.mlflow_experiment_name)
+    git_hash = _resolve_git_hash()
     system_info = os.uname()
     mlflow.start_run(log_system_metrics=True,
-      tags ={ 
-        'host': system_info.nodename,
-        'os': system_info.sysname + ' ' + system_info.release + ' ' + system_info.version,
-        'machine': system_info.machine
-      }) # log computer name and os as tags
+                      run_name=cfg.mlflow_run_name if cfg.mlflow_run_name is not None else None,
+                      tags ={ 
+                        'host': system_info.nodename,
+                        'os': system_info.sysname + ' ' + system_info.release + ' ' + system_info.version,
+                        'machine': system_info.machine,
+                        'git_hash': git_hash,
+                      }) # log computer name and os as tags
 
     hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
 

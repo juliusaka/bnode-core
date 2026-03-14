@@ -462,12 +462,12 @@ class base_training_settings_class:
     """
     batch_size: int = 64
     max_epochs: int = 1500
-    lr_start: float = 0.001
+    lr_start: float = 1e-4
     optimizer: str = 'adam'
     beta1_adam: Optional[float] = 0.9
     beta2_adam: Optional[float] = 0.999
     weight_decay: float = 0.0
-    clip_grad_norm: float = 100.0
+    clip_grad_norm: float = 50.0
     early_stopping_patience: int = 50
     early_stopping_threshold: float = 0.000
     early_stopping_threshold_mode: str = 'abs'
@@ -477,12 +477,12 @@ class base_training_settings_class:
     cosine_T_max: Optional[int] = None
     cosine_eta_min: float = 1e-5
     plateau_mode: str = 'min'
-    plateau_factor: float = 0.7
+    plateau_factor: float = 0.5
     plateau_patience: Optional[float] = None # if none, set patience based on heuristic
-    plateau_threshold: float = 5e-5
-    plateau_threshold_mode: str = 'abs'
+    plateau_threshold: float = 1e-4
+    plateau_threshold_mode: str = 'rel'
     plateau_cooldown: int = 0
-    plateau_min_lr: float = 5e-5
+    plateau_min_lr: float = 1e-7
     plateau_eps: float = 0
     lbfgs_max_iter: int = 20
     lbfgs_history_size: int = 100
@@ -1213,6 +1213,7 @@ class train_test_config_class:
         dataset_ref_path (str): Alternatively, give path to this dataset.
         mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
+        mlflow_run_name (str): Optional MLflow run name. If None, MLflow assigns a default name.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
         use_cuda (bool): Use CUDA if available.
         raise_exception (bool): If True, re-raise exceptions for debugging. Otherwise, log and continue.
@@ -1232,6 +1233,7 @@ class train_test_config_class:
         
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'
+    mlflow_run_name: Optional[str] = None
     
     use_amp: bool = False
     use_cuda: bool = True
