@@ -11,6 +11,13 @@
 - `pyproject.toml` sets `addopts = "-n auto --dist loadscope"` (parallel via pytest-xdist)
 - Useful flags: `-x` (stop on first failure), `-v` (verbose), `--tb=short` or `--tb=long`
 
+### Long-Running Test Execution Policy
+- For slow integration tests, run **one command once** and wait for completion. Do not re-run the same test command unless the previous run clearly failed or was explicitly cancelled.
+- Always execute from the correct working directory (`bnode/bnode-core`) in the same shell session.
+- Prefer a single explicit command that streams output (`-v --tb=short`) and then wait; avoid issuing extra probe commands that can interrupt/replace the running process.
+- If output is truncated by tooling, write output to a log file and read that file after completion rather than restarting the test.
+- After each long test run, report: working directory, exact command, final pytest summary, and exit code.
+
 ### Test Files
 
 | File | Purpose | Speed |
