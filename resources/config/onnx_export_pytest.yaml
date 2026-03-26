@@ -8,4 +8,3 @@ model_checkpoint_path: null # default uses the latest checkpoint in the model di
 output_dir: null 
 config_path: null
 dataset_path: null
-siso: false

@@ -593,34 +593,23 @@ def export_bnode(cfg_export: onnx_export_config_class):
             else:
                 output_names = ['latent_' + key + '_mu', 'latent_' + key + '_logvar']
             # export
-            if cfg_export.siso:
-                input_specs_list = [(n, t.shape[1]) for n, t in inputs_dict[key].items()]
-                siso = SISOWrapper(encoder, input_specs_list)
-                x_concat = torch.cat(list(inputs_dict[key].values()), dim=1)
-                path_encoder = dir_output / f'encoder_{key}_siso.onnx'
-                torch.onnx.export(
-                    siso, args=(x_concat,), f=path_encoder,
-                    input_names=['input'], output_names=['output'],
-                    dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
-                    dynamo=False,
-                )
-                onnx.save(shape_inference.infer_shapes(onnx.load(path_encoder)), path_encoder)
-                siso_dims[f'encoder_{key}'] = {
-                    'siso_onnx': path_encoder.name,
-                    'input': build_input_specs(inputs_dict[key]),
-                    'output': build_output_specs(res, output_names),
-                    'normalization_mu': encoder.normalization.mu.detach().tolist(),
-                }
-            else:
-                input_names = list(inputs_dict[key].keys())
-                dynamic_axes = {name: {0: 'batch_size'} for name in input_names + output_names}
-                path_encoder = dir_output / f'encoder_{key}.onnx'
-                torch.onnx.export(
-                    encoder, args=(), kwargs=inputs_dict[key], f=path_encoder,
-                    input_names=input_names, output_names=output_names,
-                    dynamic_axes=dynamic_axes, dynamo=False,
-                )
-                onnx.save(shape_inference.infer_shapes(onnx.load(path_encoder)), path_encoder)
+            input_specs_list = [(n, t.shape[1]) for n, t in inputs_dict[key].items()]
+            siso = SISOWrapper(encoder, input_specs_list)
+            x_concat = torch.cat(list(inputs_dict[key].values()), dim=1)
+            path_encoder = dir_output / f'encoder_{key}_siso.onnx'
+            torch.onnx.export(
+                siso, args=(x_concat,), f=path_encoder,
+                input_names=['input'], output_names=['output'],
+                dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+                dynamo=False,
+            )
+            onnx.save(shape_inference.infer_shapes(onnx.load(path_encoder)), path_encoder)
+            siso_dims[f'encoder_{key}'] = {
+                'siso_onnx': path_encoder.name,
+                'input': build_input_specs(inputs_dict[key]),
+                'output': build_output_specs(res, output_names),
+                'normalization_mu': encoder.normalization.mu.detach().tolist(),
+            }
             logging.info(f'Exported {key} encoder successfully')
             # export also example io
             path_example_io = dir_output / f'encoder_{key}_example_io.hdf5'
@@ -696,33 +685,22 @@ def export_bnode(cfg_export: onnx_export_config_class):
     # Filter out None values
     filtered_inputs = {k: v for k, v in inputs.items() if v is not None}
     # export
-    if cfg_export.siso:
-        input_specs_list = [(n, t.shape[1]) for n, t in filtered_inputs.items()]
-        siso = SISOWrapper(ode, input_specs_list)
-        x_concat = torch.cat(list(filtered_inputs.values()), dim=1)
-        path_ode = dir_output / 'latent_ode_siso.onnx'
-        torch.onnx.export(
-            siso, args=(x_concat,), f=path_ode,
-            input_names=['input'], output_names=['output'],
-            dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
-            dynamo=False,
-        )
-        onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
-        siso_dims['latent_ode'] = {
-            'siso_onnx': path_ode.name,
-            'input': build_input_specs(filtered_inputs),
-            'output': build_output_specs(res, output_names),
-        }
-    else:
-        input_names = list(filtered_inputs.keys())
-        dynamic_axes = {name: {0: 'batch_size'} for name in input_names + output_names}
-        path_ode = dir_output / 'latent_ode.onnx'
-        torch.onnx.export(
-            ode, args=(), kwargs=filtered_inputs, f=path_ode,
-            input_names=input_names, output_names=output_names,
-            dynamic_axes=dynamic_axes, dynamo=False,
-        )
-        onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
+    input_specs_list = [(n, t.shape[1]) for n, t in filtered_inputs.items()]
+    siso = SISOWrapper(ode, input_specs_list)
+    x_concat = torch.cat(list(filtered_inputs.values()), dim=1)
+    path_ode = dir_output / 'latent_ode_siso.onnx'
+    torch.onnx.export(
+        siso, args=(x_concat,), f=path_ode,
+        input_names=['input'], output_names=['output'],
+        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+        dynamo=False,
+    )
+    onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
+    siso_dims['latent_ode'] = {
+        'siso_onnx': path_ode.name,
+        'input': build_input_specs(filtered_inputs),
+        'output': build_output_specs(res, output_names),
+    }
     logging.info(f'Exported latent ODE successfully')
     # export also example io
     path_example_io = dir_output / f'latent_ode_example_io.hdf5'
@@ -754,41 +732,29 @@ def export_bnode(cfg_export: onnx_export_config_class):
     # Filter out None values
     filtered_inputs = {k: v for k, v in inputs.items() if v is not None}
     # export
-    if cfg_export.siso:
-        input_specs_list = [(n, t.shape[1]) for n, t in filtered_inputs.items()]
-        siso = SISOWrapper(decoder, input_specs_list)
-        x_concat = torch.cat(list(filtered_inputs.values()), dim=1)
-        path_decoder = dir_output / 'decoder_siso.onnx'
-        torch.onnx.export(
-            siso, args=(x_concat,), f=path_decoder,
-            input_names=['input'], output_names=['output'],
-            dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
-            dynamo=False,
-        )
-        onnx.save(shape_inference.infer_shapes(onnx.load(path_decoder)), path_decoder)
-        siso_dims['decoder'] = {
-            'siso_onnx': path_decoder.name,
-            'input': build_input_specs(filtered_inputs),
-            'output': build_output_specs(res, output_names),
-        }
-    else:
-        input_names = list(filtered_inputs.keys())
-        dynamic_axes = {name: {0: 'batch_size'} for name in input_names + output_names}
-        path_decoder = dir_output / 'decoder.onnx'
-        torch.onnx.export(
-            decoder, args=(), kwargs=filtered_inputs, f=path_decoder,
-            input_names=input_names, output_names=output_names,
-            dynamic_axes=dynamic_axes, dynamo=False,
-        )
-        onnx.save(shape_inference.infer_shapes(onnx.load(path_decoder)), path_decoder)
+    input_specs_list = [(n, t.shape[1]) for n, t in filtered_inputs.items()]
+    siso = SISOWrapper(decoder, input_specs_list)
+    x_concat = torch.cat(list(filtered_inputs.values()), dim=1)
+    path_decoder = dir_output / 'decoder_siso.onnx'
+    torch.onnx.export(
+        siso, args=(x_concat,), f=path_decoder,
+        input_names=['input'], output_names=['output'],
+        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+        dynamo=False,
+    )
+    onnx.save(shape_inference.infer_shapes(onnx.load(path_decoder)), path_decoder)
+    siso_dims['decoder'] = {
+        'siso_onnx': path_decoder.name,
+        'input': build_input_specs(filtered_inputs),
+        'output': build_output_specs(res, output_names),
+    }
     logging.info(f'Exported decoder successfully')
     # export also example io
     path_example_io = dir_output / f'decoder_example_io.hdf5'
     export_example_io_data(res, inputs, path_example_io)
 
-    if cfg_export.siso:
-        write_siso_dimensions(siso_dims, dir_output / SISO_DIMENSIONS_FILE_NAME)
-        logging.info(f'Wrote SISO dimensions to {dir_output / SISO_DIMENSIONS_FILE_NAME}')
+    write_siso_dimensions(siso_dims, dir_output / SISO_DIMENSIONS_FILE_NAME)
+    logging.info(f'Wrote SISO dimensions to {dir_output / SISO_DIMENSIONS_FILE_NAME}')
 
     if temp_dir is not None:
         logging.info(f'Cleaning up temporary directory: {temp_dir}')
