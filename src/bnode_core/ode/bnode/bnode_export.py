@@ -684,23 +684,35 @@ def export_bnode(cfg_export: onnx_export_config_class):
         output_names = ['concat(lat_states_mu_dot,lat_states_logvar_dot)']
     # Filter out None values
     filtered_inputs = {k: v for k, v in inputs.items() if v is not None}
-    # export
-    input_specs_list = [(n, t.shape[1]) for n, t in filtered_inputs.items()]
-    siso = SISOWrapper(ode, input_specs_list)
-    x_concat = torch.cat(list(filtered_inputs.values()), dim=1)
-    path_ode = dir_output / 'latent_ode_siso.onnx'
-    torch.onnx.export(
-        siso, args=(x_concat,), f=path_ode,
-        input_names=['input'], output_names=['output'],
-        dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
-        dynamo=False,
-    )
-    onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
-    siso_dims['latent_ode'] = {
-        'siso_onnx': path_ode.name,
-        'input': build_input_specs(filtered_inputs),
-        'output': build_output_specs(res, output_names),
-    }
+    # export — SSM models (ode_base.linear) have 3D matrix inputs (A_from_param, B_from_param)
+    # that cannot be concatenated as 1D feature vectors; export multi-input for those.
+    if ode_base.linear:
+        input_names = list(filtered_inputs.keys())
+        dynamic_axes = {name: {0: 'batch_size'} for name in input_names + output_names}
+        path_ode = dir_output / 'latent_ode.onnx'
+        torch.onnx.export(
+            ode, args=(), kwargs=filtered_inputs, f=path_ode,
+            input_names=input_names, output_names=output_names,
+            dynamic_axes=dynamic_axes, dynamo=False,
+        )
+        onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
+    else:
+        input_specs_list = [(n, t.shape[1]) for n, t in filtered_inputs.items()]
+        siso = SISOWrapper(ode, input_specs_list)
+        x_concat = torch.cat(list(filtered_inputs.values()), dim=1)
+        path_ode = dir_output / 'latent_ode_siso.onnx'
+        torch.onnx.export(
+            siso, args=(x_concat,), f=path_ode,
+            input_names=['input'], output_names=['output'],
+            dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+            dynamo=False,
+        )
+        onnx.save(shape_inference.infer_shapes(onnx.load(path_ode)), path_ode)
+        siso_dims['latent_ode'] = {
+            'siso_onnx': path_ode.name,
+            'input': build_input_specs(filtered_inputs),
+            'output': build_output_specs(res, output_names),
+        }
     logging.info(f'Exported latent ODE successfully')
     # export also example io
     path_example_io = dir_output / f'latent_ode_example_io.hdf5'
