@@ -27,7 +27,7 @@ parameter_dataset_path = r"resources/data/surrogate-test-data/data/datasets/Stra
 #   
 
 def ode_export_test(test_name: str, training_overrides: list[str] = [], export_overrides: list[str] = [],
-                    dataset_path: str = ""):
+                    dataset_path: str = "") -> Path:
     os.environ['HYDRA_FULL_ERROR'] = '1'
     training_overrides += ['nn_model.training.max_epochs_override=10']
     training_overrides += [f'dataset_path={str(Path(dataset_path).absolute())}']
@@ -36,18 +36,20 @@ def ode_export_test(test_name: str, training_overrides: list[str] = [], export_o
     # reset hydra
     GlobalHydra.instance().clear()
     # export model
+    export_dir = test_dir / 'test_export_onnx'
     orig_argv = sys.argv[:]
     sys.argv = [orig_argv[0], 
                 '--config-dir=resources/config',
                 '--config-name=onnx_export_pytest',
                 'model_directory=' + str(test_dir.absolute()),
-                'output_dir=' + str(test_dir.absolute() / 'test_export_onnx'),
+                'output_dir=' + str(export_dir.absolute()),
                 f"hydra.run.dir={str(test_dir.absolute() / 'test_export_hydra')}",
                 'dataset_path=' + dataset_path,
                 ]
     sys.argv += export_overrides
     bnode_export_main()
     sys.argv = orig_argv
+    return export_dir
 
 def test_bnode_export():
     """Test basic BNODE export with controls."""
@@ -120,3 +122,20 @@ def test_bnode_export_deterministic_linear_mpc():
                         'nn_model.training.main_training.1.threshold_count_populated_dimensions=0.1',
                     ],
                     dataset_path=dataset_path)
+
+
+def test_bnode_export_siso():
+    """Test BNODE SISO export: *_siso.onnx files and siso_dimensions.json must be written."""
+    import json
+    export_dir = ode_export_test(
+        'bnode_export_siso',
+        dataset_path=dataset_path,
+        export_overrides=['siso=true'],
+    )
+    assert (export_dir / 'encoder_states_siso.onnx').exists()
+    assert (export_dir / 'latent_ode_siso.onnx').exists()
+    assert (export_dir / 'decoder_siso.onnx').exists()
+    dims = json.loads((export_dir / 'siso_dimensions.json').read_text())
+    assert 'encoder_states' in dims
+    assert 'latent_ode' in dims
+    assert 'decoder' in dims

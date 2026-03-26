@@ -1337,6 +1337,7 @@ class onnx_export_config_class(load_latent_ode_config_class):
     model_checkpoint_path: Optional[str] = None
     config_path: Optional[str] = None
     dataset_path: Optional[str] = None
+    siso: bool = False
 
     @model_validator(mode='after')
     def _check_exclusive_model_source(self):
