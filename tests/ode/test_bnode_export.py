@@ -124,14 +124,8 @@ def test_bnode_export_deterministic_linear_mpc():
                     dataset_path=dataset_path)
 
 
-def test_bnode_export_siso():
-    """Test BNODE SISO export: *_siso.onnx files and siso_dimensions.json must be written."""
+def _assert_siso_export(export_dir: Path) -> None:
     import json
-    export_dir = ode_export_test(
-        'bnode_export_siso',
-        dataset_path=dataset_path,
-        export_overrides=['siso=true'],
-    )
     assert (export_dir / 'encoder_states_siso.onnx').exists()
     assert (export_dir / 'latent_ode_siso.onnx').exists()
     assert (export_dir / 'decoder_siso.onnx').exists()
@@ -139,3 +133,24 @@ def test_bnode_export_siso():
     assert 'encoder_states' in dims
     assert 'latent_ode' in dims
     assert 'decoder' in dims
+
+
+def test_bnode_export_siso():
+    """Test BNODE SISO export: *_siso.onnx files and siso_dimensions.json must be written."""
+    export_dir = ode_export_test(
+        'bnode_export_siso',
+        dataset_path=dataset_path,
+        export_overrides=['siso=true'],
+    )
+    _assert_siso_export(export_dir)
+
+
+def test_bnode_export_siso_deterministic():
+    """Test BNODE SISO export with a deterministic training phase (encoder outputs only mu)."""
+    export_dir = ode_export_test(
+        'bnode_export_siso_det',
+        training_overrides=['nn_model=bnode_pytest_det'],
+        dataset_path=dataset_path,
+        export_overrides=['siso=true'],
+    )
+    _assert_siso_export(export_dir)
