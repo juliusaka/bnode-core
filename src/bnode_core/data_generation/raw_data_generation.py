@@ -101,18 +101,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 from bnode_core.config import data_gen_config, get_config_store, convert_cfg_to_dataclass
 from bnode_core.filepaths import filepath_raw_data, log_overwriting_file, filepath_raw_data_config, config_dir_auto_recognize
-from bnode_core.data_generation.sampling import (
-    random_sampling_parameters,
-    random_sampling_initial_states,
-    random_sampling_controls,
-    random_sampling_controls_w_offset,
-    random_sampling_controls_w_offset_cubic_splines_old_clip_manual,
-    random_sampling_controls_w_offset_cubic_splines_clip_random,
-    random_steps_sampling_controls,
-    random_frequency_response_sampling_controls,
-    load_controls_from_file,
-    constant_input_simulation_from_excel,
-)
+import bnode_core.data_generation.sampling as sampling
+
 from typing import Tuple, Optional, List
 
 
@@ -389,6 +379,7 @@ def sample_all_values(cfg: data_gen_config) -> Tuple[Optional[np.ndarray], Optio
     Supported sampling strategies:
         - Initial states: 'R' (random uniform)
         - Controls: 'R', 'RO' (random with offset), 'ROCS', 'RROCS', 'RS' (random steps), 
+           'RSS' (random sequential steps),
           'RF' (frequency response), 'file' (from CSV), 'constantInput' (from Excel)
         - Parameters: 'R' (random uniform)
     
@@ -413,7 +404,7 @@ def sample_all_values(cfg: data_gen_config) -> Tuple[Optional[np.ndarray], Optio
     """
     if cfg.pModel.RawData.initial_states_include:
         if cfg.pModel.RawData.initial_states_sampling_strategy == 'R':
-            initial_state_values = random_sampling_initial_states(cfg)
+            initial_state_values = sampling.random_sampling_initial_states(cfg)
         logging.info('initial_state_values.shape: {}'.format(initial_state_values.shape))
     else:
         initial_state_values = None
@@ -421,21 +412,25 @@ def sample_all_values(cfg: data_gen_config) -> Tuple[Optional[np.ndarray], Optio
     
     if cfg.pModel.RawData.controls_include:
         if cfg.pModel.RawData.controls_sampling_strategy == 'R':
-            ctrl_values = random_sampling_controls(cfg)
+            ctrl_values = sampling.random_sampling_controls(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'RO':
-            ctrl_values = random_sampling_controls_w_offset(cfg)
+            ctrl_values = sampling.random_sampling_controls_w_offset(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'ROCS':
-            ctrl_values = random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg)
+            ctrl_values = sampling.random_sampling_controls_w_offset_cubic_splines_old_clip_manual(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'RROCS':
-            ctrl_values = random_sampling_controls_w_offset_cubic_splines_clip_random(cfg)
+            ctrl_values = sampling.random_sampling_controls_w_offset_cubic_splines_clip_random(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'RS':
-            ctrl_values = random_steps_sampling_controls(cfg)
+            ctrl_values = sampling.random_steps_sampling_controls(cfg)
+        elif cfg.pModel.RawData.controls_sampling_strategy == 'RSS':
+            ctrl_values = sampling.random_sequential_steps_sampling_controls(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'RF':
-            ctrl_values = random_frequency_response_sampling_controls(cfg)
+            ctrl_values = sampling.random_frequency_response_sampling_controls(cfg)
+        elif cfg.pModel.RawData.controls_sampling_strategy == 'RFS':
+            ctrl_values = sampling.random_fourrier_sampling_controls(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'file':
-            ctrl_values = load_controls_from_file(cfg)
+            ctrl_values = sampling.load_controls_from_file(cfg)
         elif cfg.pModel.RawData.controls_sampling_strategy == 'constantInput':
-            ctrl_values = constant_input_simulation_from_excel(cfg)
+            ctrl_values = sampling.constant_input_simulation_from_excel(cfg)
         logging.info('ctrl_values.shape: {}'.format(ctrl_values.shape))
     else:
         ctrl_values = None
@@ -443,7 +438,7 @@ def sample_all_values(cfg: data_gen_config) -> Tuple[Optional[np.ndarray], Optio
 
     if cfg.pModel.RawData.parameters_include:
         if cfg.pModel.RawData.parameters_sampling_strategy == 'R':
-            param_values = random_sampling_parameters(cfg)
+            param_values = sampling.random_sampling_parameters(cfg)
     else:
         # save default parameter values
         if cfg.pModel.RawData.parameters is not None:

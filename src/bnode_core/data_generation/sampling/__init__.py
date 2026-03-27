@@ -21,7 +21,9 @@ from bnode_core.data_generation.sampling.controls_random_offset import random_sa
 from bnode_core.data_generation.sampling.controls_rocs import random_sampling_controls_w_offset_cubic_splines_old_clip_manual
 from bnode_core.data_generation.sampling.controls_rrocs import random_sampling_controls_w_offset_cubic_splines_clip_random
 from bnode_core.data_generation.sampling.controls_steps import random_steps_sampling_controls
+from bnode_core.data_generation.sampling.controls_sequential_steps import random_sequential_steps_sampling_controls
 from bnode_core.data_generation.sampling.controls_frequency_response import random_frequency_response_sampling_controls
+from bnode_core.data_generation.sampling.controls_fourrier import random_fourrier_sampling_controls
 from bnode_core.data_generation.sampling.controls_from_file import load_controls_from_file
 from bnode_core.data_generation.sampling.controls_from_excel import constant_input_simulation_from_excel
 
@@ -33,7 +35,9 @@ __all__ = [
     "random_sampling_controls_w_offset_cubic_splines_old_clip_manual",
     "random_sampling_controls_w_offset_cubic_splines_clip_random",
     "random_steps_sampling_controls",
+    "random_sequential_steps_sampling_controls",
     "random_frequency_response_sampling_controls",
+    "random_fourrier_sampling_controls",
     "load_controls_from_file",
     "constant_input_simulation_from_excel",
 ]
