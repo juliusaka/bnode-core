@@ -581,6 +581,8 @@ def train_all_phases(cfg: train_test_config_class):
                                             if key not in ['train', 'test', 'validation', 'common_test', 'common_validation', 'time']:
                                                 hdf5_dataset_pred.copy(hdf5_dataset[key], key)
                                                 logging.info('Copying dataset key {} to hdf5 file for testing.'.format(key))
+                                    else:
+                                        hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'a')
 
                                     logging.info('Copying dataset for context {} to hdf5 file for testing.'.format(context))
                                     
