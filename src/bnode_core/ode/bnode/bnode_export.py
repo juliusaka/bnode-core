@@ -653,6 +653,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
             )
             if dims is not None:
                 dims['normalization_mu'] = encoder.normalization.mu.detach().tolist()
+                dims['normalization_std'] = encoder.normalization.std.detach().tolist()
                 siso_dims[f'encoder_{key}'] = dims
             logging.info(f'Exported {key} encoder successfully')
             # export also example io
@@ -784,6 +785,14 @@ def export_bnode(cfg_export: onnx_export_config_class):
         cfg_export.siso,
     )
     if dims is not None:
+        # Store decoder output normalization statistics so consumers can compute
+        # normalised RMSE against physical-unit predictions.
+        if decoder.include_states and hasattr(decoder, 'state_normalization') and decoder.state_normalization is not None:
+            dims['states_normalization_mu'] = decoder.state_normalization.mu.detach().tolist()
+            dims['states_normalization_std'] = decoder.state_normalization.std.detach().tolist()
+        if decoder.include_outputs and hasattr(decoder, 'outputs_normalization') and decoder.outputs_normalization is not None:
+            dims['outputs_normalization_mu'] = decoder.outputs_normalization.mu.detach().tolist()
+            dims['outputs_normalization_std'] = decoder.outputs_normalization.std.detach().tolist()
         siso_dims['decoder'] = dims
     logging.info(f'Exported decoder successfully')
     # export also example io
