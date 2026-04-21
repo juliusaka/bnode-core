@@ -1,11 +1,34 @@
 # bnode-core Copilot Instructions
 
-## Testing
+## Environment and command policy
 
-### Environment
-- Python venv: activate with `source .venv/bin/activate` from the **workspace root** 
-- All pytest commands must be run from `bnode/bnode-core/`. A pytest fixture ensures this.
-- **Do not open a new terminal for each test run.** Activate the venv once, `cd bnode/bnode-core`, then reuse the same shell.
+- Assume the environment is already provisioned by the user. If CUDA is needed, the user may already have chosen an extra such as `cu128`. Copilot should **not** run `uv sync`, `uv sync --extra ...`, or otherwise change the environment unless explicitly asked.
+- These commands are written for the `bnode-core` repository root. If you are working from the superproject root, use the superproject instruction file instead of translating paths manually.
+- Activate the existing environment and then use Python-based commands directly:
+
+```bash
+source .venv/bin/activate
+```
+
+- Prefer `python -m pytest`, `python -m ruff`, and `python -m bnode_core...` over `uv run`.
+- Run pytest from the repository root. A pytest fixture normalizes the working directory internally.
+- **Do not open a new terminal for each test run.** Activate the venv once, stay in the same shell, then reuse it.
+- If this checkout lives inside the superproject, there is an optional downstream targeted instructions file for the Modelica/export tests at `../bnode-plus/.github/instructions/onnx-to-modelica.instructions.md`. Only read it when supporting the `bnode-plus` ONNX-to-Modelica path or its integration tests.
+- Optional targeted instructions file for MkDocs structure: `.github/instructions/docs-structure.instructions.md`. Read it when changing `docs/` pages or `mkdocs.yml`.
+- If this checkout lives inside the superproject, there is also a workspace-level targeted instructions file for `uvx` fallback behavior at `../../.github/instructions/uv-tool-fallback.instructions.md`.
+
+## Build, lint, test, and run commands
+
+| Task | Command |
+|------|---------|
+| Lint | `python -m ruff check src tests` |
+| All tests | `python -m pytest tests -x -v --tb=short` |
+| Single fast test | `python -m pytest tests/test_config.py::test_convert_cfg_to_dataclass -x -v --tb=short` |
+| Fast mask test | `python -m pytest tests/ode/test_set_mask.py -x -v --tb=short` |
+| Data generation | `python -m bnode_core.data_generation.raw_data_generation` |
+| Data preparation | `python -m bnode_core.data_generation.data_preperation` |
+| Training | `python -m bnode_core.ode.trainer` |
+| ONNX export | `python -m bnode_core.ode.bnode.bnode_export` |
 
 ### pytest Configuration
 - `pyproject.toml` sets `addopts = "-n auto --dist loadscope"` (parallel via pytest-xdist)
@@ -33,7 +56,7 @@
 ### Key Test Names
 
 **Training** (`tests/ode/test_bnode.py`):
-- `test_determistic_mode` — basic deterministic mode (note: typo in name, missing 'n')
+- `test_deterministic_mode` — basic deterministic mode
 - `test_deterministic_mode_from_state0` — deterministic mode using state0 masks
 
 **Export** (`tests/ode/test_bnode_export.py`):
@@ -50,10 +73,10 @@
 ### Example Commands
 ```bash
 # Setup (once per session)
-source .venv/bin/activate && cd bnode/bnode-core
+source .venv/bin/activate
 
 # Run a specific test
-python -m pytest tests/ode/test_bnode.py::test_determistic_mode -x -v --tb=short
+python -m pytest tests/ode/test_bnode.py::test_deterministic_mode -x -v --tb=short
 
 # Run tests by keyword
 python -m pytest tests/ode/test_bnode_export.py -k "deterministic" -x -v --tb=short
@@ -66,13 +89,20 @@ python -m pytest tests/ode/test_set_mask.py -x -v --tb=short
 
 # Run config tests
 python -m pytest tests/test_config.py -x -v --tb=short
+
+# Run the main package entry points directly
+python -m bnode_core.data_generation.raw_data_generation
+python -m bnode_core.data_generation.data_preperation
+python -m bnode_core.ode.trainer
+python -m bnode_core.ode.bnode.bnode_export
 ```
 
 ### Notes
 - Tests use the Hydra config system — test configs live in `resources/config/nn_model/`
 - Export tests create temp dirs under `tests/_results/ode/`
-- `test_determistic_mode` has a typo (missing 'n') — always use the exact name
+- The deterministic BNODE smoke test is `test_deterministic_mode`
 - Slow tests train a small model end-to-end; don't run the full suite unnecessarily
+- When working from the superproject, the heat-pump-specific Hydra configs live in the top-level `config/` directory. Running the same modules from inside `bnode-core` switches auto-discovery to `resources/config/`.
 
 ## Configuration (`src/bnode_core/config.py`)
 
