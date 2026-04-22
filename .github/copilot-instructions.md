@@ -13,9 +13,11 @@ source .venv/bin/activate
 - Prefer `python -m pytest`, `python -m ruff`, and `python -m bnode_core...` over `uv run`.
 - Run pytest from the repository root. A pytest fixture normalizes the working directory internally.
 - **Do not open a new terminal for each test run.** Activate the venv once, stay in the same shell, then reuse it.
-- If this checkout lives inside the superproject, there is an optional downstream targeted instructions file for the Modelica/export tests at `../bnode-plus/.github/instructions/onnx-to-modelica.instructions.md`. Only read it when supporting the `bnode-plus` ONNX-to-Modelica path or its integration tests.
+- For self-contained workflows in this repository, treat exporter-produced artifacts and metadata as a strict contract. Do **not** add fallback handling for hypothetical alternate schemas, older metadata layouts, or partially missing fields unless the user explicitly asks for compatibility support.
+- In these self-contained workflows, robustness means validating expected metadata and failing clearly when it is missing or inconsistent, not silently downgrading behavior to accommodate imagined variants.
+- When behavior, commands, paths, outputs, or terminology change, update the code, the relevant MkDocs pages, and the relevant `.instructions.md` files together. Keep MkDocs user-facing and put coding-agent-only guidance into instruction files. Avoid stale examples, stale artifact names, and mismatched command snippets.
 - Optional targeted instructions file for MkDocs structure: `.github/instructions/docs-structure.instructions.md`. Read it when changing `docs/` pages or `mkdocs.yml`.
-- If this checkout lives inside the superproject, there is also a workspace-level targeted instructions file for `uvx` fallback behavior at `../../.github/instructions/uv-tool-fallback.instructions.md`.
+- Optional targeted instructions file for the BNODE ONNX exporter: `.github/instructions/bnode-export.instructions.md`. Read it when changing `src/bnode_core/ode/bnode/bnode_export.py` or `tests/ode/test_bnode_export.py`.
 
 ## Build, lint, test, and run commands
 
