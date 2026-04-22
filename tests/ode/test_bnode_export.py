@@ -2,6 +2,9 @@ from pathlib import Path
 import sys
 import os
 import shutil
+import json
+
+import onnx
 from hydra.core.global_hydra import GlobalHydra
 
 from test_bnode import ode_training
@@ -124,15 +127,60 @@ def test_bnode_export_deterministic_linear_mpc():
                     dataset_path=dataset_path)
 
 
-def _assert_siso_export(export_dir: Path) -> None:
-    import json
-    assert (export_dir / 'encoder_states_siso.onnx').exists()
-    assert (export_dir / 'latent_ode_siso.onnx').exists()
-    assert (export_dir / 'decoder_siso.onnx').exists()
+def _assert_contiguous_specs(specs: list[dict]) -> int:
+    offset = 0
+    for spec in specs:
+        assert spec["start"] == offset
+        assert spec["end"] - spec["start"] == spec["dim"]
+        offset = spec["end"]
+    return offset
+
+
+def _tensor_feature_dim(value_info) -> int:
+    tensor_shape = value_info.type.tensor_type.shape.dim
+    assert len(tensor_shape) == 2
+    feature_dim = tensor_shape[1]
+    assert feature_dim.HasField("dim_value")
+    return int(feature_dim.dim_value)
+
+
+def _assert_siso_module_dimensions(export_dir: Path, module_key: str, dims: dict) -> None:
+    module_dims = dims[module_key]
+    path_onnx = export_dir / module_dims["siso_onnx"]
+    assert path_onnx.exists()
+
+    expected_input_dim = _assert_contiguous_specs(module_dims["input"])
+    expected_output_dim = _assert_contiguous_specs(module_dims["output"])
+
+    model = onnx.load(path_onnx)
+    assert len(model.graph.input) == 1
+    assert len(model.graph.output) == 1
+    assert model.graph.input[0].name == "input"
+    assert model.graph.output[0].name == "output"
+
+    assert _tensor_feature_dim(model.graph.input[0]) == expected_input_dim
+    assert _tensor_feature_dim(model.graph.output[0]) == expected_output_dim
+
+
+def _assert_siso_export(export_dir: Path, *, deterministic: bool) -> None:
     dims = json.loads((export_dir / 'siso_dimensions.json').read_text())
+    assert dims["version"] == 1
     assert 'encoder_states' in dims
     assert 'latent_ode' in dims
     assert 'decoder' in dims
+
+    _assert_siso_module_dimensions(export_dir, "encoder_states", dims)
+    _assert_siso_module_dimensions(export_dir, "latent_ode", dims)
+    _assert_siso_module_dimensions(export_dir, "decoder", dims)
+
+    encoder_outputs = dims["encoder_states"]["output"]
+    if deterministic:
+        assert [spec["name"] for spec in encoder_outputs] == ["latent_states_mu"]
+    else:
+        assert [spec["name"] for spec in encoder_outputs] == [
+            "latent_states_mu",
+            "latent_states_logvar",
+        ]
 
 
 def test_bnode_export_siso():
@@ -142,7 +190,7 @@ def test_bnode_export_siso():
         dataset_path=dataset_path,
         export_overrides=['siso=true'],
     )
-    _assert_siso_export(export_dir)
+    _assert_siso_export(export_dir, deterministic=False)
 
 
 def test_bnode_export_siso_deterministic():
@@ -153,4 +201,4 @@ def test_bnode_export_siso_deterministic():
         dataset_path=dataset_path,
         export_overrides=['siso=true'],
     )
-    _assert_siso_export(export_dir)
+    _assert_siso_export(export_dir, deterministic=True)

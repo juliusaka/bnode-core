@@ -1329,6 +1329,8 @@ class onnx_export_config_class(load_latent_ode_config_class):
         model_checkpoint_path (Optional[str]): Direct path to a model checkpoint file.
         config_path (Optional[str]): Path to a saved Hydra config to reproduce settings.
         dataset_path (Optional[str]): Path to a dataset used during export/evaluation.
+        siso (bool): If True, export a single-input-single-output (SISO) version of the model. This is required
+            e.g. for usage in smartint.
     """
     output_dir: Optional[str] = None
     model_directory: Optional[str] = None
