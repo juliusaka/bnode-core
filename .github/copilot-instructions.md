@@ -16,6 +16,8 @@ source .venv/bin/activate
 - For self-contained workflows in this repository, treat exporter-produced artifacts and metadata as a strict contract. Do **not** add fallback handling for hypothetical alternate schemas, older metadata layouts, or partially missing fields unless the user explicitly asks for compatibility support.
 - In these self-contained workflows, robustness means validating expected metadata and failing clearly when it is missing or inconsistent, not silently downgrading behavior to accommodate imagined variants.
 - When behavior, commands, paths, outputs, or terminology change, update the code, the relevant MkDocs pages, and the relevant `.instructions.md` files together. Keep MkDocs user-facing and put coding-agent-only guidance into instruction files. Avoid stale examples, stale artifact names, and mismatched command snippets.
+- Do not leave stale instruction or documentation sections behind after changing exports, tests, fixtures, or workflow steps. Rewrite the affected section in the same task so the primary description matches the current code instead of relying on follow-up caveats.
+- When fixture names, test variants, artifact names, or command examples change, review the relevant instruction pages explicitly and replace outdated enumerations rather than layering new bullets on top of obsolete ones.
 - Optional targeted instructions file for MkDocs structure: `.github/instructions/docs-structure.instructions.md`. Read it when changing `docs/` pages or `mkdocs.yml`.
 - Optional targeted instructions file for the BNODE ONNX exporter: `.github/instructions/bnode-export.instructions.md`. Read it when changing `src/bnode_core/ode/bnode/bnode_export.py` or `tests/ode/test_bnode_export.py`.
 
