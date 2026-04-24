@@ -175,3 +175,10 @@ python -m pytest tests/ode/test_bnode_export.py -k "siso" -x -v --tb=short
 # 3. deterministic export variants
 python -m pytest tests/ode/test_bnode_export.py -k "deterministic" -x -v --tb=short
 ```
+
+## Done means
+
+- The exporter still keeps the trained-model directory, export output directory, and Hydra run directory distinct.
+- Exported ONNX artifact names, example I/O HDF5 files, and `siso_dimensions.json` stay in sync with any changed inputs or outputs.
+- Any contract change is reflected in the matching tests, command examples, and instruction text in the same task.
+- The most targeted exporter test coverage for the change has been run from the correct repository root.
