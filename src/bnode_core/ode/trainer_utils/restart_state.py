@@ -21,6 +21,79 @@ class CheckpointRequestedExit(RuntimeError):
 
 
 @dataclass
+class TrainingPhaseState:
+    """Mutable counters and flags for a single training phase.
+
+    Serves as the single source of truth for both the live training loop and
+    the restart checkpoint, replacing scattered individual variables and a
+    lengthy parameter list in ``_save_training_restart_state``.
+    """
+
+    phase_epoch_0: int
+    """Global epoch index at which this phase started (the resume anchor)."""
+    epoch_start: int
+    """First epoch to execute in this run (equals phase_epoch_0 on a fresh
+    start, or restart_state.next_epoch when resuming)."""
+    epoch_stop: int
+    """Exclusive upper bound for the epoch loop; may grow when seq-len
+    increase ends earlier than the configured maximum."""
+    first_epoch_is_evaluation: bool
+    """True while the very first epoch of the phase is still pending
+    (that epoch is eval-only, not a training epoch)."""
+    nan_counter: int = 0
+    """Cumulative NaN-loss events; training aborts when this exceeds 50."""
+    grad_norm_last_reduced_counter: int = 0
+    """Consecutive optimizer reloads after NaN; triggers grad-norm reduction
+    after 2 consecutive reloads."""
+    stable_epochs: int = 0
+    """Epochs where validation loss < 2× training loss; used to exit the
+    seq-len increase warm-up early."""
+    flag_out_of_seq_len_increase: bool = True
+    """True once the sequence-length warm-up phase has ended."""
+    deterministic_mode_active: bool = False
+    """True after the deterministic mask has been applied to the model."""
+
+    @classmethod
+    def fresh(
+        cls,
+        epoch_0: int,
+        epoch_stop: int,
+        flag_out_of_seq_len_increase: bool,
+    ) -> "TrainingPhaseState":
+        """Create a phase state for a new (non-resumed) training phase."""
+        return cls(
+            phase_epoch_0=epoch_0,
+            epoch_start=epoch_0,
+            epoch_stop=epoch_stop,
+            first_epoch_is_evaluation=True,
+            flag_out_of_seq_len_increase=flag_out_of_seq_len_increase,
+        )
+
+    @classmethod
+    def from_restart(
+        cls,
+        restart_state: "TrainingRestartState",
+        default_epoch_stop: int,
+    ) -> "TrainingPhaseState":
+        """Restore a phase state from a persisted restart checkpoint."""
+        return cls(
+            phase_epoch_0=restart_state.epoch_0,
+            epoch_start=restart_state.next_epoch,
+            epoch_stop=(
+                restart_state.epoch_stop
+                if restart_state.epoch_stop is not None
+                else default_epoch_stop
+            ),
+            first_epoch_is_evaluation=restart_state.first_epoch_is_evaluation,
+            nan_counter=restart_state.nan_counter,
+            grad_norm_last_reduced_counter=restart_state.grad_norm_last_reduced_counter,
+            stable_epochs=restart_state.stable_epochs,
+            flag_out_of_seq_len_increase=restart_state.flag_out_of_seq_len_increase,
+            deterministic_mode_active=restart_state.deterministic_mode_active,
+        )
+
+
+@dataclass
 class TrainingRestartState:
     schema_version: int = RESTART_STATE_SCHEMA_VERSION
     hydra_output_dir: str = ""
