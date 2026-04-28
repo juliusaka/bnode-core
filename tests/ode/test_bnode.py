@@ -13,6 +13,7 @@ from bnode_core.ode import trainer
 from bnode_core.config import get_config_store
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
+    LiveTrainingState,
     RESTART_STATE_FILENAME,
     load_restart_state,
 )
@@ -175,11 +176,11 @@ def _assert_resumed_mlflow_run(
 
 def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int) -> None:
     """Interrupt training after n epoch checkpoints by raising CheckpointRequestedExit."""
-    original_save = trainer._save_training_restart_state
+    original_save = LiveTrainingState.save_checkpoint
     call_count = [0]
 
-    def _patched_save(*args, **kwargs):
-        result = original_save(*args, **kwargs)
+    def _patched_save(self, next_epoch: int):
+        result = original_save(self, next_epoch)
         call_count[0] += 1
         if call_count[0] >= n_saves:
             raise CheckpointRequestedExit(
@@ -187,7 +188,7 @@ def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int
             )
         return result
 
-    monkeypatch.setattr(trainer, '_save_training_restart_state', _patched_save)
+    monkeypatch.setattr(LiveTrainingState, 'save_checkpoint', _patched_save)
 
 
 @pytest.fixture(scope='module')

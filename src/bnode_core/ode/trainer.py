@@ -168,7 +168,6 @@ import shutil
 import h5py
 import time as pyTime
 import copy
-from dataclasses import asdict
 
 from h5py import Dataset as hdf5_dataset_class
 from torch.nn.utils import clip_grad_norm_
@@ -193,12 +192,11 @@ from bnode_core.config import train_test_config_class, base_training_settings_cl
 from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
+    LiveTrainingState,
     TrainingPhaseState,
     TrainingRestartState,
     apply_training_restart_state,
-    build_training_restart_state,
     load_restart_state,
-    save_restart_state,
 )
 
 
@@ -449,59 +447,6 @@ def _apply_saved_train_cfg(train_cfg: base_training_settings_class, saved_cfg_st
     for key, value in saved_cfg_state.items():
         setattr(restored, key, value)
     return restored
-
-
-def _save_training_restart_state(
-    cfg: train_test_config_class,
-    restart_state_path: Path,
-    model: torch.nn.Module,
-    job_idx: int,
-    next_epoch: int,
-    train_cfg: base_training_settings_class,
-    phase_state: TrainingPhaseState,
-    optimizer: torch.optim.Optimizer | None,
-    lr_schedulers: dict | None,
-    scaler: torch.amp.GradScaler | None,
-    early_stopping: EarlyStopping | None,
-    best_model_path: Path | None = None,
-    best_optimizer_path: Path | None = None,
-) -> TrainingRestartState:
-    current_model_path = filepaths.filepath_model_current_hydra_output()
-    current_optimizer_path = filepaths.filepath_optimizer_current_hydra_output()
-    model.save(current_model_path)
-    if optimizer is not None:
-        torch.save(optimizer.state_dict(), current_optimizer_path)
-    state = build_training_restart_state(
-        hydra_output_dir=filepaths.dir_current_hydra_output(),
-        restart_state_path=restart_state_path,
-        model=model,
-        job_idx=job_idx,
-        epoch_0=phase_state.phase_epoch_0,
-        next_epoch=next_epoch,
-        first_epoch_is_evaluation=phase_state.first_epoch_is_evaluation,
-        current_model_path=current_model_path,
-        current_optimizer_path=current_optimizer_path if optimizer is not None else None,
-        best_model_path=best_model_path,
-        best_optimizer_path=best_optimizer_path,
-        training_cfg_state=asdict(train_cfg),
-        optimizer=optimizer,
-        lr_schedulers=lr_schedulers,
-        scaler=scaler,
-        early_stopping=early_stopping,
-        nan_counter=phase_state.nan_counter,
-        grad_norm_last_reduced_counter=phase_state.grad_norm_last_reduced_counter,
-        stable_epochs=phase_state.stable_epochs,
-        flag_out_of_seq_len_increase=phase_state.flag_out_of_seq_len_increase,
-        epoch_stop=phase_state.epoch_stop,
-        checkpoint_reason='epoch_end',
-        mlflow_run_id=mlflow.active_run().info.run_id if mlflow.active_run() is not None else None,
-        mlflow_tracking_uri=mlflow.get_tracking_uri(),
-        mlflow_experiment_name=cfg.mlflow_experiment_name,
-        deterministic_mode_active=phase_state.deterministic_mode_active,
-        use_cuda=cfg.use_cuda,
-    )
-    save_restart_state(restart_state_path, state)
-    return state
 
 
 def _materialize_restart_checkpoints_for_current_output(
@@ -1030,7 +975,18 @@ def _next_batch(data_loader, iterator):
 
 
 # define train loop for one epoch
-def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase, lr_schedulers=None):
+def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epoch):
+    model = live_state.model
+    optimizer = live_state.optimizer
+    scaler = live_state.scaler
+    train_cfg = live_state.train_cfg
+    pre_train = live_state.pre_train
+    device = live_state.device
+    use_amp = live_state.cfg.use_amp
+    use_cuda = live_state.cfg.use_cuda
+    batch_print_interval = live_state.cfg.batch_print_interval
+    epoch_this_phase = epoch - live_state.phase_state.phase_epoch_0
+    lr_schedulers = live_state.lr_schedulers
     model.train()
     _time_forward = 0
     _time_backward = 0
@@ -1398,6 +1354,25 @@ def train_one_phase(
                 epoch_stop=_default_epoch_stop,
                 flag_out_of_seq_len_increase=_init_flag_out_of_seq_len_increase,
             )
+        live_state = LiveTrainingState(
+            cfg=cfg,
+            model=model,
+            optimizer=optimizer,
+            lr_schedulers=lr_schedulers,
+            scaler=scaler,
+            early_stopping=early_stopping,
+            train_cfg=train_cfg,
+            job_idx=job_idx,
+            pre_train=pre_train,
+            device=device,
+            phase_state=phase_state,
+            path_best_model=_path_best_model,
+            path_optimizer_best_model=_path_optimizer_best_model,
+            path_current_model=_path_current_model,
+            path_current_optimizer=_path_current_optimizer,
+            hydra_output_dir=filepaths.dir_current_hydra_output(),
+            restart_manager_path=restart_manager,
+        )
         '''Training'''
         try:
             _flag_break_after_epoch = False
@@ -1446,20 +1421,10 @@ def train_one_phase(
                 if not _flag_break_after_epoch and not phase_state.first_epoch_is_evaluation:
                     try:
                         ret_vals_train, dataloader_iters['train'] = train_one_epoch(
-                            model,
-                            optimizer,
+                            live_state,
                             dataloaders['train'],
                             dataloader_iters['train'],
-                            scaler,
-                            train_cfg,
-                            pre_train,
-                            device,
                             epoch,
-                            cfg.use_amp,
-                            cfg.use_cuda,
-                            cfg.batch_print_interval,
-                            epoch - phase_state.phase_epoch_0,
-                            lr_schedulers,
                         )
                         _reload_assertion_error = False
                     except AssertionError as e:
@@ -1656,21 +1621,7 @@ def train_one_phase(
                     if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                         mlflow.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
                 if restart_manager is not None:
-                    _save_training_restart_state(
-                        cfg=cfg,
-                        restart_state_path=restart_manager,
-                        model=model,
-                        job_idx=job_idx,
-                        next_epoch=epoch + 1,
-                        train_cfg=train_cfg,
-                        phase_state=phase_state,
-                        optimizer=optimizer,
-                        lr_schedulers=lr_schedulers,
-                        scaler=scaler,
-                        early_stopping=early_stopping,
-                        best_model_path=_path_best_model,
-                        best_optimizer_path=_path_optimizer_best_model,
-                    )
+                    live_state.save_checkpoint(epoch + 1)
         except KeyboardInterrupt:
             logging.info('Interrupted by user')
             _set_mlflow_tag_if_active('ended by', 'keyboard interrupt')

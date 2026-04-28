@@ -5,11 +5,15 @@ from pathlib import Path
 import logging
 import os
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import hydra
+import mlflow
 import numpy as np
 import torch
+
+if TYPE_CHECKING:
+    from torch.amp import GradScaler
 
 
 RESTART_STATE_SCHEMA_VERSION = 1
@@ -91,6 +95,130 @@ class TrainingPhaseState:
             flag_out_of_seq_len_increase=restart_state.flag_out_of_seq_len_increase,
             deterministic_mode_active=restart_state.deterministic_mode_active,
         )
+
+
+class LiveTrainingState:
+    """All live training objects bundled into one place.
+
+    Passed to the inner training functions (``train_one_epoch`` etc.) and used
+    as the single source of truth for ``save_checkpoint``.  Unlike
+    ``TrainingRestartState``, this object is **not serialized** — it holds real
+    PyTorch objects whose ``.state_dict()`` is captured only when checkpointing.
+    """
+
+    def __init__(
+        self,
+        *,
+        cfg: Any,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer | None,
+        lr_schedulers: dict | None,
+        scaler: GradScaler | None,
+        early_stopping: Any | None,
+        train_cfg: Any,
+        job_idx: int,
+        pre_train: bool,
+        device: torch.device,
+        phase_state: TrainingPhaseState,
+        path_best_model: Path,
+        path_optimizer_best_model: Path,
+        path_current_model: Path,
+        path_current_optimizer: Path,
+        hydra_output_dir: Path,
+        restart_manager_path: Path | None,
+    ) -> None:
+        self.cfg = cfg
+        self.model = model
+        self.optimizer = optimizer
+        self.lr_schedulers = lr_schedulers
+        self.scaler = scaler
+        self.early_stopping = early_stopping
+        self.train_cfg = train_cfg
+        self.job_idx = job_idx
+        self.pre_train = pre_train
+        self.device = device
+        self.phase_state = phase_state
+        self.path_best_model = path_best_model
+        self.path_optimizer_best_model = path_optimizer_best_model
+        self.path_current_model = path_current_model
+        self.path_current_optimizer = path_current_optimizer
+        self.hydra_output_dir = hydra_output_dir
+        self.restart_manager_path = restart_manager_path
+
+    def save_checkpoint(self, next_epoch: int) -> None:
+        """Persist a restart checkpoint for the current epoch.
+
+        Writes model and optimizer to their *current* paths, then builds and
+        saves a ``TrainingRestartState`` to ``restart_manager_path``.  Does
+        nothing when ``restart_manager_path`` is ``None``.
+        """
+        if self.restart_manager_path is None:
+            return
+        self.model.save(self.path_current_model)
+        if self.optimizer is not None:
+            torch.save(self.optimizer.state_dict(), self.path_current_optimizer)
+        scheduler_states: dict[str, dict[str, Any]] = {}
+        if self.lr_schedulers is not None:
+            scheduler_states = {
+                name: _move_to_cpu(sched.state_dict())
+                for name, sched in self.lr_schedulers.items()
+            }
+        ps = self.phase_state
+        restart_state = TrainingRestartState(
+            hydra_output_dir=str(self.hydra_output_dir.resolve()),
+            restart_state_path=str(self.restart_manager_path.resolve()),
+            checkpoint_reason='epoch_end',
+            mlflow_run_id=(
+                mlflow.active_run().info.run_id if mlflow.active_run() is not None else None
+            ),
+            mlflow_tracking_uri=mlflow.get_tracking_uri(),
+            mlflow_experiment_name=self.cfg.mlflow_experiment_name,
+            job_idx=self.job_idx,
+            epoch_0=ps.phase_epoch_0,
+            next_epoch=next_epoch,
+            phase_epoch=next_epoch - ps.phase_epoch_0,
+            first_epoch_is_evaluation=ps.first_epoch_is_evaluation,
+            current_model_path=str(self.path_current_model.resolve()),
+            current_optimizer_path=(
+                str(self.path_current_optimizer.resolve())
+                if self.optimizer is not None
+                else ""
+            ),
+            best_model_path=(
+                str(self.path_best_model.resolve()) if self.path_best_model is not None else ""
+            ),
+            best_optimizer_path=(
+                str(self.path_optimizer_best_model.resolve())
+                if self.path_optimizer_best_model is not None
+                else ""
+            ),
+            training_cfg_state=_cfg_state_to_dict(self.train_cfg),
+            model_state=_move_to_cpu(self.model.state_dict()),
+            optimizer_state=(
+                _move_to_cpu(self.optimizer.state_dict())
+                if self.optimizer is not None
+                else {}
+            ),
+            scheduler_states=scheduler_states,
+            scaler_state=(
+                _move_to_cpu(self.scaler.state_dict()) if self.scaler is not None else {}
+            ),
+            early_stopping_state=(
+                _move_to_cpu(self.early_stopping.state_dict())
+                if self.early_stopping is not None
+                else {}
+            ),
+            nan_counter=ps.nan_counter,
+            grad_norm_last_reduced_counter=ps.grad_norm_last_reduced_counter,
+            stable_epochs=ps.stable_epochs,
+            flag_out_of_seq_len_increase=ps.flag_out_of_seq_len_increase,
+            epoch_stop=ps.epoch_stop,
+            rng_state=_move_to_cpu(capture_rng_state(self.cfg.use_cuda)),
+            deterministic_mode_active=ps.deterministic_mode_active,
+            slurm_job_id=os.getenv("SLURM_JOB_ID"),
+        )
+        save_restart_state(self.restart_manager_path, restart_state)
+
 
 
 @dataclass
@@ -259,80 +387,6 @@ def save_restart_state(path: Path, state: TrainingRestartState) -> None:
 
 def load_restart_metadata(path: Path) -> dict[str, Any]:
     return load_restart_state(path).metadata()
-
-
-def build_training_restart_state(
-    *,
-    hydra_output_dir: Path,
-    restart_state_path: Path,
-    model: torch.nn.Module,
-    job_idx: int,
-    epoch_0: int,
-    next_epoch: int,
-    first_epoch_is_evaluation: bool,
-    current_model_path: Path,
-    training_cfg_state: Any,
-    optimizer: torch.optim.Optimizer | None = None,
-    current_optimizer_path: Path | None = None,
-    best_model_path: Path | None = None,
-    best_optimizer_path: Path | None = None,
-    lr_schedulers: dict[str, Any] | None = None,
-    scaler: torch.amp.GradScaler | None = None,
-    early_stopping: Any = None,
-    nan_counter: int = 0,
-    grad_norm_last_reduced_counter: int = 0,
-    stable_epochs: int = 0,
-    flag_out_of_seq_len_increase: bool = True,
-    epoch_stop: int | None = None,
-    checkpoint_reason: str = "epoch_end",
-    mlflow_run_id: str | None = None,
-    mlflow_tracking_uri: str | None = None,
-    mlflow_experiment_name: str | None = None,
-    deterministic_mode_active: bool = False,
-    use_cuda: bool = False,
-) -> TrainingRestartState:
-    scheduler_states: dict[str, dict[str, Any]] = {}
-    if lr_schedulers is not None:
-        scheduler_states = {
-            name: _move_to_cpu(scheduler.state_dict()) for name, scheduler in lr_schedulers.items()
-        }
-    return TrainingRestartState(
-        hydra_output_dir=str(hydra_output_dir.resolve()),
-        restart_state_path=str(restart_state_path.resolve()),
-        checkpoint_reason=checkpoint_reason,
-        mlflow_run_id=mlflow_run_id,
-        mlflow_tracking_uri=mlflow_tracking_uri,
-        mlflow_experiment_name=mlflow_experiment_name,
-        job_idx=job_idx,
-        epoch_0=epoch_0,
-        next_epoch=next_epoch,
-        phase_epoch=next_epoch - epoch_0,
-        first_epoch_is_evaluation=first_epoch_is_evaluation,
-        current_model_path=str(current_model_path.resolve()),
-        current_optimizer_path=(
-            str(current_optimizer_path.resolve()) if current_optimizer_path is not None else ""
-        ),
-        best_model_path=str(best_model_path.resolve()) if best_model_path is not None else "",
-        best_optimizer_path=(
-            str(best_optimizer_path.resolve()) if best_optimizer_path is not None else ""
-        ),
-        training_cfg_state=_cfg_state_to_dict(training_cfg_state),
-        model_state=_move_to_cpu(model.state_dict()),
-        optimizer_state=_move_to_cpu(optimizer.state_dict()) if optimizer is not None else {},
-        scheduler_states=scheduler_states,
-        scaler_state=_move_to_cpu(scaler.state_dict()) if scaler is not None else {},
-        early_stopping_state=(
-            _move_to_cpu(early_stopping.state_dict()) if early_stopping is not None else {}
-        ),
-        nan_counter=nan_counter,
-        grad_norm_last_reduced_counter=grad_norm_last_reduced_counter,
-        stable_epochs=stable_epochs,
-        flag_out_of_seq_len_increase=flag_out_of_seq_len_increase,
-        epoch_stop=epoch_stop,
-        rng_state=_move_to_cpu(capture_rng_state(use_cuda)),
-        deterministic_mode_active=deterministic_mode_active,
-        slurm_job_id=os.getenv("SLURM_JOB_ID"),
-    )
 
 
 def apply_training_restart_state(
