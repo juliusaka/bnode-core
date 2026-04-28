@@ -1,18 +1,26 @@
 import sys
 import os
-import hydra
+import random
 import shutil
 from pathlib import Path
+import mlflow
+import numpy as np
+import pytest
+import torch
+from omegaconf import OmegaConf
+
 from bnode_core.ode import trainer
 from bnode_core.config import get_config_store
+from bnode_core.ode.trainer_utils.restart_state import RESTART_STATE_FILENAME, TrainingRestartManager
 
-def ode_training(test_case: str, overrides: list[str] = [],):
+
+def ode_training(test_case: str, overrides: list[str] = [], clear_output: bool = True):
     os.environ['HYDRA_FULL_ERROR'] = '1'
-    cs = get_config_store()
+    get_config_store()
     # avoid passing pytest's CLI args into the called main()
     orig_argv = sys.argv[:]
     test_dir = Path('./tests/_results/ode') / ('test_' + test_case)
-    if test_dir.exists():
+    if clear_output and test_dir.exists():
         shutil.rmtree(test_dir, ignore_errors=True) 
     sys.argv = [orig_argv[0], 
                 '--config-dir=resources/config',
@@ -35,6 +43,225 @@ def ode_training_initial_states(test_case: str, overrides: list[str] = []):
         'dataset_path=resources/data/surrogate-test-data/data/datasets/SimpleSeriesResonance_v4_s-R__n-100_pytest/SimpleSeriesResonance_v4_s-R__n-100_pytest_dataset.hdf5',
     ]
     ode_training(test_case, overrides=overrides)
+
+
+def _resume_training_overrides(
+    *,
+    nn_model: str,
+    max_epochs: tuple[int, ...],
+    batches_per_epoch: int = 1,
+    scheduler_phase: int | None = None,
+) -> list[str]:
+    overrides = [
+        f'nn_model={nn_model}',
+        'nn_model.training.test=false',
+        'use_cuda=false',
+        'n_workers_train_loader=0',
+        'n_workers_other_loaders=0',
+        'prefetch_factor=null',
+    ]
+    for phase_idx, phase_max_epochs in enumerate(max_epochs):
+        overrides.extend(
+            [
+                f'nn_model.training.main_training.{phase_idx}.max_epochs={phase_max_epochs}',
+                f'nn_model.training.main_training.{phase_idx}.batches_per_epoch={batches_per_epoch}',
+            ]
+        )
+    if scheduler_phase is not None:
+        overrides.extend(
+            [
+                f'nn_model.training.main_training.{scheduler_phase}.use_lr_scheduler=true',
+                f'nn_model.training.main_training.{scheduler_phase}.lr_scheduler_type=cosine',
+                f'nn_model.training.main_training.{scheduler_phase}.cosine_T_max=2',
+                f'nn_model.training.main_training.{scheduler_phase}.cosine_eta_min=1e-6',
+            ]
+        )
+    return overrides
+
+
+def _resume_mlflow_tracking_uri(scope: str) -> str:
+    return f"file://{(Path('./tests/_results/ode/mlruns') / scope).absolute()}"
+
+
+def _resume_mlflow_overrides(scope: str) -> list[str]:
+    return [
+        f'mlflow_tracking_uri={_resume_mlflow_tracking_uri(scope)}',
+        f'mlflow_experiment_name={scope}',
+    ]
+
+
+def _fixed_seq_len_phase_overrides(phase_idx: int, seq_len_train: int = 3) -> list[str]:
+    return [
+        f'nn_model.training.main_training.{phase_idx}.seq_len_train={seq_len_train}',
+        f'nn_model.training.main_training.{phase_idx}.seq_len_increase_in_batches=0',
+    ]
+
+
+def _load_validated_cfg(output_dir: Path):
+    return OmegaConf.load(output_dir / '.hydra' / 'config_validated.yaml')
+
+
+def _get_mlflow_run(tracking_uri: str, run_id: str):
+    return mlflow.tracking.MlflowClient(tracking_uri=tracking_uri).get_run(run_id)
+
+
+def _load_model_state(path: Path) -> dict:
+    return torch.load(path, map_location='cpu', weights_only=False)
+
+
+def _set_training_seeds(seed: int = 0) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def _assert_model_states_equal(
+    path_a: Path,
+    path_b: Path,
+    *,
+    rtol: float | None = None,
+    atol: float | None = None,
+) -> None:
+    state_a = _load_model_state(path_a)
+    state_b = _load_model_state(path_b)
+    assert state_a.keys() == state_b.keys()
+    for key in state_a:
+        assert_close_kwargs = {}
+        if rtol is not None:
+            assert_close_kwargs['rtol'] = rtol
+        if atol is not None:
+            assert_close_kwargs['atol'] = atol
+        torch.testing.assert_close(state_a[key], state_b[key], **assert_close_kwargs)
+
+
+def _assert_restart_state(
+    restart_state,
+    *,
+    expected_job_idx: int,
+    deterministic_mode_active: bool | None = None,
+    scheduler_key: str | None = None,
+) -> None:
+    assert restart_state.job_idx == expected_job_idx
+    assert restart_state.next_epoch > restart_state.epoch_0
+    if deterministic_mode_active is not None:
+        masks_set = restart_state.model_state['deterministic_mode_active_masks_set']
+        assert bool(masks_set.item()) is deterministic_mode_active
+    if scheduler_key is not None:
+        assert scheduler_key in restart_state.scheduler_states
+        assert restart_state.scheduler_states[scheduler_key]['last_epoch'] > 0
+
+
+def _assert_resumed_mlflow_run(
+    output_dir: Path,
+    *,
+    mlflow_scope: str,
+    restart_state,
+    expected_final_job_idx: int,
+):
+    validated_cfg = _load_validated_cfg(output_dir)
+    assert validated_cfg.mlflow_run_id == restart_state.mlflow_run_id
+    resumed_run = _get_mlflow_run(
+        _resume_mlflow_tracking_uri(mlflow_scope),
+        restart_state.mlflow_run_id,
+    )
+    assert resumed_run.data.params['mlflow_run_id'] == restart_state.mlflow_run_id
+    assert f'job_{expected_final_job_idx}_final_epoch' in resumed_run.data.metrics
+    return resumed_run
+
+
+def _request_checkpoint_after_n_training_epochs(monkeypatch: pytest.MonkeyPatch, n_epochs: int) -> None:
+    monitor_state = {'monitor': None, 'n_train_epochs': 0, 'triggered': False}
+    original_install = trainer.TrainingSignalMonitor.install
+    original_train_one_epoch = trainer.train_one_epoch
+
+    def _install(self):
+        monitor_state['monitor'] = self
+        return original_install(self)
+
+    def _train_one_epoch(*args, **kwargs):
+        ret_vals = original_train_one_epoch(*args, **kwargs)
+        monitor_state['n_train_epochs'] += 1
+        if (
+            not monitor_state['triggered']
+            and monitor_state['n_train_epochs'] >= n_epochs
+            and monitor_state['monitor'] is not None
+        ):
+            monitor_state['monitor'].checkpoint_requested = True
+            monitor_state['monitor'].received_signal_name = 'SIGUSR1'
+            monitor_state['triggered'] = True
+        return ret_vals
+
+    monkeypatch.setattr(trainer.TrainingSignalMonitor, 'install', _install)
+    monkeypatch.setattr(trainer, 'train_one_epoch', _train_one_epoch)
+
+
+def _request_checkpoint_on_deterministic_activation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monitor_state = {'monitor': None, 'triggered': False}
+    original_install = trainer.TrainingSignalMonitor.install
+    original_validate = trainer.test_or_validate_one_epoch
+
+    def _install(self):
+        monitor_state['monitor'] = self
+        return original_install(self)
+
+    def _test_or_validate_one_epoch(*args, **kwargs):
+        ret_vals = original_validate(*args, **kwargs)
+        if (
+            not monitor_state['triggered']
+            and kwargs.get('activate_deterministic_mode', False)
+            and monitor_state['monitor'] is not None
+        ):
+            monitor_state['monitor'].checkpoint_requested = True
+            monitor_state['monitor'].received_signal_name = 'SIGUSR1'
+            monitor_state['triggered'] = True
+        return ret_vals
+
+    monkeypatch.setattr(trainer.TrainingSignalMonitor, 'install', _install)
+    monkeypatch.setattr(trainer, 'test_or_validate_one_epoch', _test_or_validate_one_epoch)
+
+
+@pytest.fixture(scope='module')
+def resume_main_reference_dir():
+    _set_training_seeds()
+    return ode_training(
+        'resume_main_reference',
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest',
+            max_epochs=(3, 3),
+        )
+        + _fixed_seq_len_phase_overrides(1)
+        + _resume_mlflow_overrides('resume_main_reference'),
+    )
+
+
+@pytest.fixture(scope='module')
+def resume_deterministic_reference_dir():
+    _set_training_seeds()
+    return ode_training(
+        'resume_deterministic_reference',
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest_det',
+            max_epochs=(3, 3, 3),
+        )
+        + _fixed_seq_len_phase_overrides(1, seq_len_train=3)
+        + _fixed_seq_len_phase_overrides(2, seq_len_train=3)
+        + _resume_mlflow_overrides('resume_deterministic_reference'),
+    )
+
+
+@pytest.fixture(scope='module')
+def resume_scheduler_reference_dir():
+    _set_training_seeds()
+    return ode_training(
+        'resume_scheduler_reference',
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest',
+            max_epochs=(3, 3),
+            scheduler_phase=1,
+        )
+        + _fixed_seq_len_phase_overrides(1)
+        + _resume_mlflow_overrides('resume_scheduler_reference'),
+    )
 
 
 def test_bnode_training():
@@ -196,3 +423,172 @@ def test_linear_mpc_threshold_populated_dimensions():
         'nn_model.network.linear_mode=mpc_mode_for_controls',
         'nn_model.training.main_training.1.threshold_count_populated_dimensions=0.1'
     ])
+
+
+def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_reference_dir, monkeypatch):
+    interrupted_case = 'resume_main_same_dir_interrupted'
+    mlflow_scope = 'resume_main_same_dir'
+    mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
+    with monkeypatch.context() as ctx:
+        _set_training_seeds()
+        _request_checkpoint_after_n_training_epochs(ctx, n_epochs=2)
+        interrupted_dir = ode_training(
+            interrupted_case,
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest',
+                max_epochs=(3, 3),
+            )
+            + _fixed_seq_len_phase_overrides(1)
+            + mlflow_overrides,
+        )
+
+    restart_path = interrupted_dir / RESTART_STATE_FILENAME
+    restart_state = TrainingRestartManager(restart_path).load()
+    _assert_restart_state(
+        restart_state,
+        expected_job_idx=2,
+        deterministic_mode_active=False,
+    )
+
+    _set_training_seeds()
+    resumed_dir = ode_training(
+        interrupted_case,
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest',
+            max_epochs=(3, 3),
+        )
+        + _fixed_seq_len_phase_overrides(1)
+        + mlflow_overrides,
+        clear_output=False,
+    )
+    assert resumed_dir == interrupted_dir
+    assert not restart_path.exists()
+    _assert_resumed_mlflow_run(
+        resumed_dir,
+        mlflow_scope=mlflow_scope,
+        restart_state=restart_state,
+        expected_final_job_idx=2,
+    )
+    _assert_model_states_equal(
+        resumed_dir / 'model.pt',
+        resume_main_reference_dir / 'model.pt',
+    )
+
+
+def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
+    resume_deterministic_reference_dir,
+    monkeypatch,
+):
+    interrupted_case = 'resume_deterministic_same_dir_interrupted'
+    mlflow_scope = 'resume_deterministic_same_dir'
+    mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
+    with monkeypatch.context() as ctx:
+        _set_training_seeds()
+        _request_checkpoint_after_n_training_epochs(ctx, n_epochs=2)
+        interrupted_dir = ode_training(
+            interrupted_case,
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest_det',
+                max_epochs=(3, 3, 3),
+            )
+            + _fixed_seq_len_phase_overrides(1, seq_len_train=3)
+            + _fixed_seq_len_phase_overrides(2, seq_len_train=3)
+            + mlflow_overrides,
+        )
+
+    restart_path = interrupted_dir / RESTART_STATE_FILENAME
+    restart_state = TrainingRestartManager(restart_path).load()
+    _assert_restart_state(
+        restart_state,
+        expected_job_idx=2,
+        deterministic_mode_active=False,
+    )
+
+    _set_training_seeds()
+    resumed_dir = ode_training(
+        interrupted_case,
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest_det',
+            max_epochs=(3, 3, 3),
+        )
+        + _fixed_seq_len_phase_overrides(1, seq_len_train=3)
+        + _fixed_seq_len_phase_overrides(2, seq_len_train=3)
+        + mlflow_overrides,
+        clear_output=False,
+    )
+
+    assert resumed_dir == interrupted_dir
+    assert not restart_path.exists()
+    _assert_resumed_mlflow_run(
+        resumed_dir,
+        mlflow_scope=mlflow_scope,
+        restart_state=restart_state,
+        expected_final_job_idx=3,
+    )
+    _assert_model_states_equal(
+        resumed_dir / 'model.pt',
+        resume_deterministic_reference_dir / 'model.pt',
+        rtol=1e-2,
+        atol=5e-3,
+    )
+
+
+def test_resume_from_explicit_restart_artifact_preserves_scheduler_and_mlflow_state(
+    resume_scheduler_reference_dir,
+    monkeypatch,
+):
+    mlflow_scope = 'resume_explicit_scheduler'
+    mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
+    with monkeypatch.context() as ctx:
+        ctx.delenv('SLURM_JOB_ID', raising=False)
+        _set_training_seeds()
+        _request_checkpoint_after_n_training_epochs(ctx, n_epochs=2)
+        source_dir = ode_training(
+            'resume_explicit_scheduler_source',
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest',
+                max_epochs=(3, 3),
+                scheduler_phase=1,
+            )
+            + _fixed_seq_len_phase_overrides(1)
+            + mlflow_overrides,
+        )
+
+    restart_path = source_dir / RESTART_STATE_FILENAME
+    restart_state = TrainingRestartManager(restart_path).load()
+    _assert_restart_state(
+        restart_state,
+        expected_job_idx=2,
+        deterministic_mode_active=False,
+        scheduler_key='cosine',
+    )
+    assert restart_state.slurm_job_id is None
+
+    _set_training_seeds()
+    resumed_dir = ode_training(
+        'resume_explicit_scheduler_target',
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest',
+            max_epochs=(3, 3),
+            scheduler_phase=1,
+        )
+        + _fixed_seq_len_phase_overrides(1)
+        + mlflow_overrides
+        + [f'restart_state_path={restart_path.resolve()}'],
+    )
+
+    assert restart_path.exists()
+    assert not (resumed_dir / RESTART_STATE_FILENAME).exists()
+    resumed_run = _assert_resumed_mlflow_run(
+        resumed_dir,
+        mlflow_scope=mlflow_scope,
+        restart_state=restart_state,
+        expected_final_job_idx=2,
+    )
+    assert resumed_run.data.params['hydra_output_dir_absolute'] == str(source_dir.resolve())
+    assert resumed_run.data.tags['resume_source_hydra_output_dir_absolute'] == str(source_dir.resolve())
+    assert resumed_run.data.tags['resume_hydra_output_dir_absolute'] == str(resumed_dir.resolve())
+    _assert_model_states_equal(
+        resumed_dir / 'model.pt',
+        resume_scheduler_reference_dir / 'model.pt',
+    )

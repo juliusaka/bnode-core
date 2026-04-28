@@ -121,3 +121,5 @@ omit = ["tests/*"]
 # this enables pytest to automatically use all available cores.
 # loadscope ensures tests in the same scope (file/class) run sequentially, respecting dependencies
 addopts = "-n auto --dist loadscope"
+testpaths = ["tests"]
+norecursedirs = ["tests/_results", "__pycache__"]

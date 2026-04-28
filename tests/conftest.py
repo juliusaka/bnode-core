@@ -1,6 +1,7 @@
 import os
 import pytest
 from pathlib import Path
+from hydra.core.global_hydra import GlobalHydra
 
 # Root of the bnode-core repository (one level up from tests/)
 BNODE_CORE_ROOT = Path(__file__).resolve().parent.parent
@@ -41,3 +42,11 @@ def _check_submodules():
             f"Run 'git submodule update --init' from {BNODE_CORE_ROOT}",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def _clear_global_hydra_state():
+    """Keep Hydra's process-global singleton from leaking across tests."""
+    GlobalHydra.instance().clear()
+    yield
+    GlobalHydra.instance().clear()

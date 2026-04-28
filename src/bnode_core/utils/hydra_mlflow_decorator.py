@@ -4,8 +4,7 @@ import mlflow
 from omegaconf import DictConfig, OmegaConf
 import hydra
 from functools import wraps
-from typing import Callable
-import json
+from typing import Any, Callable
 from pathlib import Path
 import sys
 import io
@@ -14,6 +13,75 @@ import logging
 import traceback
 import subprocess
 
+from bnode_core.ode.trainer_utils.restart_state import load_restart_metadata
+
+
+def _normalize_tracking_uri(uri: str | None) -> str | None:
+  if uri is None:
+    return None
+  return uri.rstrip('/')
+
+
+def _resolve_resume_run_context(
+  *,
+  cfg_run_id: str | None,
+  restart_metadata: dict[str, Any] | None,
+  hydra_output_dir: Path,
+  explicit_restart_state_path: str | None,
+  current_tracking_uri: str | None,
+  current_experiment_name: str,
+) -> tuple[str | None, bool]:
+  allow_hydra_output_param_mismatch = False
+  resolved_run_id = cfg_run_id
+  if restart_metadata is None:
+    return resolved_run_id, allow_hydra_output_param_mismatch
+
+  stored_output_dir = Path(restart_metadata['hydra_output_dir']).resolve()
+  current_output_dir = hydra_output_dir.resolve()
+  allow_hydra_output_param_mismatch = (
+    explicit_restart_state_path is not None and stored_output_dir != current_output_dir
+  )
+  if explicit_restart_state_path is None and stored_output_dir != current_output_dir:
+    raise ValueError(
+      'Hydra output directory does not match the restart state. '
+      f'Expected {stored_output_dir}, got {current_output_dir}. '
+      'Resume runs must reuse the same hydra.run.dir.'
+    )
+
+  restart_run_id = restart_metadata.get('mlflow_run_id')
+  if restart_run_id is None:
+    raise ValueError(
+      'Restart state is missing mlflow_run_id. '
+      'Refusing to resume training into a different MLflow run.'
+    )
+
+  restart_tracking_uri = _normalize_tracking_uri(restart_metadata.get('mlflow_tracking_uri'))
+  normalized_tracking_uri = _normalize_tracking_uri(current_tracking_uri)
+  if (
+    restart_tracking_uri is not None
+    and normalized_tracking_uri is not None
+    and restart_tracking_uri != normalized_tracking_uri
+  ):
+    raise ValueError(
+      'Configured MLflow tracking URI does not match the restart state. '
+      f'Expected {restart_tracking_uri}, got {normalized_tracking_uri}.'
+    )
+
+  restart_experiment_name = restart_metadata.get('mlflow_experiment_name')
+  if (
+    restart_experiment_name is not None
+    and current_experiment_name != restart_experiment_name
+  ):
+    raise ValueError(
+      'Configured MLflow experiment does not match the restart state. '
+      f'Expected {restart_experiment_name}, got {current_experiment_name}.'
+    )
+
+  if resolved_run_id is not None and resolved_run_id != restart_run_id:
+    raise ValueError(
+      f'mlflow_run_id {resolved_run_id} does not match restart-state run id {restart_run_id}'
+    )
+  return restart_run_id, allow_hydra_output_param_mismatch
 
 def _resolve_git_hash() -> str:
   """Return the current commit hash using git."""
@@ -56,6 +124,15 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     
     from bnode_core.config import convert_cfg_to_dataclass, train_test_config_class
 
+    hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+
+    def _resolve_restart_metadata() -> dict | None:
+      explicit_path = cfg.get('restart_state_path', None) if hasattr(cfg, 'get') else None
+      restart_state_path = Path(explicit_path) if explicit_path is not None else hydra_output_dir / 'training_restart.pt'
+      if not restart_state_path.exists():
+        return None
+      return load_restart_metadata(restart_state_path)
+
     # set mlflow tracking uri and experiment name from config
     if cfg.mlflow_tracking_uri is not None:
       mlflow.set_tracking_uri(cfg.mlflow_tracking_uri)
@@ -65,22 +142,73 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     mlflow.set_experiment(cfg.mlflow_experiment_name)
     git_hash = _resolve_git_hash()
     system_info = os.uname()
-    mlflow.start_run(log_system_metrics=True,
-                      run_name=cfg.mlflow_run_name if cfg.mlflow_run_name is not None else None,
-                      tags ={ 
-                        'host': system_info.nodename,
-                        'os': system_info.sysname + ' ' + system_info.release + ' ' + system_info.version,
-                        'machine': system_info.machine,
-                        'git_hash': git_hash,
-                      }) # log computer name and os as tags
+    restart_metadata = _resolve_restart_metadata()
+    resolved_run_id, allow_hydra_output_param_mismatch = _resolve_resume_run_context(
+      cfg_run_id=cfg.mlflow_run_id if 'mlflow_run_id' in cfg else None,
+      restart_metadata=restart_metadata,
+      hydra_output_dir=hydra_output_dir,
+      explicit_restart_state_path=cfg.get('restart_state_path', None) if hasattr(cfg, 'get') else None,
+      current_tracking_uri=mlflow.get_tracking_uri(),
+      current_experiment_name=cfg.mlflow_experiment_name,
+    )
+    if resolved_run_id is not None:
+      existing_run = mlflow.get_run(resolved_run_id)
+      existing_experiment = mlflow.get_experiment(existing_run.info.experiment_id)
+      existing_experiment_name = existing_experiment.name if existing_experiment is not None else None
+      if existing_experiment_name is not None and existing_experiment_name != cfg.mlflow_experiment_name:
+        raise ValueError(
+          'Configured MLflow experiment does not match the existing run. '
+          f'Run {resolved_run_id} belongs to experiment {existing_experiment_name}, '
+          f'not {cfg.mlflow_experiment_name}.'
+        )
+      mlflow.start_run(run_id=resolved_run_id, log_system_metrics=True)
+    else:
+      mlflow.start_run(log_system_metrics=True,
+                        run_name=cfg.mlflow_run_name if cfg.mlflow_run_name is not None else None,
+                        tags ={ 
+                          'host': system_info.nodename,
+                          'os': system_info.sysname + ' ' + system_info.release + ' ' + system_info.version,
+                          'machine': system_info.machine,
+                          'git_hash': git_hash,
+                        }) # log computer name and os as tags
 
-    hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+    active_run_id = mlflow.active_run().info.run_id
+    existing_params = {}
+    if resolved_run_id is not None:
+      existing_params = dict(mlflow.get_run(active_run_id).data.params)
 
-    mlflow.log_param('hydra_output_dir_rel', str(hydra_output_dir))
-    mlflow.log_param('hydra_output_dir_absolute', str(hydra_output_dir.resolve()))
+    def _log_param_if_absent_or_same(key, value):
+      value_str = str(value)
+      if key in existing_params:
+        if existing_params[key] != value_str:
+          if allow_hydra_output_param_mismatch and key in {'hydra_output_dir_rel', 'hydra_output_dir_absolute'}:
+            return
+          raise ValueError(
+            f"Cannot change existing MLflow param '{key}' from {existing_params[key]!r} to {value_str!r}"
+          )
+        return
+      mlflow.log_param(key, value)
+      existing_params[key] = value_str
+
+    def _log_params_if_absent_or_same(values: dict):
+      for key, value in values.items():
+        _log_param_if_absent_or_same(key, value)
+
+    _log_param_if_absent_or_same('hydra_output_dir_rel', str(hydra_output_dir))
+    _log_param_if_absent_or_same('hydra_output_dir_absolute', str(hydra_output_dir.resolve()))
+    _log_param_if_absent_or_same('mlflow_run_id', active_run_id)
+    if allow_hydra_output_param_mismatch:
+      mlflow.set_tag('resume_source_hydra_output_dir_absolute', restart_metadata['hydra_output_dir'])
+      mlflow.set_tag('resume_hydra_output_dir_absolute', str(hydra_output_dir.resolve()))
+    if restart_metadata is not None:
+      mlflow.set_tag('restart_state_path', restart_metadata['restart_state_path'])
+      if restart_metadata.get('checkpoint_reason') is not None:
+        mlflow.set_tag('restart_checkpoint_reason', restart_metadata['checkpoint_reason'])
 
     # make dataclass from config
     cfg = convert_cfg_to_dataclass(cfg)
+    if cfg.mlflow_run_id is None:
+      cfg.mlflow_run_id = active_run_id
 
     # save validated yaml in hydra folder
     OmegaConf.save(config=OmegaConf.structured(cfg), f=hydra_output_dir / '.hydra/config_validated.yaml')
@@ -90,18 +218,18 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       return OmegaConf.to_container(OmegaConf.structured(obj), resolve=True)
 
     # log Network config to mlflow
-    if type(cfg) == train_test_config_class:
-      mlflow.log_params(convert_to_dict(cfg.nn_model.network))
-      mlflow.log_params(convert_to_dict(cfg.nn_model.training))
+    if isinstance(cfg, train_test_config_class):
+      _log_params_if_absent_or_same(convert_to_dict(cfg.nn_model.network))
+      _log_params_if_absent_or_same(convert_to_dict(cfg.nn_model.training))
       if hasattr(cfg.nn_model.training, 'pre_training') and cfg.nn_model.training.pre_train is True:
         # append pre_training to keys:
-        mlflow.log_params({'pre_training_' + k: v for k,v in convert_to_dict(cfg.nn_model.training.pre_training).items()})
+        _log_params_if_absent_or_same({'pre_training_' + k: v for k,v in convert_to_dict(cfg.nn_model.training.pre_training).items()})
       if hasattr(cfg.nn_model.training, 'main_training'):
         for i, settings in enumerate(cfg.nn_model.training.main_training):
           # append main_training to keys:
-          mlflow.log_params({'main_training_' + str(i) + '_' + k: v for k,v in convert_to_dict(settings).items()})
+          _log_params_if_absent_or_same({'main_training_' + str(i) + '_' + k: v for k,v in convert_to_dict(settings).items()})
 
-    mlflow.log_param('dataset_name', cfg.dataset_name)  
+    _log_param_if_absent_or_same('dataset_name', cfg.dataset_name)  
     
     # run function
     had_error = False
@@ -110,7 +238,7 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       res = func(cfg) # pass cfg to decorated function
     except Exception as e:
       had_error = True
-      mlflow.log_param('error', True)
+      _log_param_if_absent_or_same('error', True)
       logging.error('Exception occured: {}'.format(e))
       logging.error(traceback.format_exc())
       if cfg.raise_exception:
@@ -119,7 +247,7 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
           raise
     # if no exception, log error as False
     if not had_error:
-      mlflow.log_param('error', False)
+      _log_param_if_absent_or_same('error', False)
     
     # log hydra config as artifacts to mlflow, this includes all loggings
     # see https://hydra.cc/docs/tutorials/basic/running_your_app/working_directory/

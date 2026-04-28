@@ -104,6 +104,8 @@ import yaml
 import logging
 from pydantic import model_validator
 
+_CONFIG_STORE_REGISTERED = False
+
 ########################################################################################################################
 # Dataclasses
 ########################################################################################################################
@@ -1214,6 +1216,9 @@ class train_test_config_class:
         mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
         mlflow_run_name (str): Optional MLflow run name. If None, MLflow assigns a default name.
+        mlflow_run_id (str): Optional MLflow run ID to resume instead of creating a new run.
+        restart_state_path (str): Optional explicit path to a saved trainer restart-state file. If omitted, trainer.py
+            auto-detects `training_restart.pt` in the active Hydra output directory.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
         use_cuda (bool): Use CUDA if available.
         raise_exception (bool): If True, re-raise exceptions for debugging. Otherwise, log and continue.
@@ -1234,6 +1239,8 @@ class train_test_config_class:
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'
     mlflow_run_name: Optional[str] = None
+    mlflow_run_id: Optional[str] = None
+    restart_state_path: Optional[str] = None
     
     use_amp: bool = False
     use_cuda: bool = True
@@ -1360,7 +1367,12 @@ def get_config_store() -> ConfigStore:
 
         cs: ConfigStore instance with registered configurations.    
     """
+    global _CONFIG_STORE_REGISTERED
+
     cs = ConfigStore.instance()
+    if _CONFIG_STORE_REGISTERED:
+        return cs
+
     cs.store(name='base_data_gen', node=data_gen_config)
     cs.store(group='pModel', name='base_pModel', node=base_pModelClass)
 
@@ -1389,6 +1401,7 @@ def get_config_store() -> ConfigStore:
 
     # onnx export
     cs.store(name='base_onnx_export', node=onnx_export_config_class)
+    _CONFIG_STORE_REGISTERED = True
     return cs
 
 ########################################################################################################################

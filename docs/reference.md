@@ -4,3 +4,4 @@ This section collects the API for `bnode-core` and a lot of information on how t
 
 If you are new to the project, start with the guide in [Home](index.md) proceeded with information in [Data Generation](bnode_core/data_generation/introduction.md), before proceeding to [BNODE Training](bnode_core/ode/bnode/bnode.md).
 Of great important in this project are configuration files as described in [Configuration](bnode_core/config.md).
+For interrupted long-running trainings, the restart/resume contract is documented in [Restart-enabled training workflow](bnode_core/ode/restart_training.md).

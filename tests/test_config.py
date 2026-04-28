@@ -11,6 +11,17 @@ def test_config_store_singleton():
     cs2 = config.get_config_store()
     assert cs is cs2
 
+def test_config_store_registration_is_idempotent(monkeypatch):
+    cs = config.get_config_store()
+
+    def fail_store(*args, **kwargs):
+        raise AssertionError("ConfigStore.store() should not run after initial registration")
+
+    monkeypatch.setattr(cs, "store", fail_store)
+
+    cs2 = config.get_config_store()
+    assert cs2 is cs
+
 def test_solver_sequence_length_computed():
     s = config.SolverClass(simulationStartTime=0.0, simulationEndTime=1.0, timestep=0.2)
     # ceil((1-0)/0.2) + 1 = ceil(5) + 1 = 5
