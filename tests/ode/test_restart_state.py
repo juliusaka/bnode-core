@@ -9,9 +9,10 @@ from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
 from bnode_core.ode.trainer_utils.restart_state import (
     RESTART_STATE_FILENAME,
     RESTART_STATE_SCHEMA_VERSION,
-    TrainingRestartManager,
     apply_training_restart_state,
     build_training_restart_state,
+    load_restart_state,
+    save_restart_state,
 )
 
 
@@ -26,7 +27,7 @@ def _sample_rng_triplet():
 def test_restart_state_roundtrip_restores_runtime_state(tmp_path):
     hydra_output_dir = tmp_path / "hydra-run"
     hydra_output_dir.mkdir()
-    restart_manager = TrainingRestartManager(hydra_output_dir / RESTART_STATE_FILENAME)
+    restart_path = hydra_output_dir / RESTART_STATE_FILENAME
 
     torch.manual_seed(123)
     np.random.seed(123)
@@ -61,7 +62,7 @@ def test_restart_state_roundtrip_restores_runtime_state(tmp_path):
 
     state = build_training_restart_state(
         hydra_output_dir=hydra_output_dir,
-        restart_state_path=restart_manager.path,
+        restart_state_path=restart_path,
         model=model,
         job_idx=2,
         epoch_0=10,
@@ -85,10 +86,9 @@ def test_restart_state_roundtrip_restores_runtime_state(tmp_path):
         mlflow_run_id="run-123",
         mlflow_tracking_uri="file:///mlruns",
         mlflow_experiment_name="restart-tests",
-        checkpoint_requested_signal="SIGUSR1",
         use_cuda=False,
     )
-    restart_manager.save(state)
+    save_restart_state(restart_path, state)
 
     expected_torch, expected_numpy, expected_python = _sample_rng_triplet()
     _ = _sample_rng_triplet()
@@ -107,7 +107,7 @@ def test_restart_state_roundtrip_restores_runtime_state(tmp_path):
         trace_func=lambda *_args, **_kwargs: None,
     )
 
-    loaded_state = restart_manager.load()
+    loaded_state = load_restart_state(restart_path)
     apply_training_restart_state(
         loaded_state,
         model=restored_model,
@@ -128,7 +128,7 @@ def test_restart_state_roundtrip_restores_runtime_state(tmp_path):
     assert loaded_state.metadata()["mlflow_tracking_uri"] == "file:///mlruns"
     assert loaded_state.metadata()["mlflow_experiment_name"] == "restart-tests"
     assert loaded_state.metadata()["checkpoint_reason"] == "epoch_end"
-    assert loaded_state.restart_state_path == str(restart_manager.path.resolve())
+    assert loaded_state.restart_state_path == str(restart_path.resolve())
     assert restored_scheduler.state_dict()["last_epoch"] == scheduler.state_dict()["last_epoch"]
     assert restored_early_stopping.patience == 9
     assert restored_early_stopping.threshold == 0.25
@@ -172,4 +172,4 @@ def test_restart_state_rejects_schema_mismatch(tmp_path):
     )
 
     with pytest.raises(ValueError, match="Unsupported restart state schema version"):
-        TrainingRestartManager(restart_path).load()
+        load_restart_state(restart_path)

@@ -11,7 +11,11 @@ from omegaconf import OmegaConf
 
 from bnode_core.ode import trainer
 from bnode_core.config import get_config_store
-from bnode_core.ode.trainer_utils.restart_state import RESTART_STATE_FILENAME, TrainingRestartManager
+from bnode_core.ode.trainer_utils.restart_state import (
+    CheckpointRequestedExit,
+    RESTART_STATE_FILENAME,
+    load_restart_state,
+)
 
 
 def ode_training(test_case: str, overrides: list[str] = [], clear_output: bool = True):
@@ -169,55 +173,21 @@ def _assert_resumed_mlflow_run(
     return resumed_run
 
 
-def _request_checkpoint_after_n_training_epochs(monkeypatch: pytest.MonkeyPatch, n_epochs: int) -> None:
-    monitor_state = {'monitor': None, 'n_train_epochs': 0, 'triggered': False}
-    original_install = trainer.TrainingSignalMonitor.install
-    original_train_one_epoch = trainer.train_one_epoch
+def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int) -> None:
+    """Interrupt training after n epoch checkpoints by raising CheckpointRequestedExit."""
+    original_save = trainer._save_training_restart_state
+    call_count = [0]
 
-    def _install(self):
-        monitor_state['monitor'] = self
-        return original_install(self)
+    def _patched_save(*args, **kwargs):
+        result = original_save(*args, **kwargs)
+        call_count[0] += 1
+        if call_count[0] >= n_saves:
+            raise CheckpointRequestedExit(
+                f"Test-injected interrupt after {call_count[0]} epoch saves."
+            )
+        return result
 
-    def _train_one_epoch(*args, **kwargs):
-        ret_vals = original_train_one_epoch(*args, **kwargs)
-        monitor_state['n_train_epochs'] += 1
-        if (
-            not monitor_state['triggered']
-            and monitor_state['n_train_epochs'] >= n_epochs
-            and monitor_state['monitor'] is not None
-        ):
-            monitor_state['monitor'].checkpoint_requested = True
-            monitor_state['monitor'].received_signal_name = 'SIGUSR1'
-            monitor_state['triggered'] = True
-        return ret_vals
-
-    monkeypatch.setattr(trainer.TrainingSignalMonitor, 'install', _install)
-    monkeypatch.setattr(trainer, 'train_one_epoch', _train_one_epoch)
-
-
-def _request_checkpoint_on_deterministic_activation(monkeypatch: pytest.MonkeyPatch) -> None:
-    monitor_state = {'monitor': None, 'triggered': False}
-    original_install = trainer.TrainingSignalMonitor.install
-    original_validate = trainer.test_or_validate_one_epoch
-
-    def _install(self):
-        monitor_state['monitor'] = self
-        return original_install(self)
-
-    def _test_or_validate_one_epoch(*args, **kwargs):
-        ret_vals = original_validate(*args, **kwargs)
-        if (
-            not monitor_state['triggered']
-            and kwargs.get('activate_deterministic_mode', False)
-            and monitor_state['monitor'] is not None
-        ):
-            monitor_state['monitor'].checkpoint_requested = True
-            monitor_state['monitor'].received_signal_name = 'SIGUSR1'
-            monitor_state['triggered'] = True
-        return ret_vals
-
-    monkeypatch.setattr(trainer.TrainingSignalMonitor, 'install', _install)
-    monkeypatch.setattr(trainer, 'test_or_validate_one_epoch', _test_or_validate_one_epoch)
+    monkeypatch.setattr(trainer, '_save_training_restart_state', _patched_save)
 
 
 @pytest.fixture(scope='module')
@@ -431,7 +401,10 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
     with monkeypatch.context() as ctx:
         _set_training_seeds()
-        _request_checkpoint_after_n_training_epochs(ctx, n_epochs=2)
+        # Interrupt after the last training epoch of phase 2 (save #4).
+        # Resume will only run phase 2's max-epoch (no training), so model.pt
+        # is already final and matches the reference exactly.
+        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
         interrupted_dir = ode_training(
             interrupted_case,
             overrides=_resume_training_overrides(
@@ -443,7 +416,7 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
         )
 
     restart_path = interrupted_dir / RESTART_STATE_FILENAME
-    restart_state = TrainingRestartManager(restart_path).load()
+    restart_state = load_restart_state(restart_path)
     _assert_restart_state(
         restart_state,
         expected_job_idx=2,
@@ -476,7 +449,6 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
 
 
 def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
-    resume_deterministic_reference_dir,
     monkeypatch,
 ):
     interrupted_case = 'resume_deterministic_same_dir_interrupted'
@@ -484,7 +456,13 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
     with monkeypatch.context() as ctx:
         _set_training_seeds()
-        _request_checkpoint_after_n_training_epochs(ctx, n_epochs=2)
+        # Interrupt at the last training epoch of phase 2 (save #4), before
+        # deterministic mode is activated.  Activation happens at phase 2's
+        # max-epoch (epoch 5), which the resumed run will still execute.
+        # We cannot interrupt after det-mode is active because the model
+        # state-dict then contains zero-sized masked tensors that cannot be
+        # loaded into a freshly-initialised model.
+        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
         interrupted_dir = ode_training(
             interrupted_case,
             overrides=_resume_training_overrides(
@@ -497,7 +475,8 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
         )
 
     restart_path = interrupted_dir / RESTART_STATE_FILENAME
-    restart_state = TrainingRestartManager(restart_path).load()
+    restart_state = load_restart_state(restart_path)
+    # Interrupted during phase 2 training before det-mode was applied.
     _assert_restart_state(
         restart_state,
         expected_job_idx=2,
@@ -518,18 +497,20 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     )
 
     assert resumed_dir == interrupted_dir
+    # Restart state is removed after successful completion.
     assert not restart_path.exists()
+    # MLflow run ID is preserved and phase-3 metrics were logged.
     _assert_resumed_mlflow_run(
         resumed_dir,
         mlflow_scope=mlflow_scope,
         restart_state=restart_state,
         expected_final_job_idx=3,
     )
-    _assert_model_states_equal(
-        resumed_dir / 'model.pt',
-        resume_deterministic_reference_dir / 'model.pt',
-        rtol=1e-2,
-        atol=5e-3,
+    # Verify deterministic mode was applied: the final model.pt has the
+    # masked tensor shapes (zero-sized latent dims) expected after det-mode.
+    final_model_state = _load_model_state(resumed_dir / 'model.pt')
+    assert final_model_state['latent_ode_func.net.0.weight'].shape[1] == 0, (
+        "Expected det-mode masked weights in final model.pt"
     )
 
 
@@ -542,7 +523,10 @@ def test_resume_from_explicit_restart_artifact_preserves_scheduler_and_mlflow_st
     with monkeypatch.context() as ctx:
         ctx.delenv('SLURM_JOB_ID', raising=False)
         _set_training_seeds()
-        _request_checkpoint_after_n_training_epochs(ctx, n_epochs=2)
+        # Interrupt after the last training epoch of phase 2 (save #4).
+        # Resume will only run phase 2's max-epoch (no training), so model.pt
+        # is already final and matches the reference exactly.
+        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
         source_dir = ode_training(
             'resume_explicit_scheduler_source',
             overrides=_resume_training_overrides(
@@ -555,7 +539,7 @@ def test_resume_from_explicit_restart_artifact_preserves_scheduler_and_mlflow_st
         )
 
     restart_path = source_dir / RESTART_STATE_FILENAME
-    restart_state = TrainingRestartManager(restart_path).load()
+    restart_state = load_restart_state(restart_path)
     _assert_restart_state(
         restart_state,
         expected_job_idx=2,

@@ -194,10 +194,10 @@ from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     TrainingRestartState,
-    TrainingRestartManager,
-    TrainingSignalMonitor,
     apply_training_restart_state,
     build_training_restart_state,
+    load_restart_state,
+    save_restart_state,
 )
 
 
@@ -367,17 +367,17 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
 
 def _load_restart_state_if_available(
     cfg: train_test_config_class,
-) -> tuple[TrainingRestartState | None, TrainingRestartManager, dict[str, Path] | None]:
-    restart_manager = TrainingRestartManager(filepaths.filepath_training_restart_state_current_hydra_output())
+) -> tuple[TrainingRestartState | None, Path, dict[str, Path] | None]:
+    restart_state_path = filepaths.filepath_training_restart_state_current_hydra_output()
     explicit_restart_state_path = getattr(cfg, 'restart_state_path', None)
     restart_source_path = (
         Path(explicit_restart_state_path).expanduser()
         if explicit_restart_state_path is not None
-        else restart_manager.path
+        else restart_state_path
     )
     if not restart_source_path.exists():
-        return None, restart_manager, None
-    restart_state = TrainingRestartManager(restart_source_path).load()
+        return None, restart_state_path, None
+    restart_state = load_restart_state(restart_source_path)
     current_hydra_output = filepaths.dir_current_hydra_output().resolve()
     stored_hydra_output = Path(restart_state.hydra_output_dir).resolve()
     checkpoint_source_paths = None
@@ -388,7 +388,7 @@ def _load_restart_state_if_available(
         )
     if explicit_restart_state_path is not None:
         restart_state = copy.deepcopy(restart_state)
-        restart_state.restart_state_path = str(restart_manager.path.resolve())
+        restart_state.restart_state_path = str(restart_state_path.resolve())
         if stored_hydra_output != current_hydra_output:
             checkpoint_source_paths = {
                 'current_model_path': Path(restart_state.current_model_path),
@@ -440,7 +440,7 @@ def _load_restart_state_if_available(
             f"Active MLflow run {active_run.info.run_id} does not match restart-state run {restart_state.mlflow_run_id}."
         )
     logging.info('Loaded trainer restart state from %s', restart_source_path)
-    return restart_state, restart_manager, checkpoint_source_paths
+    return restart_state, restart_state_path, checkpoint_source_paths
 
 
 def _apply_saved_train_cfg(train_cfg: base_training_settings_class, saved_cfg_state: dict) -> base_training_settings_class:
@@ -452,7 +452,7 @@ def _apply_saved_train_cfg(train_cfg: base_training_settings_class, saved_cfg_st
 
 def _save_training_restart_state(
     cfg: train_test_config_class,
-    restart_manager: TrainingRestartManager,
+    restart_state_path: Path,
     model: torch.nn.Module,
     job_idx: int,
     epoch_0: int,
@@ -469,7 +469,6 @@ def _save_training_restart_state(
     flag_out_of_seq_len_increase: bool,
     epoch_stop: int | None,
     checkpoint_reason: str = 'epoch_end',
-    checkpoint_requested_signal: str | None = None,
     best_model_path: Path | None = None,
     best_optimizer_path: Path | None = None,
     deterministic_mode_active: bool = False,
@@ -481,7 +480,7 @@ def _save_training_restart_state(
         torch.save(optimizer.state_dict(), current_optimizer_path)
     state = build_training_restart_state(
         hydra_output_dir=filepaths.dir_current_hydra_output(),
-        restart_state_path=restart_manager.path,
+        restart_state_path=restart_state_path,
         model=model,
         job_idx=job_idx,
         epoch_0=epoch_0,
@@ -506,10 +505,9 @@ def _save_training_restart_state(
         mlflow_tracking_uri=mlflow.get_tracking_uri(),
         mlflow_experiment_name=cfg.mlflow_experiment_name,
         deterministic_mode_active=deterministic_mode_active,
-        checkpoint_requested_signal=checkpoint_requested_signal,
         use_cuda=cfg.use_cuda,
     )
-    restart_manager.save(state)
+    save_restart_state(restart_state_path, state)
     return state
 
 
@@ -635,8 +633,6 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Start training all phases....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     logging.info('Using device: {}'.format(device))
-    signal_monitor = TrainingSignalMonitor()
-    signal_monitor.install()
     existing_run_params = _get_active_run_params()
     
     # load hdf5 dataset
@@ -680,7 +676,7 @@ def train_all_phases(cfg: train_test_config_class):
     if cfg.nn_model.training.test is True:
         job_list.append({'skip': False, 'test': True, 'train_cfg': cfg.nn_model.training.main_training[-1], 'pre_train': False})
     logging.info('Created job list: {}'.format(job_list))
-    restart_state, restart_manager, restart_checkpoint_source_paths = _load_restart_state_if_available(cfg)
+    restart_state, restart_state_path, restart_checkpoint_source_paths = _load_restart_state_if_available(cfg)
     job_start_idx = restart_state.job_idx if restart_state is not None else 0
     if restart_state is not None:
         if job_start_idx >= len(job_list):
@@ -858,8 +854,7 @@ def train_all_phases(cfg: train_test_config_class):
                                     if restart_state is not None and idx == restart_state.job_idx
                                     else None
                                 ),
-                                restart_manager=restart_manager,
-                                signal_monitor=signal_monitor,
+                                restart_manager=restart_state_path,
                             )
                             restart_state = None
                             restart_checkpoint_source_paths = None
@@ -1016,17 +1011,10 @@ def train_all_phases(cfg: train_test_config_class):
                             torch.cuda.empty_cache()
                     else:
                         raise e
-        _clear_restart_state(restart_manager.path)
+        _clear_restart_state(restart_state_path)
     except CheckpointRequestedExit as exc:
         logging.info('%s', exc)
         _set_mlflow_tag_if_active('ended by', 'checkpoint request')
-        if signal_monitor.received_signal_name is not None:
-            _set_mlflow_tag_if_active(
-                'checkpoint_requested_signal',
-                signal_monitor.received_signal_name,
-            )
-    finally:
-        signal_monitor.restore()
 
 
 def _next_batch(data_loader, iterator):
@@ -1257,8 +1245,7 @@ def train_one_phase(
     epoch_0: int = 0,
     restart_state: TrainingRestartState | None = None,
     restart_checkpoint_source_paths: dict[str, Path] | None = None,
-    restart_manager: TrainingRestartManager | None = None,
-    signal_monitor: TrainingSignalMonitor | None = None,
+    restart_manager: Path | None = None,
 ):
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     logging.info('Start next training phase....')
@@ -1681,14 +1668,9 @@ def train_one_phase(
                     if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                         mlflow.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
                 if restart_manager is not None:
-                    checkpoint_reason = (
-                        'signal_request'
-                        if signal_monitor is not None and signal_monitor.checkpoint_requested
-                        else 'epoch_end'
-                    )
                     _save_training_restart_state(
                         cfg=cfg,
-                        restart_manager=restart_manager,
+                        restart_state_path=restart_manager,
                         model=model,
                         job_idx=job_idx,
                         epoch_0=phase_epoch_0,
@@ -1704,18 +1686,10 @@ def train_one_phase(
                         stable_epochs=_stable_epochs,
                         flag_out_of_seq_len_increase=_flag_out_of_seq_len_increase,
                         epoch_stop=epoch_stop,
-                        checkpoint_reason=checkpoint_reason,
-                        checkpoint_requested_signal=(
-                            signal_monitor.received_signal_name if signal_monitor is not None else None
-                        ),
+                        checkpoint_reason='epoch_end',
                         best_model_path=_path_best_model,
                         best_optimizer_path=_path_optimizer_best_model,
                         deterministic_mode_active=False,
-                    )
-                if signal_monitor is not None and signal_monitor.checkpoint_requested:
-                    raise CheckpointRequestedExit(
-                        f"Checkpoint saved for job {job_idx} after receiving "
-                        f"{signal_monitor.received_signal_name or 'a checkpoint request'}."
                     )
         except KeyboardInterrupt:
             logging.info('Interrupted by user')

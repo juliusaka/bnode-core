@@ -5,8 +5,6 @@ from pathlib import Path
 import logging
 import os
 import random
-import signal
-import threading
 from typing import Any
 
 import hydra
@@ -54,7 +52,6 @@ class TrainingRestartState:
     rng_state: dict[str, Any] = field(default_factory=dict)
     deterministic_mode_active: bool = False
     slurm_job_id: str | None = None
-    checkpoint_requested_signal: str | None = None
 
     def validate(self) -> None:
         if self.schema_version != RESTART_STATE_SCHEMA_VERSION:
@@ -219,7 +216,6 @@ def build_training_restart_state(
     mlflow_tracking_uri: str | None = None,
     mlflow_experiment_name: str | None = None,
     deterministic_mode_active: bool = False,
-    checkpoint_requested_signal: str | None = None,
     use_cuda: bool = False,
 ) -> TrainingRestartState:
     scheduler_states: dict[str, dict[str, Any]] = {}
@@ -263,7 +259,6 @@ def build_training_restart_state(
         rng_state=_move_to_cpu(capture_rng_state(use_cuda)),
         deterministic_mode_active=deterministic_mode_active,
         slurm_job_id=os.getenv("SLURM_JOB_ID"),
-        checkpoint_requested_signal=checkpoint_requested_signal,
     )
 
 
@@ -309,66 +304,3 @@ def apply_training_restart_state(
     restore_rng_state(state.rng_state, use_cuda=use_cuda)
 
 
-class TrainingRestartManager:
-    """Owns the validated restart bundle stored in the Hydra output directory."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-
-    @classmethod
-    def from_cfg(cls, cfg: Any, hydra_output_dir: Path | None = None) -> "TrainingRestartManager":
-        return cls(restart_state_path_from_cfg(cfg, hydra_output_dir=hydra_output_dir))
-
-    def exists(self) -> bool:
-        return self.path.exists()
-
-    def load(self) -> TrainingRestartState:
-        return load_restart_state(self.path)
-
-    def save(self, state: TrainingRestartState) -> None:
-        save_restart_state(self.path, state)
-
-    def clear(self) -> None:
-        if self.path.exists():
-            self.path.unlink()
-            logging.info("Removed trainer restart state at %s", self.path)
-
-    def load_metadata(self) -> dict[str, Any]:
-        return self.load().metadata()
-
-
-class TrainingSignalMonitor:
-    """Minimal signal handler that only records checkpoint requests."""
-
-    def __init__(self) -> None:
-        self.checkpoint_requested = False
-        self.received_signal_name: str | None = None
-        self._original_handlers: dict[signal.Signals, Any] = {}
-
-    def _handle_signal(self, signum: int, _frame: Any) -> None:
-        try:
-            signame = signal.Signals(signum).name
-        except ValueError:
-            signame = str(signum)
-        self.checkpoint_requested = True
-        self.received_signal_name = signame
-
-    def install(self) -> None:
-        if threading.current_thread() is not threading.main_thread():
-            return
-        for signame in ("SIGUSR1", "SIGTERM"):
-            if not hasattr(signal, signame):
-                continue
-            signum = getattr(signal, signame)
-            self._original_handlers[signum] = signal.getsignal(signum)
-            signal.signal(signum, self._handle_signal)
-
-    def restore(self) -> None:
-        if threading.current_thread() is not threading.main_thread():
-            return
-        for signum, handler in self._original_handlers.items():
-            signal.signal(signum, handler)
-        self._original_handlers.clear()
-
-    def checkpoint_requested_via_slurm(self) -> bool:
-        return self.checkpoint_requested and os.getenv("SLURM_JOB_ID") is not None
