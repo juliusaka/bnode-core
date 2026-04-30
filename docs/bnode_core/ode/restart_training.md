@@ -32,21 +32,6 @@ trainer hydra.run.dir=outputs/2026-01-15/12-00-00/abc123 mlflow_tracking_uri=htt
 
 Use the same MLflow tracking URI / experiment as the original run. The restart bundle reopens the stored MLflow run ID; conflicting `mlflow_run_id`, experiment, or tracking URI settings are rejected.
 
-### Resume from an explicit restart artifact
-
-Point `restart_state_path` at an existing restart bundle. This is the manual entry point for relaunching into a new Hydra output directory while reusing the original MLflow run.
-
-```bash
-source .venv/bin/activate
-trainer \
-  restart_state_path=/absolute/path/to/old-run/training_restart.pt \
-  hydra.run.dir=outputs/manual-resume/run-01 \
-  mlflow_tracking_uri=http://127.0.0.1:5001 \
-  nn_model=bnode_heatpump_test
-```
-
-When `restart_state_path` targets another Hydra output directory, the trainer copies the referenced current/best checkpoints into the new output directory and tags the resumed MLflow run with both source and target Hydra output paths.
-
 ## Operational expectations
 
 - Restart support currently targets interrupted **main-training phases**.

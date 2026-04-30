@@ -220,21 +220,6 @@ def resume_deterministic_reference_dir():
     )
 
 
-@pytest.fixture(scope='module')
-def resume_scheduler_reference_dir():
-    _set_training_seeds()
-    return ode_training(
-        'resume_scheduler_reference',
-        overrides=_resume_training_overrides(
-            nn_model='bnode_pytest',
-            max_epochs=(3, 3),
-            scheduler_phase=1,
-        )
-        + _fixed_seq_len_phase_overrides(1)
-        + _resume_mlflow_overrides('resume_scheduler_reference'),
-    )
-
-
 def test_bnode_training():
     ode_training('bnode_training',
                 #  overrides=[
@@ -512,68 +497,4 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     final_model_state = _load_model_state(resumed_dir / 'model.pt')
     assert final_model_state['latent_ode_func.net.0.weight'].shape[1] == 0, (
         "Expected det-mode masked weights in final model.pt"
-    )
-
-
-def test_resume_from_explicit_restart_artifact_preserves_scheduler_and_mlflow_state(
-    resume_scheduler_reference_dir,
-    monkeypatch,
-):
-    mlflow_scope = 'resume_explicit_scheduler'
-    mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
-    with monkeypatch.context() as ctx:
-        ctx.delenv('SLURM_JOB_ID', raising=False)
-        _set_training_seeds()
-        # Interrupt after the last training epoch of phase 2 (save #4).
-        # Resume will only run phase 2's max-epoch (no training), so model.pt
-        # is already final and matches the reference exactly.
-        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
-        source_dir = ode_training(
-            'resume_explicit_scheduler_source',
-            overrides=_resume_training_overrides(
-                nn_model='bnode_pytest',
-                max_epochs=(3, 3),
-                scheduler_phase=1,
-            )
-            + _fixed_seq_len_phase_overrides(1)
-            + mlflow_overrides,
-        )
-
-    restart_path = source_dir / RESTART_STATE_FILENAME
-    restart_state = load_restart_state(restart_path)
-    _assert_restart_state(
-        restart_state,
-        expected_job_idx=2,
-        deterministic_mode_active=False,
-        scheduler_key='cosine',
-    )
-    assert restart_state.slurm_job_id is None
-
-    _set_training_seeds()
-    resumed_dir = ode_training(
-        'resume_explicit_scheduler_target',
-        overrides=_resume_training_overrides(
-            nn_model='bnode_pytest',
-            max_epochs=(3, 3),
-            scheduler_phase=1,
-        )
-        + _fixed_seq_len_phase_overrides(1)
-        + mlflow_overrides
-        + [f'restart_state_path={restart_path.resolve()}'],
-    )
-
-    assert restart_path.exists()
-    assert not (resumed_dir / RESTART_STATE_FILENAME).exists()
-    resumed_run = _assert_resumed_mlflow_run(
-        resumed_dir,
-        mlflow_scope=mlflow_scope,
-        restart_state=restart_state,
-        expected_final_job_idx=2,
-    )
-    assert resumed_run.data.params['hydra_output_dir_absolute'] == str(source_dir.resolve())
-    assert resumed_run.data.tags['resume_source_hydra_output_dir_absolute'] == str(source_dir.resolve())
-    assert resumed_run.data.tags['resume_hydra_output_dir_absolute'] == str(resumed_dir.resolve())
-    _assert_model_states_equal(
-        resumed_dir / 'model.pt',
-        resume_scheduler_reference_dir / 'model.pt',
     )

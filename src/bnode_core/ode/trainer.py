@@ -186,10 +186,14 @@ from bnode_core.nn.nn_utils.load_data import (
     timeseries_collate_fn,
 )
 from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
-from typing import Callable
 from bnode_core.config import train_test_config_class, base_training_settings_class, get_config_store
 
 from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
+from bnode_core.utils.mlflow_helpers import (
+    _get_active_run_params,
+    _log_mlflow_param,
+    _set_mlflow_tag_if_active,
+)
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     LiveTrainingState,
@@ -198,40 +202,14 @@ from bnode_core.ode.trainer_utils.restart_state import (
     apply_training_restart_state,
     load_restart_state,
 )
+from bnode_core.ode.trainer_utils.restart_utils import (
+    _apply_saved_train_cfg,
+    _clear_restart_state,
+    _load_restart_state_if_available,
+)
 
 
 torch.backends.cudnn.benchmark = True
-
-
-def _get_active_run_params() -> dict[str, str]:
-    active_run = mlflow.active_run()
-    if active_run is None:
-        return {}
-    return dict(mlflow.get_run(active_run.info.run_id).data.params)
-
-
-def _log_mlflow_param_if_absent_or_same(
-    key: str,
-    value,
-    *,
-    existing_params: dict[str, str] | None = None,
-) -> dict[str, str]:
-    params = existing_params if existing_params is not None else _get_active_run_params()
-    value_str = str(value)
-    if key in params:
-        if params[key] != value_str:
-            raise ValueError(
-                f"Cannot change existing MLflow param '{key}' from {params[key]!r} to {value_str!r}"
-            )
-        return params
-    mlflow.log_param(key, value)
-    params[key] = value_str
-    return params
-
-
-def _set_mlflow_tag_if_active(key: str, value) -> None:
-    if mlflow.active_run() is not None:
-        mlflow.set_tag(key, value)
 
 
 def _get_early_stopping_corresponding_metric(metrics: dict[str, float]) -> tuple[str | None, float | None]:
@@ -364,153 +342,6 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
     return model
 
 
-def _load_restart_state_if_available(
-    cfg: train_test_config_class,
-) -> tuple[TrainingRestartState | None, Path, dict[str, Path] | None]:
-    restart_state_path = filepaths.filepath_training_restart_state_current_hydra_output()
-    explicit_restart_state_path = getattr(cfg, 'restart_state_path', None)
-    restart_source_path = (
-        Path(explicit_restart_state_path).expanduser()
-        if explicit_restart_state_path is not None
-        else restart_state_path
-    )
-    if not restart_source_path.exists():
-        return None, restart_state_path, None
-    restart_state = load_restart_state(restart_source_path)
-    current_hydra_output = filepaths.dir_current_hydra_output().resolve()
-    stored_hydra_output = Path(restart_state.hydra_output_dir).resolve()
-    checkpoint_source_paths = None
-    if explicit_restart_state_path is None and stored_hydra_output != current_hydra_output:
-        raise ValueError(
-            'Restart state hydra output directory does not match current Hydra output directory. '
-            f'Expected {restart_state.hydra_output_dir}, got {current_hydra_output}.'
-        )
-    if explicit_restart_state_path is not None:
-        restart_state = copy.deepcopy(restart_state)
-        restart_state.restart_state_path = str(restart_state_path.resolve())
-        if stored_hydra_output != current_hydra_output:
-            checkpoint_source_paths = {
-                'current_model_path': Path(restart_state.current_model_path),
-                'current_optimizer_path': Path(restart_state.current_optimizer_path)
-                if restart_state.current_optimizer_path
-                else None,
-                'best_model_path': Path(restart_state.best_model_path)
-                if restart_state.best_model_path
-                else None,
-                'best_optimizer_path': Path(restart_state.best_optimizer_path)
-                if restart_state.best_optimizer_path
-                else None,
-            }
-            restart_state.hydra_output_dir = str(current_hydra_output)
-            restart_state.current_model_path = str(
-                filepaths.filepath_model_current_hydra_output().resolve()
-            )
-            restart_state.current_optimizer_path = (
-                str(filepaths.filepath_optimizer_current_hydra_output().resolve())
-                if restart_state.current_optimizer_path
-                else ""
-            )
-            restart_state.best_model_path = (
-                str(filepaths.filepath_model_current_hydra_output(restart_state.job_idx).resolve())
-                if restart_state.best_model_path
-                else ""
-            )
-            restart_state.best_optimizer_path = (
-                str(filepaths.filepath_optimizer_current_hydra_output(restart_state.job_idx).resolve())
-                if restart_state.best_optimizer_path
-                else ""
-            )
-            if restart_state.early_stopping_state:
-                restart_state.early_stopping_state = dict(restart_state.early_stopping_state)
-                if restart_state.best_model_path:
-                    restart_state.early_stopping_state['path'] = restart_state.best_model_path
-                if restart_state.best_optimizer_path:
-                    restart_state.early_stopping_state['optimizer_path'] = (
-                        restart_state.best_optimizer_path
-                    )
-            restart_state.validate()
-    active_run = mlflow.active_run()
-    if (
-        restart_state.mlflow_run_id is not None
-        and active_run is not None
-        and active_run.info.run_id != restart_state.mlflow_run_id
-    ):
-        raise ValueError(
-            f"Active MLflow run {active_run.info.run_id} does not match restart-state run {restart_state.mlflow_run_id}."
-        )
-    logging.info('Loaded trainer restart state from %s', restart_source_path)
-    return restart_state, restart_state_path, checkpoint_source_paths
-
-
-def _apply_saved_train_cfg(train_cfg: base_training_settings_class, saved_cfg_state: dict) -> base_training_settings_class:
-    restored = copy.deepcopy(train_cfg)
-    for key, value in saved_cfg_state.items():
-        setattr(restored, key, value)
-    return restored
-
-
-def _materialize_restart_checkpoints_for_current_output(
-    restart_state: TrainingRestartState,
-    *,
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer | None,
-    checkpoint_source_paths: dict[str, Path] | None,
-) -> None:
-    def _copy_required_checkpoint(
-        source: Path | None,
-        destination: Path,
-        *,
-        required: bool,
-        fallback: Callable[[Path], None] | None = None,
-    ) -> None:
-        if source is not None and source.exists():
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, destination)
-            return
-        if required:
-            raise FileNotFoundError(
-                f"Required restart checkpoint {source} is missing while resuming into {destination}"
-            )
-        if fallback is not None:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            fallback(destination)
-
-    current_model_path = Path(restart_state.current_model_path)
-    _copy_required_checkpoint(
-        checkpoint_source_paths.get('current_model_path') if checkpoint_source_paths else None,
-        current_model_path,
-        required=False,
-        fallback=model.save,
-    )
-    if optimizer is not None and restart_state.current_optimizer_path:
-        current_optimizer_path = Path(restart_state.current_optimizer_path)
-        _copy_required_checkpoint(
-            checkpoint_source_paths.get('current_optimizer_path') if checkpoint_source_paths else None,
-            current_optimizer_path,
-            required=False,
-            fallback=lambda path: torch.save(optimizer.state_dict(), path),
-        )
-    if restart_state.best_model_path:
-        best_model_path = Path(restart_state.best_model_path)
-        _copy_required_checkpoint(
-            checkpoint_source_paths.get('best_model_path') if checkpoint_source_paths else None,
-            best_model_path,
-            required=checkpoint_source_paths is not None,
-        )
-    if optimizer is not None and restart_state.best_optimizer_path:
-        best_optimizer_path = Path(restart_state.best_optimizer_path)
-        _copy_required_checkpoint(
-            checkpoint_source_paths.get('best_optimizer_path') if checkpoint_source_paths else None,
-            best_optimizer_path,
-            required=checkpoint_source_paths is not None,
-        )
-
-
-def _clear_restart_state(path: Path) -> None:
-    if path.exists():
-        path.unlink()
-        logging.info('Removed trainer restart state at %s', path)
-
 @log_hydra_to_mlflow
 def train_all_phases(cfg: train_test_config_class):
     """Execute complete multi-phase training pipeline with MLflow tracking.
@@ -575,7 +406,7 @@ def train_all_phases(cfg: train_test_config_class):
     
     # load hdf5 dataset
     hdf5_dataset, _ = load_dataset_and_config(cfg.dataset_name, cfg.dataset_path)
-    _log_mlflow_param_if_absent_or_same(
+    _log_mlflow_param(
         'dataset_name',
         cfg.dataset_name,
         existing_params=existing_run_params,
@@ -583,7 +414,7 @@ def train_all_phases(cfg: train_test_config_class):
 
     if cfg.dataset_norm_name is not None or cfg.dataset_norm_path is not None:
         hdf5_dataset_norm, _ = load_dataset_and_config(cfg.dataset_norm_name, cfg.dataset_norm_path)
-        _log_mlflow_param_if_absent_or_same(
+        _log_mlflow_param(
             'dataset_norm_name',
             cfg.dataset_norm_name,
             existing_params=existing_run_params,
@@ -593,7 +424,7 @@ def train_all_phases(cfg: train_test_config_class):
     
     if cfg.dataset_ref_name is not None or cfg.dataset_ref_path is not None:
         hdf5_dataset_ref, _ = load_dataset_and_config(cfg.dataset_ref_name, cfg.dataset_ref_path)
-        _log_mlflow_param_if_absent_or_same(
+        _log_mlflow_param(
             'dataset_ref_name',
             cfg.dataset_ref_name,
             existing_params=existing_run_params,
@@ -614,7 +445,7 @@ def train_all_phases(cfg: train_test_config_class):
     if cfg.nn_model.training.test is True:
         job_list.append({'skip': False, 'test': True, 'train_cfg': cfg.nn_model.training.main_training[-1], 'pre_train': False})
     logging.info('Created job list: {}'.format(job_list))
-    restart_state, restart_state_path, restart_checkpoint_source_paths = _load_restart_state_if_available(cfg)
+    restart_state, restart_state_path = _load_restart_state_if_available(cfg)
     job_start_idx = restart_state.job_idx if restart_state is not None else 0
     if restart_state is not None:
         if job_start_idx >= len(job_list):
@@ -787,15 +618,9 @@ def train_all_phases(cfg: train_test_config_class):
                                 idx,
                                 _epoch_0,
                                 restart_state=restart_state if restart_state is not None and idx == restart_state.job_idx else None,
-                                restart_checkpoint_source_paths=(
-                                    restart_checkpoint_source_paths
-                                    if restart_state is not None and idx == restart_state.job_idx
-                                    else None
-                                ),
                                 restart_manager=restart_state_path,
                             )
                             restart_state = None
-                            restart_checkpoint_source_paths = None
                             # set seq_len_epoch_start for next job
                             if len(job_list) > idx+1:
                                 # consequently, seq_len_epoch_start should be seq_len_train
@@ -976,25 +801,17 @@ def _next_batch(data_loader, iterator):
 
 # define train loop for one epoch
 def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epoch):
-    model = live_state.model
-    optimizer = live_state.optimizer
-    scaler = live_state.scaler
-    train_cfg = live_state.train_cfg
-    pre_train = live_state.pre_train
-    device = live_state.device
-    use_amp = live_state.cfg.use_amp
-    use_cuda = live_state.cfg.use_cuda
-    batch_print_interval = live_state.cfg.batch_print_interval
     epoch_this_phase = epoch - live_state.phase_state.phase_epoch_0
-    lr_schedulers = live_state.lr_schedulers
-    model.train()
+    # train_cfg may be deep-copied below for epoch-specific overrides (e.g. evaluate_at_control_times)
+    train_cfg = live_state.train_cfg
+    live_state.model.train()
     _time_forward = 0
     _time_backward = 0
     _time_step = 0
     _time_loader = 0
     _time_l = pyTime.time()
     batches_per_epoch = len(train_loader) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
-    if epoch_this_phase in [0, 1] and pre_train is False: # evaluate at control times only in first epoch to get good estimate for memory usage
+    if epoch_this_phase in [0, 1] and live_state.pre_train is False: # evaluate at control times only in first epoch to get good estimate for memory usage
         logging.info('Evaluating at control times to get good estimate for memory usage')
         train_cfg = copy.deepcopy(train_cfg)
         train_cfg.evaluate_at_control_times = True
@@ -1006,14 +823,14 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
         data_batch, train_iter = _next_batch(train_loader, train_iter)
         # seq_len_increase_in_batches
         _batches_this_phase = epoch_this_phase * batches_per_epoch + batch_idx
-        if pre_train is False:
+        if live_state.pre_train is False:
             if _batches_this_phase < train_cfg.seq_len_increase_in_batches:
                 _seq_len_now = train_cfg.seq_len_epoch_start + int(_batches_this_phase/train_cfg.seq_len_increase_in_batches * (train_cfg.seq_len_train - train_cfg.seq_len_epoch_start))
                 _seq_len_now = min(_seq_len_now, train_cfg.seq_len_train)
                 for keys in data_batch.keys():
                     if len(data_batch[keys].shape) == 3:
                         data_batch[keys] = data_batch[keys][:,:,:_seq_len_now]
-                if batch_idx % batch_print_interval == 0:
+                if batch_idx % live_state.cfg.batch_print_interval == 0:
                     logging.info('\t \t Increasing sequence length to {} in batch since phase start {}/{} of increase_in_batches'.format(_seq_len_now, _batches_this_phase, train_cfg.seq_len_increase_in_batches))
             else:
                 _seq_len_now = train_cfg.seq_len_train
@@ -1023,17 +840,17 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
         _time = pyTime.time()
 
         # Branch on optimizer type: standard first-order optimizers vs LBFGS
-        is_lbfgs = isinstance(optimizer, LBFGS)
+        is_lbfgs = isinstance(live_state.optimizer, LBFGS)
 
         if not is_lbfgs:
-            optimizer.zero_grad()
+            live_state.optimizer.zero_grad()
             # Standard optimizers (e.g., Adam): single forward/backward pass
-            with torch.amp.autocast('cuda', enabled=use_amp and use_cuda):
-                ret_vals_train = model.model_and_loss_evaluation(
+            with torch.amp.autocast('cuda', enabled=live_state.cfg.use_amp and live_state.cfg.use_cuda):
+                ret_vals_train = live_state.model.model_and_loss_evaluation(
                     data_batch,
                     train_cfg,
-                    pre_train,
-                    device,
+                    live_state.pre_train,
+                    live_state.device,
                     return_model_outputs=False,
                     test=False,
                     last_batch=batch_idx == batches_per_epoch - 1,
@@ -1041,18 +858,18 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
             loss = ret_vals_train['loss']
             _time_forward += pyTime.time() - _time
             _time = pyTime.time()
-            scaler.scale(loss).backward()
+            live_state.scaler.scale(loss).backward()
         else:
             # LBFGS: closure-based optimization; disable AMP for simplicity
             ret_vals_train = {}
 
             def _closure():
-                optimizer.zero_grad()
-                out = model.model_and_loss_evaluation(
+                live_state.optimizer.zero_grad()
+                out = live_state.model.model_and_loss_evaluation(
                     data_batch,
                     train_cfg,
-                    pre_train,
-                    device,
+                    live_state.pre_train,
+                    live_state.device,
                     return_model_outputs=False,
                     test=False,
                     last_batch=batch_idx == batches_per_epoch - 1,
@@ -1060,7 +877,7 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
                 loss_closure = out['loss']
                 loss_closure.backward()
                 # optionally apply gradient clipping inside the closure
-                clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
+                clip_grad_norm_(live_state.model.parameters(), train_cfg.clip_grad_norm)
                 # store last returned values for logging
                 nonlocal ret_vals_train
                 ret_vals_train = out
@@ -1069,16 +886,16 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
 
             # Run a single LBFGS step for this batch; internal iterations
             # are controlled via train_cfg.lbfgs_max_iter.
-            loss = optimizer.step(_closure)
+            loss = live_state.optimizer.step(_closure)
             _time_forward += pyTime.time() - _time
             _time = pyTime.time()
         _flag_break_cuda_memory = False
-        if use_cuda:
+        if live_state.cfg.use_cuda:
             mlflow.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024^3), step=epoch)
             if epoch_this_phase == 0:
                 if torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory:
                     _flag_break_cuda_memory = True
-        if pre_train is False and use_cuda:
+        if live_state.pre_train is False and live_state.cfg.use_cuda:
             if epoch_this_phase == 0:
                 if (train_cfg.seq_len_train/_seq_len_now) * torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory:
                     _flag_break_cuda_memory = True
@@ -1088,31 +905,31 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
             logging.warning('CUDA memory is almost full. Raising exception to catch in train_all_phases')
             logging.info('Current number of batches for whole dataset: {}'.format(len(train_loader)))
             raise RuntimeError('CUDA memory is almost full')
-        _ode_calls_backward = model.ode_fun_count if hasattr(model, 'ode_fun_count') else 0
+        _ode_calls_backward = live_state.model.ode_fun_count if hasattr(live_state.model, 'ode_fun_count') else 0
         _time_backward += pyTime.time() - _time
         _time = pyTime.time()
 
         # For LBFGS, step and clipping are handled in the closure; for others,
         # unscale, clip and step via the GradScaler.
         if not is_lbfgs:
-            scaler.unscale_(optimizer)
-            _norm = clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
+            live_state.scaler.unscale_(live_state.optimizer)
+            _norm = clip_grad_norm_(live_state.model.parameters(), train_cfg.clip_grad_norm)
             if _norm > train_cfg.clip_grad_norm:
                 logging.info('Gradient norm {} is larger than clip_grad_norm {}. Clipping Gradient.'.format(_norm, train_cfg.clip_grad_norm))
-            scaler.step(optimizer)
-            scaler.update()
+            live_state.scaler.step(live_state.optimizer)
+            live_state.scaler.update()
         else:
             # For LBFGS, report the most recent gradient norm for logging.
-            _norm = clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
+            _norm = clip_grad_norm_(live_state.model.parameters(), train_cfg.clip_grad_norm)
         # step learning-rate scheduler(s) once per optimizer update (per batch)
-        if lr_schedulers:
+        if live_state.lr_schedulers:
             # For now only cosine-type schedulers are stepped per batch; others
             # will typically be stepped at epoch level using validation metrics.
-            for key in lr_schedulers.keys():
+            for key in live_state.lr_schedulers.keys():
                 if key == 'cosine':
-                    lr_schedulers[key].step()
+                    live_state.lr_schedulers[key].step()
         _time_step += pyTime.time() - _time
-        if batch_idx % batch_print_interval == 0:
+        if batch_idx % live_state.cfg.batch_print_interval == 0:
             _total_time = _time_forward + _time_backward + _time_step + _time_loader
             _total_time = _total_time
             _ode_calls_forward = ret_vals_train['ode_calls_forward'] if 'ode_calls_forward' in ret_vals_train.keys() else 0 
@@ -1144,7 +961,7 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
     ret_vals_train['time_per_batch_backward'] = ret_vals_train['time_backward'] / batches_per_epoch
     ret_vals_train['time_per_batch_optimizer_step'] = ret_vals_train['time_optimizer_step'] / batches_per_epoch
     ret_vals_train['time_per_batch_loader'] = ret_vals_train['time_loader'] / batches_per_epoch
-    if pre_train is False:
+    if live_state.pre_train is False:
         ret_vals_train['ode_calls_backward'] = _ode_calls_backward
     return ret_vals_train, train_iter  
 
@@ -1193,7 +1010,6 @@ def train_one_phase(
     job_idx: int,
     epoch_0: int = 0,
     restart_state: TrainingRestartState | None = None,
-    restart_checkpoint_source_paths: dict[str, Path] | None = None,
     restart_manager: Path | None = None,
 ):
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
@@ -1290,7 +1106,7 @@ def train_one_phase(
                     _patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // _iters) 
                 else:
                     _patience = train_cfg.plateau_patience
-                _log_mlflow_param_if_absent_or_same(
+                _log_mlflow_param(
                     'job {} LR scheduler patience'.format(job_idx),
                     _patience,
                     existing_params=existing_run_params,
@@ -1335,12 +1151,6 @@ def train_one_phase(
                 scaler=scaler,
                 early_stopping=early_stopping,
                 use_cuda=cfg.use_cuda,
-            )
-            _materialize_restart_checkpoints_for_current_output(
-                restart_state,
-                model=model,
-                optimizer=optimizer,
-                checkpoint_source_paths=restart_checkpoint_source_paths,
             )
             logging.info(
                 'Restored restart bundle for job %s at global epoch %s (phase epoch %s)',
