@@ -15,9 +15,9 @@ If a restart artifact is incomplete or its schema/paths do not match the request
 
 ## Safe checkpoint behavior
 
-- The trainer installs minimal `SIGUSR1` and `SIGTERM` handlers that only record that a checkpoint was requested.
-- Serialization still happens in normal trainer control flow after a safe epoch boundary.
-- A checkpoint requested by Slurm is written with `checkpoint_reason="signal_request"` and records the received signal name.
+- Checkpoints are written only at epoch boundaries in normal trainer control flow — never in a signal handler.
+- Every checkpoint is written with `checkpoint_reason="epoch_end"`.
+- Slurm time-limit handling is done by the surrounding job script (requeue), not inside the trainer process.
 
 ## Manual resume entry points
 
