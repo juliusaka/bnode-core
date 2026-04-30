@@ -33,6 +33,14 @@ source .venv/bin/activate
 | Training | `python -m bnode_core.ode.trainer` |
 | ONNX export | `python -m bnode_core.ode.bnode.bnode_export` |
 
+## Always update docs and instructions
+
+When behavior, commands, paths, outputs, or terminology change:
+
+- Update the code, the relevant MkDocs pages, and the relevant `.instructions.md` files in the **same task**. Do not treat this as optional cleanup.
+- When tests or fixtures change, review the corresponding instruction sections for variant names, dataset names, prerequisite lists, and output locations. Replace stale content instead of layering new bullets on top of obsolete ones.
+- If a section is stale, rewrite it in the same task instead of appending a note and leaving the old text in place.
+
 ## Instruction precedence
 
 - This file is the baseline for normal `bnode-core` Python work.
@@ -60,6 +68,3 @@ source .venv/bin/activate
 - For self-contained workflows in this repository, treat exporter-produced artifacts and metadata as a strict contract.
 - Do **not** add fallback handling for hypothetical alternate schemas, older metadata layouts, or partially missing fields unless the user explicitly asks for compatibility support.
 - In these workflows, robustness means validating expected metadata and failing clearly when it is missing or inconsistent, not silently downgrading behavior.
-- When behavior, commands, paths, outputs, or terminology change, update the code, the relevant MkDocs pages, and the relevant `.instructions.md` files together.
-- Do not leave stale instruction or documentation sections behind after changing exports, tests, fixtures, or workflow steps.
-- When fixture names, test variants, artifact names, or command examples change, replace outdated enumerations instead of layering new bullets on top of obsolete ones.

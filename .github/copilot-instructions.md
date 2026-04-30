@@ -1,5 +1,9 @@
 # bnode-core Copilot Instructions
 
+## Critical rule
+
+**Always update docs and instruction files in the same task as code changes.** See `python-workflows.instructions.md` → "Always update docs and instructions" for the full rule.
+
 ## Scope and baseline
 
 - These instructions apply to the `bnode-core` repository root. If you are working from the superproject root, follow the superproject instruction file instead of translating paths manually.
