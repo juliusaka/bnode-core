@@ -23,6 +23,7 @@ source .venv/bin/activate
 - `.github/instructions/pytest-workflows.instructions.md` — pytest execution policy, suite map, and high-value test commands
 - `.github/instructions/config-schema.instructions.md` — `src/bnode_core/config.py`, `tests/test_config.py`, and `resources/config/**/*.yaml`
 - `.github/instructions/bnode-export.instructions.md` — BNODE ONNX exporter changes in `src/bnode_core/ode/bnode/bnode_export.py` and `tests/ode/test_bnode_export.py`
+- `.github/instructions/trainer-restart.instructions.md` — restart-state architecture, trainer resume flow, and restart-state docs/tests
 - `.github/instructions/docs-structure.instructions.md` — MkDocs page placement and `mkdocs.yml` updates
 
 Read the targeted file for the area you are changing instead of duplicating its detailed guidance here.

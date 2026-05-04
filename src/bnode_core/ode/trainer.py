@@ -192,9 +192,7 @@ from bnode_core.utils.mlflow_proxy import mlflow_proxy
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     LiveTrainingState,
-    TrainingPhaseState,
     TrainingRestartState,
-    apply_training_restart_state,
 )
 from bnode_core.ode.trainer_utils.restart_utils import (
     _apply_saved_train_cfg,
@@ -388,6 +386,8 @@ def train_all_phases(cfg: train_test_config_class):
         - Memory errors trigger dataloader recreation with adjusted settings
         - NaN losses trigger checkpoint reload and gradient clipping adjustment
         - Progressive sequence length increase during phase transitions
+        - For the runtime-vs-checkpoint state split, see
+          ``docs/bnode_core/ode/restart_training.md``
     
     See Also:
         train_one_phase : Single training phase execution
@@ -426,8 +426,15 @@ def train_all_phases(cfg: train_test_config_class):
     if cfg.nn_model.training.test is True:
         job_list.append({'skip': False, 'test': True, 'train_cfg': cfg.nn_model.training.main_training[-1], 'pre_train': False})
     logging.info('Created job list: {}'.format(job_list))
+    # We inspect the serialized restart checkpoint here only to decide where the
+    # outer job loop resumes. A full LiveTrainingState cannot be materialized at
+    # this point yet because the selected phase has not created its model,
+    # optimizer, schedulers, scaler, early-stopping helper, and paths.
+    # The live runtime state is created and fully restored inside train_one_phase().
+    # See docs/bnode_core/ode/restart_training.md for the full state model.
     restart_state, restart_state_path = _load_restart_state_if_available()
     job_start_idx = restart_state.job_idx if restart_state is not None else 0
+    # apply content from restart state, if we restart
     if restart_state is not None:
         if job_start_idx >= len(job_list):
             raise ValueError(
@@ -999,6 +1006,26 @@ def train_one_phase(
     _phase_epoch_0 = restart_state.epoch_0 if restart_state is not None else epoch_0
     
     if test is False:
+        if pre_train is True:
+            _batches_per_epoch = len(dataloaders['train'])
+            epochs_for_seq_len_increase = 0
+        else:
+            _batches_per_epoch = len(dataloaders['train']) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
+            if train_cfg.seq_len_epoch_start is not None:
+                if train_cfg.seq_len_epoch_start < train_cfg.seq_len_train:
+                    epochs_for_seq_len_increase = int(train_cfg.seq_len_increase_in_batches / _batches_per_epoch)
+                else:
+                    epochs_for_seq_len_increase = 0
+                    train_cfg.seq_len_increase_in_batches = 0
+            else:
+                epochs_for_seq_len_increase = 0
+                train_cfg.seq_len_increase_in_batches = 0
+        max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
+        _path_best_model = filepaths.filepath_pretrained_model_current_hydra_output() if pre_train is True else filepaths.filepath_model_current_hydra_output(job_idx)
+        _path_optimizer_best_model = filepaths.filepath_optimizer_current_hydra_output() if pre_train is True else filepaths.filepath_optimizer_current_hydra_output(job_idx)
+        _path_current_model = filepaths.filepath_model_current_hydra_output() # contiuously updated
+        _path_current_optimizer = filepaths.filepath_optimizer_current_hydra_output() # contiuously updated
+
         # Select optimizer based on config (default: Adam)
         optimizer_name = train_cfg.optimizer
         optimizer_name_lower = optimizer_name.lower()
@@ -1034,31 +1061,11 @@ def train_one_phase(
                 except:
                     logging.warning('Could not reload optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
                     logging.warning('Initializing optimizer with new parameters')
-        _path_best_model = filepaths.filepath_pretrained_model_current_hydra_output() if pre_train is True else filepaths.filepath_model_current_hydra_output(job_idx)
-        _path_optimizer_best_model = filepaths.filepath_optimizer_current_hydra_output() if pre_train is True else filepaths.filepath_optimizer_current_hydra_output(job_idx)
-        _path_current_model = filepaths.filepath_model_current_hydra_output() # contiuously updated
-        _path_current_optimizer = filepaths.filepath_optimizer_current_hydra_output() # contiuously updated
         early_stopping = EarlyStopping(patience=train_cfg.early_stopping_patience, verbose=True, threshold=train_cfg.early_stopping_threshold,
                                        threshold_mode=train_cfg.early_stopping_threshold_mode, path = _path_best_model, optimizer_path=_path_optimizer_best_model,
                                          trace_func=logging.info)
         scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
         logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
-        if pre_train is True:
-            _batches_per_epoch = len(dataloaders['train'])
-            epochs_for_seq_len_increase = 0
-        else:
-            _batches_per_epoch = len(dataloaders['train']) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
-            if train_cfg.seq_len_epoch_start is not None:
-                if train_cfg.seq_len_epoch_start < train_cfg.seq_len_train:
-                    epochs_for_seq_len_increase = int(train_cfg.seq_len_increase_in_batches / _batches_per_epoch)
-                else:
-                    epochs_for_seq_len_increase = 0
-                    train_cfg.seq_len_increase_in_batches = 0
-            else:
-                epochs_for_seq_len_increase = 0
-                train_cfg.seq_len_increase_in_batches = 0
-        max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
-        _default_epoch_stop = _phase_epoch_0 + max_epochs
 
         # optional learning-rate scheduler(s) (per phase)
         lr_schedulers = {}
@@ -1107,40 +1114,10 @@ def train_one_phase(
                 raise ValueError(f'LR scheduler type {train_cfg.lr_scheduler_type} not recognized')
         if len(lr_schedulers) == 0:
             lr_schedulers = None
-        # Determine the initial seq-len increase flag before creating phase_state.
-        if pre_train is False:
-            _init_flag_out_of_seq_len_increase = epochs_for_seq_len_increase == 0
-        else:
-            _init_flag_out_of_seq_len_increase = True
-        # Create the phase state, restoring all mutable counters from the checkpoint when resuming.
-        if restart_state is not None:
-            if restart_state.job_idx != job_idx:
-                raise ValueError(
-                    f'Restart state job_idx {restart_state.job_idx} does not match current job {job_idx}.'
-                )
-            phase_state = TrainingPhaseState.from_restart(restart_state, default_epoch_stop=_default_epoch_stop)
-            apply_training_restart_state(
-                restart_state,
-                model=model,
-                optimizer=optimizer,
-                lr_schedulers=lr_schedulers,
-                scaler=scaler,
-                early_stopping=early_stopping,
-                use_cuda=cfg.use_cuda,
-            )
-            logging.info(
-                'Restored restart bundle for job %s at global epoch %s (phase epoch %s)',
-                job_idx,
-                restart_state.next_epoch,
-                restart_state.phase_epoch,
-            )
-        else:
-            phase_state = TrainingPhaseState.fresh(
-                epoch_0=_phase_epoch_0,
-                epoch_stop=_default_epoch_stop,
-                flag_out_of_seq_len_increase=_init_flag_out_of_seq_len_increase,
-            )
-        live_state = LiveTrainingState(
+        # Even during resume we can only fully restore the live state here,
+        # after this phase has created all runtime objects that are not present
+        # at the beginning of train_all_phases().
+        live_state = LiveTrainingState.create(
             cfg=cfg,
             model=model,
             optimizer=optimizer,
@@ -1151,14 +1128,18 @@ def train_one_phase(
             job_idx=job_idx,
             pre_train=pre_train,
             device=device,
-            phase_state=phase_state,
+            phase_epoch_0=_phase_epoch_0,
+            max_epochs=max_epochs,
+            epochs_for_seq_len_increase=epochs_for_seq_len_increase,
             path_best_model=_path_best_model,
             path_optimizer_best_model=_path_optimizer_best_model,
             path_current_model=_path_current_model,
             path_current_optimizer=_path_current_optimizer,
             hydra_output_dir=filepaths.dir_current_hydra_output(),
             restart_manager_path=restart_manager,
+            restart_state=restart_state,
         )
+        phase_state = live_state.phase_state
         '''Training'''
         try:
             _flag_break_after_epoch = False

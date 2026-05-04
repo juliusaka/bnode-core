@@ -30,6 +30,9 @@ class TrainingPhaseState:
     Serves as the single source of truth for both the live training loop and
     the restart checkpoint, replacing scattered individual variables and a
     lengthy parameter list in ``_save_training_restart_state``.
+
+    See ``docs/bnode_core/ode/restart_training.md`` for how this differs from
+    ``LiveTrainingState`` and ``TrainingRestartState``.
     """
 
     phase_epoch_0: int
@@ -103,6 +106,8 @@ class LiveTrainingState:
     as the single source of truth for ``save_checkpoint``.  Unlike
     ``TrainingRestartState``, this object is **not serialized** — it holds real
     PyTorch objects whose ``.state_dict()`` is captured only when checkpointing.
+
+    See ``docs/bnode_core/ode/restart_training.md`` for the full state model.
     """
 
     def __init__(
@@ -143,6 +148,89 @@ class LiveTrainingState:
         self.path_current_optimizer = path_current_optimizer
         self.hydra_output_dir = hydra_output_dir
         self.restart_manager_path = restart_manager_path
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        cfg: Any,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer | None,
+        lr_schedulers: dict | None,
+        scaler: GradScaler | None,
+        early_stopping: Any | None,
+        train_cfg: Any,
+        job_idx: int,
+        pre_train: bool,
+        device: torch.device,
+        phase_epoch_0: int,
+        max_epochs: int,
+        epochs_for_seq_len_increase: int,
+        path_best_model: Path,
+        path_optimizer_best_model: Path,
+        path_current_model: Path,
+        path_current_optimizer: Path,
+        hydra_output_dir: Path,
+        restart_manager_path: Path | None,
+        restart_state: "TrainingRestartState | None" = None,
+    ) -> "LiveTrainingState":
+        default_epoch_stop = phase_epoch_0 + max_epochs
+        if restart_state is not None:
+            phase_state = TrainingPhaseState.from_restart(
+                restart_state,
+                default_epoch_stop=default_epoch_stop,
+            )
+        else:
+            flag_out_of_seq_len_increase = True if pre_train else epochs_for_seq_len_increase == 0
+            phase_state = TrainingPhaseState.fresh(
+                epoch_0=phase_epoch_0,
+                epoch_stop=default_epoch_stop,
+                flag_out_of_seq_len_increase=flag_out_of_seq_len_increase,
+            )
+
+        live_state = cls(
+            cfg=cfg,
+            model=model,
+            optimizer=optimizer,
+            lr_schedulers=lr_schedulers,
+            scaler=scaler,
+            early_stopping=early_stopping,
+            train_cfg=train_cfg,
+            job_idx=job_idx,
+            pre_train=pre_train,
+            device=device,
+            phase_state=phase_state,
+            path_best_model=path_best_model,
+            path_optimizer_best_model=path_optimizer_best_model,
+            path_current_model=path_current_model,
+            path_current_optimizer=path_current_optimizer,
+            hydra_output_dir=hydra_output_dir,
+            restart_manager_path=restart_manager_path,
+        )
+        if restart_state is not None:
+            live_state.load_checkpoint(restart_state)
+        return live_state
+
+    def load_checkpoint(self, restart_state: "TrainingRestartState") -> None:
+        if restart_state.job_idx != self.job_idx:
+            raise ValueError(
+                f"Restart state job_idx {restart_state.job_idx} does not match current job {self.job_idx}."
+            )
+        apply_training_restart_state(
+            restart_state,
+            model=self.model,
+            optimizer=self.optimizer,
+            lr_schedulers=self.lr_schedulers,
+            scaler=self.scaler,
+            early_stopping=self.early_stopping,
+            use_cuda=self.cfg.use_cuda,
+        )
+        logging.info(
+            "Restored restart bundle for job %s at global epoch %s (phase epoch %s)",
+            self.job_idx,
+            restart_state.next_epoch,
+            restart_state.phase_epoch,
+        )
 
     def save_checkpoint(self, next_epoch: int) -> None:
         """Persist a restart checkpoint for the current epoch.
@@ -222,6 +310,11 @@ class LiveTrainingState:
 
 @dataclass
 class TrainingRestartState:
+    """Serialized checkpoint schema for resuming an interrupted training phase.
+
+    See ``docs/bnode_core/ode/restart_training.md`` for how this persisted schema
+    relates to ``TrainingPhaseState`` and ``LiveTrainingState``.
+    """
     schema_version: int = RESTART_STATE_SCHEMA_VERSION
     hydra_output_dir: str = ""
     restart_state_path: str = ""
@@ -419,4 +512,3 @@ def apply_training_restart_state(
         early_stopping.load_state_dict(state.early_stopping_state)
 
     restore_rng_state(state.rng_state, use_cuda=use_cuda)
-
