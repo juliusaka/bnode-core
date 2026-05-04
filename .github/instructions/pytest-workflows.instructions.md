@@ -9,7 +9,9 @@ Apply these instructions when editing `tests/**/*.py` or pytest-related settings
 
 ## Pytest configuration
 
-- `pyproject.toml` sets `addopts = "-n auto --dist loadscope"` for parallel execution via `pytest-xdist`.
+- `pyproject.toml` sets `addopts = "-n auto --dist load"` for parallel execution via `pytest-xdist`.
+- `--dist load` distributes each test to the next available worker, maximising CPU utilisation. The only file with ordered tests (`test_data_generation_and_preperation.py`) uses `pytest-dependency` markers which still enforce skip-on-failure across workers.
+- Do not use `-s` (no-capture) with `-n`; they conflict in xdist and can stall worker communication.
 - Useful flags:
   - `-x` to stop on the first failure
   - `-v` for verbose output
