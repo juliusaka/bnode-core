@@ -13,7 +13,10 @@ import logging
 import traceback
 import subprocess
 
-from bnode_core.ode.trainer_utils.restart_state import load_restart_metadata
+from bnode_core.ode.trainer_utils.restart_state import (
+  RESTART_STATE_FILENAME,
+  load_restart_metadata,
+)
 
 
 def _normalize_tracking_uri(uri: str | None) -> str | None:
@@ -122,7 +125,7 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
 
     def _resolve_restart_metadata() -> dict | None:
-      restart_state_path = hydra_output_dir / 'training_restart.pt'
+      restart_state_path = hydra_output_dir / RESTART_STATE_FILENAME
       if not restart_state_path.exists():
         return None
       return load_restart_metadata(restart_state_path)
@@ -185,8 +188,14 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       for key, value in values.items():
         _log_param_if_absent_or_same(key, value)
 
-    _log_param_if_absent_or_same('hydra_output_dir_rel', str(hydra_output_dir))
-    _log_param_if_absent_or_same('hydra_output_dir_absolute', str(hydra_output_dir.resolve()))
+    _log_param_if_absent_or_same(
+      'hydra_output_dir_rel',
+      str(hydra_output_dir),
+    )
+    _log_param_if_absent_or_same(
+      'hydra_output_dir_absolute',
+      str(hydra_output_dir.resolve()),
+    )
     _log_param_if_absent_or_same('mlflow_run_id', active_run_id)
     if restart_metadata is not None:
       mlflow.set_tag('restart_state_path', restart_metadata['restart_state_path'])
@@ -260,13 +269,6 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(file, dest)
             logging.info(f"Copied artifact: {file} -> {dest}")
-            # If HDF5 file copied successfully, delete from output to save disk space
-            if file.suffix.lower() in ['.h5', '.hdf5']:
-              try:
-                file.unlink()
-                logging.info(f"Removed HDF5 from output after copy: {file}")
-              except Exception as e:
-                logging.warning(f"Could not remove HDF5 file {file}: {e}")
           except Exception as e:
             logging.warning(f"Failed to copy artifact {file} -> {dest}: {e}")
             errors.append(str(file))

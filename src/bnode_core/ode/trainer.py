@@ -200,7 +200,6 @@ from bnode_core.ode.trainer_utils.restart_state import (
     TrainingPhaseState,
     TrainingRestartState,
     apply_training_restart_state,
-    load_restart_state,
 )
 from bnode_core.ode.trainer_utils.restart_utils import (
     _apply_saved_train_cfg,
@@ -445,7 +444,7 @@ def train_all_phases(cfg: train_test_config_class):
     if cfg.nn_model.training.test is True:
         job_list.append({'skip': False, 'test': True, 'train_cfg': cfg.nn_model.training.main_training[-1], 'pre_train': False})
     logging.info('Created job list: {}'.format(job_list))
-    restart_state, restart_state_path = _load_restart_state_if_available(cfg)
+    restart_state, restart_state_path = _load_restart_state_if_available()
     job_start_idx = restart_state.job_idx if restart_state is not None else 0
     if restart_state is not None:
         if job_start_idx >= len(job_list):

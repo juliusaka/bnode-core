@@ -7,7 +7,6 @@ import os
 import random
 from typing import TYPE_CHECKING, Any
 
-import hydra
 import mlflow
 import numpy as np
 import torch
@@ -163,7 +162,7 @@ class LiveTrainingState:
                 name: _move_to_cpu(sched.state_dict())
                 for name, sched in self.lr_schedulers.items()
             }
-        ps = self.phase_state
+        phase_state = self.phase_state
         restart_state = TrainingRestartState(
             hydra_output_dir=str(self.hydra_output_dir.resolve()),
             restart_state_path=str(self.restart_manager_path.resolve()),
@@ -174,10 +173,10 @@ class LiveTrainingState:
             mlflow_tracking_uri=mlflow.get_tracking_uri(),
             mlflow_experiment_name=self.cfg.mlflow_experiment_name,
             job_idx=self.job_idx,
-            epoch_0=ps.phase_epoch_0,
+            epoch_0=phase_state.phase_epoch_0,
             next_epoch=next_epoch,
-            phase_epoch=next_epoch - ps.phase_epoch_0,
-            first_epoch_is_evaluation=ps.first_epoch_is_evaluation,
+            phase_epoch=next_epoch - phase_state.phase_epoch_0,
+            first_epoch_is_evaluation=phase_state.first_epoch_is_evaluation,
             current_model_path=str(self.path_current_model.resolve()),
             current_optimizer_path=(
                 str(self.path_current_optimizer.resolve())
@@ -208,13 +207,13 @@ class LiveTrainingState:
                 if self.early_stopping is not None
                 else {}
             ),
-            nan_counter=ps.nan_counter,
-            grad_norm_last_reduced_counter=ps.grad_norm_last_reduced_counter,
-            stable_epochs=ps.stable_epochs,
-            flag_out_of_seq_len_increase=ps.flag_out_of_seq_len_increase,
-            epoch_stop=ps.epoch_stop,
+            nan_counter=phase_state.nan_counter,
+            grad_norm_last_reduced_counter=phase_state.grad_norm_last_reduced_counter,
+            stable_epochs=phase_state.stable_epochs,
+            flag_out_of_seq_len_increase=phase_state.flag_out_of_seq_len_increase,
+            epoch_stop=phase_state.epoch_stop,
             rng_state=_move_to_cpu(capture_rng_state(self.cfg.use_cuda)),
-            deterministic_mode_active=ps.deterministic_mode_active,
+            deterministic_mode_active=phase_state.deterministic_mode_active,
             slurm_job_id=os.getenv("SLURM_JOB_ID"),
         )
         save_restart_state(self.restart_manager_path, restart_state)
@@ -359,15 +358,6 @@ def restore_rng_state(state: dict[str, Any], use_cuda: bool) -> None:
         torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
-def restart_state_path_from_cfg(cfg: Any, hydra_output_dir: Path | None = None) -> Path:
-    explicit = getattr(cfg, "restart_state_path", None)
-    if explicit is not None:
-        return Path(explicit)
-    if hydra_output_dir is None:
-        hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
-    return hydra_output_dir / RESTART_STATE_FILENAME
-
-
 def load_restart_state(path: Path) -> TrainingRestartState:
     payload = torch.load(path, map_location="cpu", weights_only=False)
     if not isinstance(payload, dict):
@@ -429,5 +419,4 @@ def apply_training_restart_state(
         early_stopping.load_state_dict(state.early_stopping_state)
 
     restore_rng_state(state.rng_state, use_cuda=use_cuda)
-
 

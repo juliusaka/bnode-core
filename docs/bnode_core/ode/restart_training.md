@@ -11,7 +11,7 @@ At the end of every completed training epoch, the trainer updates the current Hy
 - `optimizer.pt`: latest in-progress optimizer checkpoint
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
 
-If a restart artifact is incomplete or its schema/paths do not match the requested resume mode, the trainer fails loudly instead of silently starting over.
+If a restart artifact is incomplete or its schema/paths do not match the current Hydra run directory, the trainer fails loudly instead of silently starting over.
 
 ## Safe checkpoint behavior
 
@@ -31,6 +31,8 @@ trainer hydra.run.dir=outputs/2026-01-15/12-00-00/abc123 mlflow_tracking_uri=htt
 ```
 
 Use the same MLflow tracking URI / experiment as the original run. The restart bundle reopens the stored MLflow run ID; conflicting `mlflow_run_id`, experiment, or tracking URI settings are rejected.
+
+Resume only works from that original Hydra output directory. Pointing the trainer at a restart bundle from some other directory is rejected; there is no separate restart-state override path.
 
 ## Operational expectations
 

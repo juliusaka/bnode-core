@@ -6,12 +6,11 @@ import mlflow
 from pathlib import Path
 
 import bnode_core.filepaths as filepaths
-from bnode_core.config import train_test_config_class, base_training_settings_class
+from bnode_core.config import base_training_settings_class
 from bnode_core.ode.trainer_utils.restart_state import TrainingRestartState, load_restart_state
 
 
 def _load_restart_state_if_available(
-    cfg: train_test_config_class,
 ) -> tuple[TrainingRestartState | None, Path]:
     restart_state_path = filepaths.filepath_training_restart_state_current_hydra_output()
     if not restart_state_path.exists():
