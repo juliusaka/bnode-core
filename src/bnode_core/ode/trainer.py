@@ -162,7 +162,6 @@ import torch
 import hydra
 from pathlib import Path
 import numpy as np
-import mlflow
 import logging
 import shutil
 import h5py
@@ -189,11 +188,7 @@ from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
 from bnode_core.config import train_test_config_class, base_training_settings_class, get_config_store
 
 from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
-from bnode_core.utils.mlflow_helpers import (
-    _get_active_run_params,
-    _log_mlflow_param,
-    _set_mlflow_tag_if_active,
-)
+from bnode_core.utils.mlflow_proxy import mlflow_proxy
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     LiveTrainingState,
@@ -401,33 +396,20 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Start training all phases....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     logging.info('Using device: {}'.format(device))
-    existing_run_params = _get_active_run_params()
     
     # load hdf5 dataset
     hdf5_dataset, _ = load_dataset_and_config(cfg.dataset_name, cfg.dataset_path)
-    _log_mlflow_param(
-        'dataset_name',
-        cfg.dataset_name,
-        existing_params=existing_run_params,
-    )
+    mlflow_proxy.log_param('dataset_name', cfg.dataset_name)
 
     if cfg.dataset_norm_name is not None or cfg.dataset_norm_path is not None:
         hdf5_dataset_norm, _ = load_dataset_and_config(cfg.dataset_norm_name, cfg.dataset_norm_path)
-        _log_mlflow_param(
-            'dataset_norm_name',
-            cfg.dataset_norm_name,
-            existing_params=existing_run_params,
-        )
+        mlflow_proxy.log_param('dataset_norm_name', cfg.dataset_norm_name)
     else: 
         hdf5_dataset_norm = None
     
     if cfg.dataset_ref_name is not None or cfg.dataset_ref_path is not None:
         hdf5_dataset_ref, _ = load_dataset_and_config(cfg.dataset_ref_name, cfg.dataset_ref_path)
-        _log_mlflow_param(
-            'dataset_ref_name',
-            cfg.dataset_ref_name,
-            existing_params=existing_run_params,
-        )
+        mlflow_proxy.log_param('dataset_ref_name', cfg.dataset_ref_name)
     else:
         hdf5_dataset_ref = None
     
@@ -745,8 +727,8 @@ def train_all_phases(cfg: train_test_config_class):
                                     # log stats with logging
                                     logging.info('Stats for context {}: {}'.format(context, ret_vals))
                                     # log stats with mlflow
-                                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals, context), step=_epoch_0+1) 
-                                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals, '{}_final'.format(context)), step=_epoch_0+1)
+                                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, context), step=_epoch_0+1) 
+                                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, '{}_final'.format(context)), step=_epoch_0+1)
                                     # save loss function values
                                     if _save_predictions is True:
                                         for key, value in ret_vals.items():
@@ -776,7 +758,7 @@ def train_all_phases(cfg: train_test_config_class):
         _clear_restart_state(restart_state_path)
     except CheckpointRequestedExit as exc:
         logging.info('%s', exc)
-        _set_mlflow_tag_if_active('ended by', 'checkpoint request')
+        mlflow_proxy.set_tag_if_active('ended by', 'checkpoint request')
 
 
 def _next_batch(data_loader, iterator):
@@ -890,7 +872,7 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
             _time = pyTime.time()
         _flag_break_cuda_memory = False
         if live_state.cfg.use_cuda:
-            mlflow.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024^3), step=epoch)
+            mlflow_proxy.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024^3), step=epoch)
             if epoch_this_phase == 0:
                 if torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory:
                     _flag_break_cuda_memory = True
@@ -1015,7 +997,6 @@ def train_one_phase(
     logging.info('Start next training phase....')
     # Compute the phase anchor epoch needed to derive epoch_stop before phase_state exists.
     _phase_epoch_0 = restart_state.epoch_0 if restart_state is not None else epoch_0
-    existing_run_params = _get_active_run_params()
     
     if test is False:
         # Select optimizer based on config (default: Adam)
@@ -1105,11 +1086,7 @@ def train_one_phase(
                     _patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // _iters) 
                 else:
                     _patience = train_cfg.plateau_patience
-                _log_mlflow_param(
-                    'job {} LR scheduler patience'.format(job_idx),
-                    _patience,
-                    existing_params=existing_run_params,
-                )
+                mlflow_proxy.log_param('job {} LR scheduler patience'.format(job_idx), _patience)
                 lr_schedulers['plateau'] = ReduceLROnPlateau(
                     optimizer,
                     mode=train_cfg.plateau_mode,
@@ -1197,22 +1174,22 @@ def train_one_phase(
                 if _flag_max_epoch or _flag_early_stopping or _flag_break_after_loss_of or _flag_nan_counter:
                     if _flag_max_epoch:
                         logging.info('Reached max epochs')
-                        _set_mlflow_tag_if_active('job {} ended by'.format(job_idx), 'max epochs')
+                        mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), 'max epochs')
                     elif _flag_early_stopping:
                         logging.info("Early stopping")
-                        _set_mlflow_tag_if_active(
+                        mlflow_proxy.set_tag_if_active(
                             'job {} ended by'.format(job_idx),
                             'early stopping',
                         )
                     elif _flag_break_after_loss_of:
                         logging.info('Break phase after reaching loss level of {}'.format(train_cfg.break_after_loss_of))
-                        _set_mlflow_tag_if_active(
+                        mlflow_proxy.set_tag_if_active(
                             'job {} ended by'.format(job_idx),
                             'break after loss',
                         )
                     elif _flag_nan_counter:
                         logging.info('Break phase after 50 NaNs in loss')
-                        _set_mlflow_tag_if_active(
+                        mlflow_proxy.set_tag_if_active(
                             'job {} ended by'.format(job_idx),
                             '4 NaNs in loss',
                         )
@@ -1248,7 +1225,7 @@ def train_one_phase(
                                     model.load(path=_path_current_model, device=device)
                                     optimizer.load_state_dict(torch.load(_path_current_optimizer))
                                     logging.warning('Loss is NaN. Loaded last model and corresponding optimizer from {}'.format(_path_current_model))
-                                    mlflow.log_metric('loss_nan_reload', 1, step=epoch)
+                                    mlflow_proxy.log_metric('loss_nan_reload', 1, step=epoch)
                                     phase_state.grad_norm_last_reduced_counter += 1
                                 except:
                                     logging.error('Loss is NaN. Could not load last model and corresponding optimizer from {}'.format(_path_current_model))
@@ -1263,7 +1240,7 @@ def train_one_phase(
                                 model.load(path=_path_best_model, device=device)
                                 optimizer.load_state_dict(torch.load(_path_optimizer_best_model))
                                 logging.warning('Loss is NaN. Loaded last best model and corresponding optimizer from {}'.format(_path_best_model))
-                                mlflow.log_metric('loss_nan_reload', 1, step=epoch)
+                                mlflow_proxy.log_metric('loss_nan_reload', 1, step=epoch)
                                 if phase_state.nan_counter > 55:
                                     logging.error('Loss is NaN for more than 55 epochs, even after reloading last best model. Aborting training.')
                                     raise ValueError('Loss is NaN for more than 55 epochs, even after reloading last best model. Aborting training.')
@@ -1271,7 +1248,7 @@ def train_one_phase(
                             logging.warning('Loss is NaN. Continuing with current model and optimizer as reload_model_if_loss_nan is False')
                         phase_state.nan_counter += 1
                     else:
-                        mlflow.log_metric('loss_nan_reload', 0, step=epoch)
+                        mlflow_proxy.log_metric('loss_nan_reload', 0, step=epoch)
                         phase_state.nan_counter = 0
                         phase_state.grad_norm_last_reduced_counter = 0
                         model.save(path=_path_current_model)
@@ -1300,7 +1277,7 @@ def train_one_phase(
                     phase_state.first_epoch_is_evaluation = False # this is done later to log the final values of the last epoch of this phase
                     ret_vals_train['ode_calls_backward'] = 0 # to avoid error in logging
                     ret_vals_train['seq_len_now'] = train_cfg.seq_len_train # to better see in mlflow the change
-                mlflow.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train', pre_train), step=epoch)
+                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train', pre_train), step=epoch)
                 early_stopping_metric_name = None
                 try:
                     ret_vals_validation = test_or_validate_one_epoch(
@@ -1333,7 +1310,7 @@ def train_one_phase(
                             logging.info('\t \t \t Stable seq_len_increase epochs: {}/{}'.format(phase_state.stable_epochs, train_cfg.seq_len_increase_abort_after_n_stable_epochs))
                     else:
                         phase_state.stable_epochs = 0
-                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation', pre_train), step=epoch)
+                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation', pre_train), step=epoch)
                 except AssertionError as e:
                     if 'non-finite values in' in str(e):
                         logging.warning('Error in validation: {}'.format(e))
@@ -1357,7 +1334,7 @@ def train_one_phase(
                         ret_vals_test = {key: float('nan') for key in ret_vals_train.keys()} # to avoid error in logging
                     else:
                         raise e
-                mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
+                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
                 if dataloaders['ref'] is not None:
                     if epoch % cfg.nn_model.training.ref_and_testnorm_every_n_epochs == 0 or _flag_break_after_epoch or _flag_max_epoch or phase_state.first_epoch_is_evaluation:
                         try: 
@@ -1380,7 +1357,7 @@ def train_one_phase(
                                 raise e
                         _res = append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train)
                         logging.info(_res)
-                        mlflow.log_metrics(_res, step=epoch)
+                        mlflow_proxy.log_metrics(_res, step=epoch)
                 if dataloaders['testnorm'] is not None:
                     if epoch % cfg.nn_model.training.ref_and_testnorm_every_n_epochs == 0 or _flag_break_after_epoch or _flag_max_epoch or phase_state.first_epoch_is_evaluation:
                         try:
@@ -1403,19 +1380,19 @@ def train_one_phase(
                                 raise e
                         _res = append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train)
                         logging.info(_res)
-                        mlflow.log_metrics(_res, step=epoch)
-                mlflow.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
-                mlflow.log_metric('Stable_epochs', phase_state.stable_epochs, step=epoch)
+                        mlflow_proxy.log_metrics(_res, step=epoch)
+                mlflow_proxy.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
+                mlflow_proxy.log_metric('Stable_epochs', phase_state.stable_epochs, step=epoch)
                 _progress_string = model.get_progress_string(ret_vals_train, ret_vals_validation, ret_vals_test, pre_train)
                 logging.info('Epoch: {}/{} EarlyStopping: {}/{} |-| {}'.format(epoch+1, phase_state.epoch_stop, early_stopping.counter, early_stopping.patience, _progress_string))
                 if _flag_break_after_epoch is True:
-                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
-                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
-                    mlflow.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
                     if dataloaders['ref'] is not None:
-                        mlflow.log_metrics(append_context_to_dict_keys(ret_vals_ref, 'ref_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                        mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_ref, 'ref_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
                     if dataloaders['testnorm'] is not None:
-                        mlflow.log_metrics(append_context_to_dict_keys(ret_vals_testnorm, 'testnorm_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
+                        mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_testnorm, 'testnorm_job_{}_final'.format(job_idx-1), pre_train), step=epoch)
                     break
                 _batches_this_phase = (epoch - phase_state.phase_epoch_0 + 1)* _batches_per_epoch
                 # set early stopping active if seq_len_increase_in_batches is reached through flag and reset early stopping counter
@@ -1424,16 +1401,16 @@ def train_one_phase(
                         logging.info('Out of seq_len_increase_in_batches')
                         phase_state.flag_out_of_seq_len_increase = True
                         early_stopping.reset_counter()
-                mlflow.log_metric('EarlyStopping_counter', early_stopping.counter, step=epoch)
+                mlflow_proxy.log_metric('EarlyStopping_counter', early_stopping.counter, step=epoch)
                 if early_stopping.counter == 0:
-                    mlflow.log_metric('EarlyStopping_best_loss', early_stopping.best_score, step=epoch)
+                    mlflow_proxy.log_metric('EarlyStopping_best_loss', early_stopping.best_score, step=epoch)
                     if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
-                        mlflow.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
+                        mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
                 if restart_manager is not None:
                     live_state.save_checkpoint(epoch + 1)
         except KeyboardInterrupt:
             logging.info('Interrupted by user')
-            _set_mlflow_tag_if_active('ended by', 'keyboard interrupt')
+            mlflow_proxy.set_tag_if_active('ended by', 'keyboard interrupt')
             # load the last checkpoint with the best model
             try:
                 model.load(path=_path_best_model, device=device)
@@ -1448,7 +1425,7 @@ def train_one_phase(
                     except:
                         logging.warning('Could not load best model from {}'.format(_path_best_model))
             logging.info('loaded best model from {}'.format(_path_best_model))
-        mlflow.log_metric('job_{}_final_epoch'.format(job_idx), value=epoch)
+        mlflow_proxy.log_metric('job_{}_final_epoch'.format(job_idx), value=epoch)
     return epoch + 1
 
 def main():
