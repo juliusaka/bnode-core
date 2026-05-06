@@ -1082,6 +1082,200 @@ def append_context_to_dict_keys(dictionary: dict, context: str, pre_train: bool 
         else:
             return dict({'{}_{}'.format(key, context): value for key, value in dictionary.items()})
 
+
+def _compute_phase_epoch_settings(
+    dataloaders: dict,
+    train_cfg: base_training_settings_class,
+    pre_train: bool,
+) -> tuple[int, int, int]:
+    if pre_train is True:
+        batches_per_epoch = len(dataloaders['train'])
+        epochs_for_seq_len_increase = 0
+    else:
+        batches_per_epoch = len(dataloaders['train']) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
+        if train_cfg.seq_len_epoch_start is not None:
+            if train_cfg.seq_len_epoch_start < train_cfg.seq_len_train:
+                epochs_for_seq_len_increase = int(train_cfg.seq_len_increase_in_batches / batches_per_epoch)
+            else:
+                epochs_for_seq_len_increase = 0
+                train_cfg.seq_len_increase_in_batches = 0
+        else:
+            epochs_for_seq_len_increase = 0
+            train_cfg.seq_len_increase_in_batches = 0
+    max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
+    return batches_per_epoch, epochs_for_seq_len_increase, max_epochs
+
+
+def _build_phase_checkpoint_paths(pre_train: bool, job_idx: int) -> tuple[Path, Path, Path, Path]:
+    path_best_model = filepaths.filepath_pretrained_model_current_hydra_output() if pre_train is True else filepaths.filepath_model_current_hydra_output(job_idx)
+    path_optimizer_best_model = filepaths.filepath_optimizer_current_hydra_output() if pre_train is True else filepaths.filepath_optimizer_current_hydra_output(job_idx)
+    path_current_model = filepaths.filepath_model_current_hydra_output()
+    path_current_optimizer = filepaths.filepath_optimizer_current_hydra_output()
+    return path_best_model, path_optimizer_best_model, path_current_model, path_current_optimizer
+
+
+def _create_phase_optimizer(
+    model: torch.nn.Module,
+    train_cfg: base_training_settings_class,
+    pre_train: bool,
+    job_idx: int,
+):
+    optimizer_name_lower = train_cfg.optimizer.lower()
+    if optimizer_name_lower == 'adam':
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=train_cfg.lr_start,
+            weight_decay=train_cfg.weight_decay,
+            betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+        )
+    elif optimizer_name_lower == 'lbfgs':
+        optimizer = LBFGS(
+            model.parameters(),
+            lr=train_cfg.lr_start,
+            max_iter=train_cfg.lbfgs_max_iter,
+            history_size=train_cfg.lbfgs_history_size,
+            tolerance_grad=train_cfg.lbfgs_tolerance_grad,
+            tolerance_change=train_cfg.lbfgs_tolerance_change,
+            line_search_fn=train_cfg.lbfgs_line_search_fn,
+        )
+        logging.info('Using LBFGS optimizer')
+    else:
+        raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'lbfgs'.")
+    if pre_train is False and train_cfg.reload_optimizer is True:
+        try:
+            optimizer.load_state_dict(torch.load(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
+            logging.info('Reloaded optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = train_cfg.lr_start
+                logging.info('Set learning rate to {} after reloading optimizer'.format(train_cfg.lr_start))
+        except Exception:
+            logging.warning('Could not reload optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
+            logging.warning('Initializing optimizer with new parameters')
+    return optimizer
+
+
+def _create_phase_lr_schedulers(
+    train_cfg: base_training_settings_class,
+    optimizer,
+    batches_per_epoch: int,
+    job_idx: int,
+    pre_train: bool,
+    test: bool,
+):
+    lr_schedulers = {}
+    if test is False and pre_train is False and train_cfg.use_lr_scheduler:
+        if train_cfg.lr_scheduler_type == 'cosine':
+            if train_cfg.cosine_T_max is not None:
+                t_max_epochs = train_cfg.cosine_T_max
+            else:
+                t_max_epochs = max(1, train_cfg.max_epochs // 10)
+            t_max_batches = max(1, int(t_max_epochs * batches_per_epoch))
+            eta_min = train_cfg.cosine_eta_min
+            lr_schedulers['cosine'] = CosineAnnealingLR(optimizer, T_max=t_max_batches, eta_min=eta_min)
+            logging.info(f'Initialized cosine LR scheduler (per batch): T_max_batches={t_max_batches}, eta_min={eta_min}')
+        elif train_cfg.lr_scheduler_type == 'plateau':
+            if train_cfg.plateau_patience is None:
+                iters = lr_on_plateau_iterations_to_min_lr(
+                    lr_start=train_cfg.lr_start,
+                    lr_min=train_cfg.plateau_min_lr,
+                    factor=train_cfg.plateau_factor,
+                    eps=train_cfg.plateau_eps
+                )
+                iters = max(iters, 1)
+                patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // iters)
+            else:
+                patience = train_cfg.plateau_patience
+            mlflow_proxy.log_param('job {} LR scheduler patience'.format(job_idx), patience)
+            lr_schedulers['plateau'] = ReduceLROnPlateau(
+                optimizer,
+                mode=train_cfg.plateau_mode,
+                factor=train_cfg.plateau_factor,
+                patience=patience,
+                threshold=train_cfg.plateau_threshold,
+                threshold_mode=train_cfg.plateau_threshold_mode,
+                cooldown=train_cfg.plateau_cooldown,
+                min_lr=train_cfg.plateau_min_lr,
+                eps=train_cfg.plateau_eps,
+            )
+            logging.info('Initialized ReduceLROnPlateau LR scheduler: '
+                         f"mode={train_cfg.plateau_mode}, factor={train_cfg.plateau_factor}, "
+                         f"patience={patience}, threshold={train_cfg.plateau_threshold}, "
+                         f"threshold_mode={train_cfg.plateau_threshold_mode}, cooldown={train_cfg.plateau_cooldown}, "
+                         f"min_lr={train_cfg.plateau_min_lr}, eps={train_cfg.plateau_eps}")
+        else:
+            raise ValueError(f'LR scheduler type {train_cfg.lr_scheduler_type} not recognized')
+    if len(lr_schedulers) == 0:
+        return None
+    return lr_schedulers
+
+
+def _prepare_phase_runtime(
+    cfg: train_test_config_class,
+    model: torch.nn.Module,
+    dataloaders: dict,
+    train_cfg: base_training_settings_class,
+    test: bool,
+    pre_train: bool,
+    job_idx: int,
+    epoch_0: int,
+    restart_state: TrainingRestartState | None,
+    restart_manager: Path | None,
+) -> tuple[LiveTrainingState, int, int]:
+    device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
+    phase_epoch_0 = restart_state.epoch_0 if restart_state is not None else epoch_0
+    batches_per_epoch, epochs_for_seq_len_increase, max_epochs = _compute_phase_epoch_settings(
+        dataloaders,
+        train_cfg,
+        pre_train,
+    )
+    path_best_model, path_optimizer_best_model, path_current_model, path_current_optimizer = _build_phase_checkpoint_paths(
+        pre_train,
+        job_idx,
+    )
+    optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx)
+    early_stopping = EarlyStopping(
+        patience=train_cfg.early_stopping_patience,
+        verbose=True,
+        threshold=train_cfg.early_stopping_threshold,
+        threshold_mode=train_cfg.early_stopping_threshold_mode,
+        path=path_best_model,
+        optimizer_path=path_optimizer_best_model,
+        trace_func=logging.info,
+    )
+    scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
+    logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
+    lr_schedulers = _create_phase_lr_schedulers(
+        train_cfg,
+        optimizer,
+        batches_per_epoch,
+        job_idx,
+        pre_train,
+        test,
+    )
+    live_state = LiveTrainingState.create(
+        cfg=cfg,
+        model=model,
+        optimizer=optimizer,
+        lr_schedulers=lr_schedulers,
+        scaler=scaler,
+        early_stopping=early_stopping,
+        train_cfg=train_cfg,
+        job_idx=job_idx,
+        pre_train=pre_train,
+        device=device,
+        phase_epoch_0=phase_epoch_0,
+        max_epochs=max_epochs,
+        epochs_for_seq_len_increase=epochs_for_seq_len_increase,
+        path_best_model=path_best_model,
+        path_optimizer_best_model=path_optimizer_best_model,
+        path_current_model=path_current_model,
+        path_current_optimizer=path_current_optimizer,
+        hydra_output_dir=filepaths.dir_current_hydra_output(),
+        restart_manager_path=restart_manager,
+        restart_state=restart_state,
+    )
+    return live_state, max_epochs, batches_per_epoch
+
 def train_one_phase(
     cfg: train_test_config_class,
     model: torch.nn.Module,
@@ -1094,146 +1288,29 @@ def train_one_phase(
     restart_state: TrainingRestartState | None = None,
     restart_manager: Path | None = None,
 ):
-    device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     logging.info('Start next training phase....')
-    # Compute the phase anchor epoch needed to derive epoch_stop before phase_state exists.
-    _phase_epoch_0 = restart_state.epoch_0 if restart_state is not None else epoch_0
-    
     if test is False:
-        if pre_train is True:
-            _batches_per_epoch = len(dataloaders['train'])
-            epochs_for_seq_len_increase = 0
-        else:
-            _batches_per_epoch = len(dataloaders['train']) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
-            if train_cfg.seq_len_epoch_start is not None:
-                if train_cfg.seq_len_epoch_start < train_cfg.seq_len_train:
-                    epochs_for_seq_len_increase = int(train_cfg.seq_len_increase_in_batches / _batches_per_epoch)
-                else:
-                    epochs_for_seq_len_increase = 0
-                    train_cfg.seq_len_increase_in_batches = 0
-            else:
-                epochs_for_seq_len_increase = 0
-                train_cfg.seq_len_increase_in_batches = 0
-        max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
-        _path_best_model = filepaths.filepath_pretrained_model_current_hydra_output() if pre_train is True else filepaths.filepath_model_current_hydra_output(job_idx)
-        _path_optimizer_best_model = filepaths.filepath_optimizer_current_hydra_output() if pre_train is True else filepaths.filepath_optimizer_current_hydra_output(job_idx)
-        _path_current_model = filepaths.filepath_model_current_hydra_output() # contiuously updated
-        _path_current_optimizer = filepaths.filepath_optimizer_current_hydra_output() # contiuously updated
-
-        # Select optimizer based on config (default: Adam)
-        optimizer_name = train_cfg.optimizer
-        optimizer_name_lower = optimizer_name.lower()
-        if optimizer_name_lower == 'adam':
-            optimizer = torch.optim.Adam(
-                model.parameters(),
-                lr=train_cfg.lr_start,
-                weight_decay=train_cfg.weight_decay,
-                betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
-            )
-        elif optimizer_name_lower == 'lbfgs':
-            optimizer = LBFGS(
-                model.parameters(),
-                lr=train_cfg.lr_start,
-                max_iter=train_cfg.lbfgs_max_iter,
-                history_size=train_cfg.lbfgs_history_size,
-                tolerance_grad=train_cfg.lbfgs_tolerance_grad,
-                tolerance_change=train_cfg.lbfgs_tolerance_change,
-                line_search_fn=train_cfg.lbfgs_line_search_fn,
-            )
-            logging.info('Using LBFGS optimizer')
-        else:
-            raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'lbfgs'.")
-        if pre_train is False:
-            if train_cfg.reload_optimizer is True:
-                try:
-                    optimizer.load_state_dict(torch.load(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
-                    logging.info('Reloaded optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
-                    # set learning rate to start value
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = train_cfg.lr_start
-                        logging.info('Set learning rate to {} after reloading optimizer'.format(train_cfg.lr_start))
-                except:
-                    logging.warning('Could not reload optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
-                    logging.warning('Initializing optimizer with new parameters')
-        early_stopping = EarlyStopping(patience=train_cfg.early_stopping_patience, verbose=True, threshold=train_cfg.early_stopping_threshold,
-                                       threshold_mode=train_cfg.early_stopping_threshold_mode, path = _path_best_model, optimizer_path=_path_optimizer_best_model,
-                                         trace_func=logging.info)
-        scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
-        logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
-
-        # optional learning-rate scheduler(s) (per phase)
-        lr_schedulers = {}
-        if test is False and pre_train is False and train_cfg.use_lr_scheduler:
-            if train_cfg.lr_scheduler_type == 'cosine':
-                # user-facing T_max is in epochs; internally we schedule over batches
-                if train_cfg.cosine_T_max is not None:
-                    T_max_epochs = train_cfg.cosine_T_max
-                else:
-                    # default horizon: decay over first fifth of configured max_epochs
-                    T_max_epochs = max(1, train_cfg.max_epochs // 10)
-                T_max_batches = max(1, int(T_max_epochs * _batches_per_epoch))
-                eta_min = train_cfg.cosine_eta_min
-                lr_schedulers['cosine'] = CosineAnnealingLR(optimizer, T_max=T_max_batches, eta_min=eta_min)
-                logging.info(f'Initialized cosine LR scheduler (per batch): T_max_batches={T_max_batches}, eta_min={eta_min}')
-            elif train_cfg.lr_scheduler_type == 'plateau':
-                if train_cfg.plateau_patience is None:
-                    _iters = lr_on_plateau_iterations_to_min_lr(
-                        lr_start=train_cfg.lr_start,
-                        lr_min=train_cfg.plateau_min_lr,
-                        factor=train_cfg.plateau_factor,
-                        eps=train_cfg.plateau_eps
-                    )
-                    _iters = max(_iters, 1)
-                    _patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // _iters) 
-                else:
-                    _patience = train_cfg.plateau_patience
-                mlflow_proxy.log_param('job {} LR scheduler patience'.format(job_idx), _patience)
-                lr_schedulers['plateau'] = ReduceLROnPlateau(
-                    optimizer,
-                    mode=train_cfg.plateau_mode,
-                    factor=train_cfg.plateau_factor,
-                    patience=_patience,
-                    threshold=train_cfg.plateau_threshold,
-                    threshold_mode=train_cfg.plateau_threshold_mode,
-                    cooldown=train_cfg.plateau_cooldown,
-                    min_lr=train_cfg.plateau_min_lr,
-                    eps=train_cfg.plateau_eps,
-                )
-                logging.info('Initialized ReduceLROnPlateau LR scheduler: '
-                             f"mode={train_cfg.plateau_mode}, factor={train_cfg.plateau_factor}, "
-                             f"patience={_patience}, threshold={train_cfg.plateau_threshold}, "
-                             f"threshold_mode={train_cfg.plateau_threshold_mode}, cooldown={train_cfg.plateau_cooldown}, "
-                             f"min_lr={train_cfg.plateau_min_lr}, eps={train_cfg.plateau_eps}")
-            else:
-                raise ValueError(f'LR scheduler type {train_cfg.lr_scheduler_type} not recognized')
-        if len(lr_schedulers) == 0:
-            lr_schedulers = None
-        # Even during resume we can only fully restore the live state here,
-        # after this phase has created all runtime objects that are not present
-        # at the beginning of train_all_phases().
-        live_state = LiveTrainingState.create(
-            cfg=cfg,
-            model=model,
-            optimizer=optimizer,
-            lr_schedulers=lr_schedulers,
-            scaler=scaler,
-            early_stopping=early_stopping,
-            train_cfg=train_cfg,
-            job_idx=job_idx,
-            pre_train=pre_train,
-            device=device,
-            phase_epoch_0=_phase_epoch_0,
-            max_epochs=max_epochs,
-            epochs_for_seq_len_increase=epochs_for_seq_len_increase,
-            path_best_model=_path_best_model,
-            path_optimizer_best_model=_path_optimizer_best_model,
-            path_current_model=_path_current_model,
-            path_current_optimizer=_path_current_optimizer,
-            hydra_output_dir=filepaths.dir_current_hydra_output(),
-            restart_manager_path=restart_manager,
-            restart_state=restart_state,
+        live_state, max_epochs, _batches_per_epoch = _prepare_phase_runtime(
+            cfg,
+            model,
+            dataloaders,
+            train_cfg,
+            test,
+            pre_train,
+            job_idx,
+            epoch_0,
+            restart_state,
+            restart_manager,
         )
         phase_state = live_state.phase_state
+        device = live_state.device
+        optimizer = live_state.optimizer
+        early_stopping = live_state.early_stopping
+        lr_schedulers = live_state.lr_schedulers
+        _path_best_model = live_state.path_best_model
+        _path_optimizer_best_model = live_state.path_optimizer_best_model
+        _path_current_model = live_state.path_current_model
+        _path_current_optimizer = live_state.path_current_optimizer
         '''Training'''
         try:
             _flag_break_after_epoch = False

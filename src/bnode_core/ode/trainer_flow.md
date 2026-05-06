@@ -472,8 +472,8 @@ DONE: Split final test/export logic into a separate function. That will make the
 
 #TODO: Make the boundary between recreated inputs and checkpoint-worthy state explicit in one place, instead of scattering it across `train_all_phases()`, `train_one_phase()`, and `restart_state.py`.
 
-#TODO: In `train_one_phase()`, split setup from execution. A likely boundary is:
-#TODO: `prepare_phase_runtime(...)` -> build optimizer/schedulers/scaler/early_stopping/paths
+DONE: In `train_one_phase()`, split setup from execution enough to introduce a dedicated runtime-preparation helper.
+DONE: `prepare_phase_runtime(...)` -> build optimizer/schedulers/scaler/early_stopping/paths
 #TODO: `run_phase_epochs(...)` -> own the epoch loop only
 
 #TODO: Inside the epoch loop, extract smaller steps for:
