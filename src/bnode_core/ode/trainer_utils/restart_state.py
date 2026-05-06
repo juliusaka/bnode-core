@@ -351,8 +351,9 @@ class LiveTrainingState:
 
     Passed to the inner training functions (``train_one_epoch`` etc.) and used
     as the single source of truth for ``save_checkpoint``.  Unlike
-    ``TrainingRestartState``, this object is **not serialized** — it holds real
-    PyTorch objects whose ``.state_dict()`` is captured only when checkpointing.
+    ``InnerTrainingStateCheckpoint``, this object is **not serialized** — it
+    holds real PyTorch objects whose ``.state_dict()`` is captured only when
+    checkpointing.
 
     See ``docs/bnode_core/ode/restart_training.md`` for the full state model.
     """
@@ -553,7 +554,7 @@ class LiveTrainingState:
             use_cuda=self.cfg.use_cuda,
         )
         logging.info(
-            "Restored restart bundle for job %s at global epoch %s (phase epoch %s)",
+            "Restored inner restart checkpoint for job %s at global epoch %s (phase epoch %s)",
             self.job_idx,
             self.phase_state.epoch_start,
             restart_state.phase_epoch,
@@ -632,7 +633,7 @@ class LiveTrainingState:
 
 @dataclass
 class TrainingRestartState:
-    """Legacy monolithic restart checkpoint schema kept during migration.
+    """Legacy monolithic restart checkpoint schema kept for compatibility.
 
     See ``docs/bnode_core/ode/restart_training.md`` for how this persisted schema
     relates to ``TrainingPhaseState`` and ``LiveTrainingState``.
