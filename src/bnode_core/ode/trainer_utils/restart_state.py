@@ -169,6 +169,52 @@ class InnerTrainingStateCheckpoint:
         return state
 
 
+class OuterTrainingState:
+    """Live orchestration state for ``train_all_phases()``.
+
+    Keeps only long-lived outer-loop values and the optional restart metadata
+    needed to resume exactly one main-training job.
+    """
+
+    def __init__(
+        self,
+        *,
+        cfg: Any,
+        job_list: list[dict[str, Any]],
+        restart_state_path: Path,
+        restart_state: "TrainingRestartState | None" = None,
+    ) -> None:
+        self.cfg = cfg
+        self.job_list = job_list
+        self.restart_state_path = restart_state_path
+        self.restart_state = restart_state
+        self.job_start_idx = restart_state.job_idx if restart_state is not None else 0
+        self.next_epoch_anchor = restart_state.next_epoch if restart_state is not None else 0
+        self._validate_restart_target()
+
+    def _validate_restart_target(self) -> None:
+        if self.restart_state is None:
+            return
+        if self.job_start_idx >= len(self.job_list):
+            raise ValueError(
+                f"Restart state refers to job index {self.job_start_idx}, but only {len(self.job_list)} jobs exist."
+            )
+        target_job = self.job_list[self.job_start_idx]
+        if target_job["test"] or target_job["pre_train"]:
+            raise ValueError("Trainer restart currently supports main-training phases only.")
+
+    def restart_state_for_job(self, job_idx: int) -> "TrainingRestartState | None":
+        if self.restart_state is None or job_idx != self.job_start_idx:
+            return None
+        return self.restart_state
+
+    def consume_restart_state(self) -> None:
+        self.restart_state = None
+
+    def advance_to_next_epoch_anchor(self, next_epoch_anchor: int) -> None:
+        self.next_epoch_anchor = next_epoch_anchor
+
+
 @dataclass
 class TrainingPhaseState:
     """Mutable counters and flags for a single training phase.

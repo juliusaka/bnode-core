@@ -195,9 +195,8 @@ from bnode_core.ode.trainer_utils.restart_state import (
     TrainingRestartState,
 )
 from bnode_core.ode.trainer_utils.restart_utils import (
-    _apply_saved_train_cfg,
     _clear_restart_state,
-    _load_restart_state_if_available,
+    _load_outer_training_state,
 )
 
 
@@ -755,26 +754,16 @@ def train_all_phases(cfg: train_test_config_class):
     # runtime objects. train_one_phase() then binds optimizer/scaler/schedulers
     # explicitly before any checkpoint restore happens.
     # See docs/bnode_core/ode/restart_training.md for the full state model.
-    restart_state, restart_state_path = _load_restart_state_if_available()
-    job_start_idx = restart_state.job_idx if restart_state is not None else 0
-    # apply content from restart state, if we restart
-    if restart_state is not None:
-        if job_start_idx >= len(job_list):
-            raise ValueError(
-                f'Restart state refers to job index {job_start_idx}, but only {len(job_list)} jobs exist.'
-            )
-        if job_list[job_start_idx]['test'] or job_list[job_start_idx]['pre_train']:
-            raise ValueError('Trainer restart currently supports main-training phases only.')
-        job_list[job_start_idx]['train_cfg'] = _apply_saved_train_cfg( # TODO-CP: do we need to reload training config? This should not change!
-            job_list[job_start_idx]['train_cfg'],
-            restart_state.training_cfg_state,
-        )
+    outer_state = _load_outer_training_state(cfg=cfg, job_list=job_list)
 
     # outer-loop runtime values
     model_created = False
-    next_epoch_anchor = restart_state.next_epoch if restart_state is not None else 0
+    next_epoch_anchor = outer_state.next_epoch_anchor
     model = None
-    for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
+    for idx, job in enumerate(
+        outer_state.job_list[outer_state.job_start_idx:],
+        start=outer_state.job_start_idx,
+    ):
         retry_batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
         while True: # loop to catch memory errors
             try:
@@ -805,11 +794,7 @@ def train_all_phases(cfg: train_test_config_class):
                         logging.info('Skipping Train Job {} as trained model is loaded in following phases'.format(idx))
                 else:
                     if job['test'] is False:
-                        phase_restart_state = (
-                            restart_state
-                            if restart_state is not None and idx == restart_state.job_idx
-                            else None
-                        )
+                        phase_restart_state = outer_state.restart_state_for_job(idx)
                         live_state = _create_uninitialized_phase_state(
                             cfg,
                             dataloaders,
@@ -818,7 +803,7 @@ def train_all_phases(cfg: train_test_config_class):
                             idx,
                             next_epoch_anchor,
                             phase_restart_state,
-                            restart_state_path,
+                            outer_state.restart_state_path,
                         )
                         # train one phase
                         next_epoch_anchor = train_one_phase(
@@ -831,15 +816,16 @@ def train_all_phases(cfg: train_test_config_class):
                             idx,
                             next_epoch_anchor,
                             restart_state=phase_restart_state,
-                            restart_manager=restart_state_path,
+                            restart_manager=outer_state.restart_state_path,
                             live_state=live_state,
                         )
-                        restart_state = None
+                        outer_state.consume_restart_state()
+                        outer_state.advance_to_next_epoch_anchor(next_epoch_anchor)
                         # set seq_len_epoch_start for next job
-                        if len(job_list) > idx+1:
+                        if len(outer_state.job_list) > idx+1:
                             # consequently, seq_len_epoch_start should be seq_len_train
-                            job_list[idx+1]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train if job['pre_train'] is False else 1
-                            logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx+1]['train_cfg'].seq_len_epoch_start))
+                            outer_state.job_list[idx+1]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train if job['pre_train'] is False else 1
+                            logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(outer_state.job_list[idx+1]['train_cfg'].seq_len_epoch_start))
                     else:
                         _run_test_job(
                             cfg,
@@ -872,7 +858,7 @@ def train_all_phases(cfg: train_test_config_class):
                         torch.cuda.empty_cache()
                 else:
                     raise e
-    _clear_restart_state(restart_state_path)
+    _clear_restart_state(outer_state.restart_state_path)
 
 
 def _next_batch(data_loader, iterator):

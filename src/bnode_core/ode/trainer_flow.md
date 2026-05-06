@@ -468,7 +468,7 @@ DONE: Extract model setup / model reload decisions into a helper so the outer lo
 
 DONE: Split final test/export logic into a separate function. That will make the outer loop visibly branch into either `run_training_job(...)` or `run_test_job(...)`.
 
-#TODO (restart redesign): Introduce an explicit outer live state for `train_all_phases()` that owns only long-lived orchestration values such as `job_list`, current job index, shared model, and the next epoch anchor.
+DONE: Introduce an explicit outer live state for `train_all_phases()` that owns only long-lived orchestration values such as `job_list`, current job index, shared model, and the next epoch anchor.
 
 DONE: Make the boundary between recreated inputs and checkpoint-worthy state explicit in one place, instead of scattering it across `train_all_phases()`, `train_one_phase()`, and `restart_state.py`.
 

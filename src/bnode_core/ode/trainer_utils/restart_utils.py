@@ -7,7 +7,11 @@ from pathlib import Path
 
 import bnode_core.filepaths as filepaths
 from bnode_core.config import base_training_settings_class
-from bnode_core.ode.trainer_utils.restart_state import TrainingRestartState, load_restart_state
+from bnode_core.ode.trainer_utils.restart_state import (
+    OuterTrainingState,
+    TrainingRestartState,
+    load_restart_state,
+)
 
 
 def _load_restart_state_if_available(
@@ -45,6 +49,25 @@ def _apply_saved_train_cfg(
     for key, value in saved_cfg_state.items():
         setattr(restored, key, value)
     return restored
+
+
+def _load_outer_training_state(
+    *,
+    cfg,
+    job_list: list[dict],
+) -> OuterTrainingState:
+    restart_state, restart_state_path = _load_restart_state_if_available()
+    if restart_state is not None:
+        job_list[restart_state.job_idx]["train_cfg"] = _apply_saved_train_cfg(
+            job_list[restart_state.job_idx]["train_cfg"],
+            restart_state.training_cfg_state,
+        )
+    return OuterTrainingState(
+        cfg=cfg,
+        job_list=job_list,
+        restart_state_path=restart_state_path,
+        restart_state=restart_state,
+    )
 
 
 def _clear_restart_state(path: Path) -> None:
