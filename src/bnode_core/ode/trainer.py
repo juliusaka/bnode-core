@@ -770,9 +770,9 @@ def train_all_phases(cfg: train_test_config_class):
             restart_state.training_cfg_state,
         )
 
-    # flags
-    _created_model=False
-    _epoch_0 = restart_state.next_epoch if restart_state is not None else 0
+    # outer-loop runtime values
+    model_created = False
+    next_epoch_anchor = restart_state.next_epoch if restart_state is not None else 0
     model = None
     for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
         retry_batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
@@ -787,11 +787,11 @@ def train_all_phases(cfg: train_test_config_class):
                         hdf5_dataset_norm,
                         hdf5_dataset_ref,
                     )
-                    model, _created_model = _initialize_or_reload_model_for_job(
+                    model, model_created = _initialize_or_reload_model_for_job(
                         cfg,
                         job,
                         model,
-                        _created_model,
+                        model_created,
                         datasets,
                         hdf5_dataset,
                         hdf5_dataset_norm,
@@ -806,7 +806,7 @@ def train_all_phases(cfg: train_test_config_class):
                 else:
                     if job['test'] is False:
                         # train one phase
-                        _epoch_0 = train_one_phase(
+                        next_epoch_anchor = train_one_phase(
                             cfg,
                             model,
                             dataloaders,
@@ -814,7 +814,7 @@ def train_all_phases(cfg: train_test_config_class):
                             job['test'],
                             job['pre_train'],
                             idx,
-                            _epoch_0,
+                            next_epoch_anchor,
                             restart_state=restart_state if restart_state is not None and idx == restart_state.job_idx else None,
                             restart_manager=restart_state_path,
                         )
@@ -831,7 +831,7 @@ def train_all_phases(cfg: train_test_config_class):
                             dataloaders,
                             job,
                             device,
-                            _epoch_0,
+                            next_epoch_anchor,
                             hdf5_dataset,
                             hdf5_dataset_norm,
                             hdf5_dataset_ref,
@@ -1209,6 +1209,10 @@ def _create_phase_lr_schedulers(
     return lr_schedulers
 
 
+# Phase runtime ownership note for the refactor:
+# - recreated each run/phase: cfg-driven setup, datasets/dataloaders, epoch bounds, and checkpoint paths
+# - checkpoint-managed through LiveTrainingState: model/optimizer/lr_schedulers/scaler/early_stopping
+#   plus phase_state counters and flags
 def _prepare_phase_runtime(
     cfg: train_test_config_class,
     model: torch.nn.Module,
@@ -1638,7 +1642,7 @@ def train_one_phase(
 ):
     logging.info('Start next training phase....')
     if test is False:
-        live_state, max_epochs, _batches_per_epoch = _prepare_phase_runtime(
+        live_state, max_epochs, batches_per_epoch = _prepare_phase_runtime(
             cfg,
             model,
             dataloaders,
@@ -1652,13 +1656,8 @@ def train_one_phase(
         )
         phase_state = live_state.phase_state
         device = live_state.device
-        optimizer = live_state.optimizer
         early_stopping = live_state.early_stopping
-        lr_schedulers = live_state.lr_schedulers
-        _path_best_model = live_state.path_best_model
-        _path_optimizer_best_model = live_state.path_optimizer_best_model
-        _path_current_model = live_state.path_current_model
-        _path_current_optimizer = live_state.path_current_optimizer
+        best_model_path = live_state.path_best_model
         '''Training'''
         try:
             # persistent iterators over dataloaders per context across epochs
@@ -1672,10 +1671,10 @@ def train_one_phase(
                     job_idx,
                     train_cfg,
                     model,
-                    _path_best_model,
+                    best_model_path,
                     device,
                 )
-                _update_phase_epoch_stop_for_seq_len(live_state, _batches_per_epoch, epoch)
+                _update_phase_epoch_stop_for_seq_len(live_state, batches_per_epoch, epoch)
                 ret_vals_train, dataloader_iters = _run_training_epoch_or_eval_epoch(
                     live_state,
                     dataloaders,
@@ -1704,7 +1703,7 @@ def train_one_phase(
                     eval_results['early_stopping_metric_name'],
                     epoch,
                     flag_break_after_epoch,
-                    _batches_per_epoch,
+                    batches_per_epoch,
                 )
                 if should_break:
                     break
@@ -1714,18 +1713,18 @@ def train_one_phase(
             mlflow_proxy.set_tag_if_active('ended by', 'keyboard interrupt')
             # load the last checkpoint with the best model
             try:
-                model.load(path=_path_best_model, device=device)
+                model.load(path=best_model_path, device=device)
             except:
-                logging.warning('Could not load best model from {}'.format(_path_best_model))
+                logging.warning('Could not load best model from {}'.format(best_model_path))
                 for i in range(job_idx, 0):
-                    _path_best_model = filepaths.filepath_model_current_hydra_output(i)
+                    best_model_path = filepaths.filepath_model_current_hydra_output(i)
                     try:
-                        model.load(path=_path_best_model, device=device)
-                        logging.info('loaded best model from {}'.format(_path_best_model))
+                        model.load(path=best_model_path, device=device)
+                        logging.info('loaded best model from {}'.format(best_model_path))
                         break
                     except:
-                        logging.warning('Could not load best model from {}'.format(_path_best_model))
-            logging.info('loaded best model from {}'.format(_path_best_model))
+                        logging.warning('Could not load best model from {}'.format(best_model_path))
+            logging.info('loaded best model from {}'.format(best_model_path))
         mlflow_proxy.log_metric('job_{}_final_epoch'.format(job_idx), value=epoch)
     return epoch + 1
 

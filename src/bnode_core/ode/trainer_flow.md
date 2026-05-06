@@ -468,13 +468,13 @@ DONE: Extract model setup / model reload decisions into a helper so the outer lo
 
 DONE: Split final test/export logic into a separate function. That will make the outer loop visibly branch into either `run_training_job(...)` or `run_test_job(...)`.
 
-#TODO: Introduce an explicit outer live state for `train_all_phases()` that owns only long-lived orchestration values such as `job_list`, current job index, shared model, and the next epoch anchor.
+#TODO (restart redesign): Introduce an explicit outer live state for `train_all_phases()` that owns only long-lived orchestration values such as `job_list`, current job index, shared model, and the next epoch anchor.
 
 #TODO: Make the boundary between recreated inputs and checkpoint-worthy state explicit in one place, instead of scattering it across `train_all_phases()`, `train_one_phase()`, and `restart_state.py`.
 
 DONE: In `train_one_phase()`, split setup from execution enough to introduce a dedicated runtime-preparation helper.
 DONE: `prepare_phase_runtime(...)` -> build optimizer/schedulers/scaler/early_stopping/paths
-#TODO: `run_phase_epochs(...)` -> own the epoch loop only
+#TODO (optional follow-up): `run_phase_epochs(...)` can own the epoch loop later if we still want a thinner `train_one_phase()` after the restart redesign lands.
 
 DONE: Inside the epoch loop, extract smaller steps for:
 DONE: `compute_phase_stop_flags(...)`
@@ -484,9 +484,9 @@ DONE: `evaluate_phase_contexts(...)`
 DONE: `update_phase_control_state(...)`
 DONE: `save_phase_restart_checkpoint(...)`
 
-#TODO: Replace underscore-prefixed multi-purpose locals such as `_epoch_0`, `_phase_epoch_0`, `_flag_break_after_epoch`, and `_batches_this_phase` with named state fields or clearly scoped helper-return values.
+DONE: Replace underscore-prefixed multi-purpose locals such as `_epoch_0`, `_phase_epoch_0`, `_flag_break_after_epoch`, and `_batches_this_phase` with named state fields or clearly scoped helper-return values where that cleanup is already safe in the refactor pass.
 
-#TODO: Define one small section in code that lists "runtime-only fields" versus "checkpoint fields" so future restart work does not have to rediscover the save boundary by reading multiple functions.
+DONE: Define one small section in code that lists "runtime-only fields" versus "checkpoint fields" so future restart work does not have to rediscover the save boundary by reading multiple functions.
 
 #TODO: Avoid mutating `train_cfg` in many places during execution unless the mutation is part of explicit phase state. If a mutation must survive resume, it should be represented as saved state; otherwise it should stay local.
 
