@@ -474,6 +474,7 @@ DONE: Make the boundary between recreated inputs and checkpoint-worthy state exp
 
 DONE: In `train_one_phase()`, split setup from execution enough to introduce a dedicated runtime-preparation helper.
 DONE: `prepare_phase_runtime(...)` -> build optimizer/schedulers/scaler/early_stopping/paths
+DONE: Create the phase-local live state before runtime-object creation, then bind optimizer/scheduler/scaler/early-stopping objects explicitly before checkpoint restore.
 #TODO (optional follow-up): `run_phase_epochs(...)` can own the epoch loop later if we still want a thinner `train_one_phase()` after the restart redesign lands.
 
 DONE: Inside the epoch loop, extract smaller steps for:

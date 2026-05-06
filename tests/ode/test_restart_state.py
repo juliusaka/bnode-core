@@ -277,7 +277,7 @@ def test_restart_state_rejects_schema_mismatch(tmp_path):
         load_restart_state(restart_path)
 
 
-def test_live_training_state_create_restores_runtime_state(tmp_path):
+def test_live_training_state_bind_runtime_objects_restores_runtime_state(tmp_path):
     hydra_output_dir = tmp_path / "hydra-run"
     hydra_output_dir.mkdir()
     restart_path = hydra_output_dir / RESTART_STATE_FILENAME
@@ -359,19 +359,15 @@ def test_live_training_state_create_restores_runtime_state(tmp_path):
         trace_func=lambda *_args, **_kwargs: None,
     )
 
-    live_state = LiveTrainingState.create(
+    live_state = LiveTrainingState.create_uninitialized(
         cfg=SimpleNamespace(mlflow_experiment_name="restart-tests", use_cuda=False),
-        model=restored_model,
-        optimizer=restored_optimizer,
-        lr_schedulers={"cosine": restored_scheduler},
-        scaler=restored_scaler,
-        early_stopping=restored_early_stopping,
         train_cfg=SimpleNamespace(),
         job_idx=2,
         pre_train=False,
         device=torch.device("cpu"),
         phase_epoch_0=restart_state.epoch_0,
         max_epochs=11,
+        batches_per_epoch=7,
         epochs_for_seq_len_increase=0,
         path_best_model=Path(restart_state.best_model_path),
         path_optimizer_best_model=Path(restart_state.best_optimizer_path),
@@ -379,6 +375,20 @@ def test_live_training_state_create_restores_runtime_state(tmp_path):
         path_current_optimizer=Path(restart_state.current_optimizer_path),
         hydra_output_dir=hydra_output_dir,
         restart_manager_path=restart_path,
+        restart_state=restart_state,
+    )
+
+    assert live_state.model is None
+    assert live_state.optimizer is None
+    assert live_state.batches_per_epoch == 7
+    assert live_state.phase_state.epoch_start == restart_state.next_epoch
+
+    live_state.bind_runtime_objects(
+        model=restored_model,
+        optimizer=restored_optimizer,
+        lr_schedulers={"cosine": restored_scheduler},
+        scaler=restored_scaler,
+        early_stopping=restored_early_stopping,
         restart_state=restart_state,
     )
 

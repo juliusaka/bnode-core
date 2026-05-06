@@ -260,7 +260,7 @@ class LiveTrainingState:
         self,
         *,
         cfg: Any,
-        model: torch.nn.Module,
+        model: torch.nn.Module | None,
         optimizer: torch.optim.Optimizer | None,
         lr_schedulers: dict | None,
         scaler: GradScaler | None,
@@ -276,6 +276,8 @@ class LiveTrainingState:
         path_current_optimizer: Path,
         hydra_output_dir: Path,
         restart_manager_path: Path | None,
+        max_epochs: int,
+        batches_per_epoch: int | None = None,
     ) -> None:
         self.cfg = cfg
         self.model = model
@@ -294,23 +296,21 @@ class LiveTrainingState:
         self.path_current_optimizer = path_current_optimizer
         self.hydra_output_dir = hydra_output_dir
         self.restart_manager_path = restart_manager_path
+        self.max_epochs = max_epochs
+        self.batches_per_epoch = batches_per_epoch
 
     @classmethod
-    def create(
+    def create_uninitialized(
         cls,
         *,
         cfg: Any,
-        model: torch.nn.Module,
-        optimizer: torch.optim.Optimizer | None,
-        lr_schedulers: dict | None,
-        scaler: GradScaler | None,
-        early_stopping: Any | None,
         train_cfg: Any,
         job_idx: int,
         pre_train: bool,
         device: torch.device,
         phase_epoch_0: int,
         max_epochs: int,
+        batches_per_epoch: int | None,
         epochs_for_seq_len_increase: int,
         path_best_model: Path,
         path_optimizer_best_model: Path,
@@ -336,11 +336,11 @@ class LiveTrainingState:
 
         live_state = cls(
             cfg=cfg,
-            model=model,
-            optimizer=optimizer,
-            lr_schedulers=lr_schedulers,
-            scaler=scaler,
-            early_stopping=early_stopping,
+            model=None,
+            optimizer=None,
+            lr_schedulers=None,
+            scaler=None,
+            early_stopping=None,
             train_cfg=train_cfg,
             job_idx=job_idx,
             pre_train=pre_train,
@@ -352,12 +352,86 @@ class LiveTrainingState:
             path_current_optimizer=path_current_optimizer,
             hydra_output_dir=hydra_output_dir,
             restart_manager_path=restart_manager_path,
+            max_epochs=max_epochs,
+            batches_per_epoch=batches_per_epoch,
         )
+        return live_state
+
+    def bind_runtime_objects(
+        self,
+        *,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer | None,
+        lr_schedulers: dict | None,
+        scaler: GradScaler | None,
+        early_stopping: Any | None,
+        restart_state: "TrainingRestartState | None" = None,
+    ) -> None:
+        self.model = model
+        self.optimizer = optimizer
+        self.lr_schedulers = lr_schedulers
+        self.scaler = scaler
+        self.early_stopping = early_stopping
         if restart_state is not None:
-            live_state.load_checkpoint(restart_state)
+            self.load_checkpoint(restart_state)
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        cfg: Any,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer | None,
+        lr_schedulers: dict | None,
+        scaler: GradScaler | None,
+        early_stopping: Any | None,
+        train_cfg: Any,
+        job_idx: int,
+        pre_train: bool,
+        device: torch.device,
+        phase_epoch_0: int,
+        max_epochs: int,
+        epochs_for_seq_len_increase: int,
+        path_best_model: Path,
+        path_optimizer_best_model: Path,
+        path_current_model: Path,
+        path_current_optimizer: Path,
+        hydra_output_dir: Path,
+        restart_manager_path: Path | None,
+        restart_state: "TrainingRestartState | None" = None,
+        batches_per_epoch: int | None = None,
+    ) -> "LiveTrainingState":
+        live_state = cls.create_uninitialized(
+            cfg=cfg,
+            train_cfg=train_cfg,
+            job_idx=job_idx,
+            pre_train=pre_train,
+            device=device,
+            phase_epoch_0=phase_epoch_0,
+            max_epochs=max_epochs,
+            batches_per_epoch=batches_per_epoch,
+            epochs_for_seq_len_increase=epochs_for_seq_len_increase,
+            path_best_model=path_best_model,
+            path_optimizer_best_model=path_optimizer_best_model,
+            path_current_model=path_current_model,
+            path_current_optimizer=path_current_optimizer,
+            hydra_output_dir=hydra_output_dir,
+            restart_manager_path=restart_manager_path,
+            restart_state=restart_state,
+        )
+        live_state.bind_runtime_objects(
+            model=model,
+            optimizer=optimizer,
+            lr_schedulers=lr_schedulers,
+            scaler=scaler,
+            early_stopping=early_stopping,
+            restart_state=restart_state,
+        )
         return live_state
 
     def load_checkpoint(self, restart_state: "TrainingRestartState") -> None:
+        if self.model is None:
+            raise ValueError("Cannot load checkpoint before binding runtime model")
         if restart_state.job_idx != self.job_idx:
             raise ValueError(
                 f"Restart state job_idx {restart_state.job_idx} does not match current job {self.job_idx}."
@@ -387,6 +461,8 @@ class LiveTrainingState:
         """
         if self.restart_manager_path is None:
             return
+        if self.model is None:
+            raise ValueError("Cannot save checkpoint before binding runtime model")
         self.model.save(self.path_current_model)
         if self.optimizer is not None:
             torch.save(self.optimizer.state_dict(), self.path_current_optimizer)

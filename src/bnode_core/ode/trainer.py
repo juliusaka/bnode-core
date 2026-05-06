@@ -750,10 +750,10 @@ def train_all_phases(cfg: train_test_config_class):
     # restart logic
 
     # We inspect the serialized restart checkpoint here only to decide where the
-    # outer job loop resumes. A full LiveTrainingState cannot be materialized at
-    # this point yet because the selected phase has not created its model,
-    # optimizer, schedulers, scaler, early-stopping helper, and paths.
-    # The live runtime state is created and fully restored inside train_one_phase().
+    # outer job loop resumes. Once the selected phase has its dataloaders and
+    # checkpoint paths, we create the phase-local LiveTrainingState without
+    # runtime objects. train_one_phase() then binds optimizer/scaler/schedulers
+    # explicitly before any checkpoint restore happens.
     # See docs/bnode_core/ode/restart_training.md for the full state model.
     restart_state, restart_state_path = _load_restart_state_if_available()
     job_start_idx = restart_state.job_idx if restart_state is not None else 0
@@ -805,6 +805,21 @@ def train_all_phases(cfg: train_test_config_class):
                         logging.info('Skipping Train Job {} as trained model is loaded in following phases'.format(idx))
                 else:
                     if job['test'] is False:
+                        phase_restart_state = (
+                            restart_state
+                            if restart_state is not None and idx == restart_state.job_idx
+                            else None
+                        )
+                        live_state = _create_uninitialized_phase_state(
+                            cfg,
+                            dataloaders,
+                            job['train_cfg'],
+                            job['pre_train'],
+                            idx,
+                            next_epoch_anchor,
+                            phase_restart_state,
+                            restart_state_path,
+                        )
                         # train one phase
                         next_epoch_anchor = train_one_phase(
                             cfg,
@@ -815,8 +830,9 @@ def train_all_phases(cfg: train_test_config_class):
                             job['pre_train'],
                             idx,
                             next_epoch_anchor,
-                            restart_state=restart_state if restart_state is not None and idx == restart_state.job_idx else None,
+                            restart_state=phase_restart_state,
                             restart_manager=restart_state_path,
+                            live_state=live_state,
                         )
                         restart_state = None
                         # set seq_len_epoch_start for next job
@@ -1224,7 +1240,60 @@ def _prepare_phase_runtime(
     epoch_0: int,
     restart_state: TrainingRestartState | None,
     restart_manager: Path | None,
-) -> tuple[LiveTrainingState, int, int]:
+    live_state: LiveTrainingState | None = None,
+) -> LiveTrainingState:
+    if live_state is None:
+        live_state = _create_uninitialized_phase_state(
+            cfg,
+            dataloaders,
+            train_cfg,
+            pre_train,
+            job_idx,
+            epoch_0,
+            restart_state,
+            restart_manager,
+        )
+    optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx)
+    early_stopping = EarlyStopping(
+        patience=train_cfg.early_stopping_patience,
+        verbose=True,
+        threshold=train_cfg.early_stopping_threshold,
+        threshold_mode=train_cfg.early_stopping_threshold_mode,
+        path=live_state.path_best_model,
+        optimizer_path=live_state.path_optimizer_best_model,
+        trace_func=logging.info,
+    )
+    scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
+    logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
+    lr_schedulers = _create_phase_lr_schedulers(
+        train_cfg,
+        optimizer,
+        live_state.batches_per_epoch or 1,
+        job_idx,
+        pre_train,
+        test,
+    )
+    live_state.bind_runtime_objects(
+        model=model,
+        optimizer=optimizer,
+        lr_schedulers=lr_schedulers,
+        scaler=scaler,
+        early_stopping=early_stopping,
+        restart_state=restart_state,
+    )
+    return live_state
+
+
+def _create_uninitialized_phase_state(
+    cfg: train_test_config_class,
+    dataloaders: dict,
+    train_cfg: base_training_settings_class,
+    pre_train: bool,
+    job_idx: int,
+    epoch_0: int,
+    restart_state: TrainingRestartState | None,
+    restart_manager: Path | None,
+) -> LiveTrainingState:
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     phase_epoch_0 = restart_state.epoch_0 if restart_state is not None else epoch_0
     batches_per_epoch, epochs_for_seq_len_increase, max_epochs = _compute_phase_epoch_settings(
@@ -1236,39 +1305,15 @@ def _prepare_phase_runtime(
         pre_train,
         job_idx,
     )
-    optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx)
-    early_stopping = EarlyStopping(
-        patience=train_cfg.early_stopping_patience,
-        verbose=True,
-        threshold=train_cfg.early_stopping_threshold,
-        threshold_mode=train_cfg.early_stopping_threshold_mode,
-        path=path_best_model,
-        optimizer_path=path_optimizer_best_model,
-        trace_func=logging.info,
-    )
-    scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
-    logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
-    lr_schedulers = _create_phase_lr_schedulers(
-        train_cfg,
-        optimizer,
-        batches_per_epoch,
-        job_idx,
-        pre_train,
-        test,
-    )
-    live_state = LiveTrainingState.create(
+    return LiveTrainingState.create_uninitialized(
         cfg=cfg,
-        model=model,
-        optimizer=optimizer,
-        lr_schedulers=lr_schedulers,
-        scaler=scaler,
-        early_stopping=early_stopping,
         train_cfg=train_cfg,
         job_idx=job_idx,
         pre_train=pre_train,
         device=device,
         phase_epoch_0=phase_epoch_0,
         max_epochs=max_epochs,
+        batches_per_epoch=batches_per_epoch,
         epochs_for_seq_len_increase=epochs_for_seq_len_increase,
         path_best_model=path_best_model,
         path_optimizer_best_model=path_optimizer_best_model,
@@ -1278,7 +1323,6 @@ def _prepare_phase_runtime(
         restart_manager_path=restart_manager,
         restart_state=restart_state,
     )
-    return live_state, max_epochs, batches_per_epoch
 
 
 def _compute_phase_stop_flags(
@@ -1639,25 +1683,45 @@ def train_one_phase(
     epoch_0: int = 0,
     restart_state: TrainingRestartState | None = None,
     restart_manager: Path | None = None,
+    live_state: LiveTrainingState | None = None,
 ):
     logging.info('Start next training phase....')
     if test is False:
-        live_state, max_epochs, batches_per_epoch = _prepare_phase_runtime(
-            cfg,
-            model,
-            dataloaders,
-            train_cfg,
-            test,
-            pre_train,
-            job_idx,
-            epoch_0,
-            restart_state,
-            restart_manager,
-        )
+        if live_state is None:
+            live_state = _prepare_phase_runtime(
+                cfg,
+                model,
+                dataloaders,
+                train_cfg,
+                test,
+                pre_train,
+                job_idx,
+                epoch_0,
+                restart_state,
+                restart_manager,
+            )
+        else:
+            live_state = _prepare_phase_runtime(
+                cfg,
+                model,
+                dataloaders,
+                live_state.train_cfg,
+                test,
+                live_state.pre_train,
+                live_state.job_idx,
+                live_state.phase_state.phase_epoch_0,
+                restart_state,
+                restart_manager,
+                live_state=live_state,
+            )
         phase_state = live_state.phase_state
         device = live_state.device
         early_stopping = live_state.early_stopping
         best_model_path = live_state.path_best_model
+        max_epochs = live_state.max_epochs
+        batches_per_epoch = live_state.batches_per_epoch
+        if early_stopping is None or batches_per_epoch is None:
+            raise ValueError("Phase runtime objects were not fully initialized")
         '''Training'''
         try:
             # persistent iterators over dataloaders per context across epochs
