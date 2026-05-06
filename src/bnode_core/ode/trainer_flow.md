@@ -460,11 +460,11 @@ Fields that are currently saved but do not fit the target checkpoint boundary:
 
 ## Refactor notes before the restart redesign
 
-#TODO: Extract job-list construction from `train_all_phases()` into one helper that returns an explicit outer workflow description.
+DONE: Extract job-list construction from `train_all_phases()` into one helper that returns an explicit outer workflow description.
 
-#TODO: Extract dataset and dataloader creation into a dedicated per-job setup function so the outer loop only orchestrates jobs instead of building data structures inline.
+DONE: Extract dataset and dataloader creation into a dedicated per-job setup function so the outer loop only orchestrates jobs instead of building data structures inline.
 
-#TODO: Extract model setup / model reload decisions into a helper so the outer loop does not mix "create model once" and "load model for this job" logic.
+DONE: Extract model setup / model reload decisions into a helper so the outer loop does not mix "create model once" and "load model for this job" logic.
 
 #TODO: Split final test/export logic into a separate function. That will make the outer loop visibly branch into either `run_training_job(...)` or `run_test_job(...)`.
 

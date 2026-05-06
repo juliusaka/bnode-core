@@ -190,7 +190,6 @@ from bnode_core.config import train_test_config_class, base_training_settings_cl
 from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 from bnode_core.utils.mlflow_proxy import mlflow_proxy
 from bnode_core.ode.trainer_utils.restart_state import (
-    CheckpointRequestedExit,
     LiveTrainingState,
     TrainingRestartState,
 )
@@ -334,6 +333,200 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
     return model
 
 
+def _build_job_list(cfg: train_test_config_class) -> list[dict]:
+    """Build the ordered outer training workflow."""
+    job_list = []
+    job_list.append({
+        'skip': not cfg.nn_model.training.pre_train
+        or cfg.nn_model.training.load_pretrained_model
+        or cfg.nn_model.training.load_trained_model_for_test,
+        'test': False,
+        'train_cfg': cfg.nn_model.training.pre_training,
+        'pre_train': True,
+    })
+    for main_train_cfg in cfg.nn_model.training.main_training:
+        job_list.append({
+            'skip': cfg.nn_model.training.load_trained_model_for_test,
+            'test': False,
+            'train_cfg': main_train_cfg,
+            'pre_train': False,
+        })
+    if cfg.nn_model.training.test is True:
+        job_list.append({
+            'skip': False,
+            'test': True,
+            'train_cfg': cfg.nn_model.training.main_training[-1],
+            'pre_train': False,
+        })
+    return job_list
+
+
+def _log_job_start(idx: int, job: dict) -> None:
+    if job['pre_train'] is True:
+        logging.info('Starting Pre-Training with settings {}'.format(job['train_cfg']))
+    elif job['test'] is True:
+        logging.info('Starting Testing with settings {}'.format(job['train_cfg']))
+    else:
+        logging.info('Starting Train Job {} with settings {}'.format(idx, job['train_cfg']))
+
+
+def _job_dataset_loading_settings(job: dict) -> tuple[int | None, int | None, int | None, int | None]:
+    if job['pre_train'] is True:
+        load_seq_len = job['train_cfg'].load_seq_len
+        seq_len_batches = 1
+        stride_valid_test = seq_len_batches if seq_len_batches is not None else None
+        max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
+    elif job['test'] is True:
+        load_seq_len = None
+        seq_len_batches = None
+        stride_valid_test = 1
+        max_samples_valid = None
+    else:
+        load_seq_len = job['train_cfg'].load_seq_len
+        seq_len_batches = job['train_cfg'].seq_len_train
+        stride_valid_test = seq_len_batches if seq_len_batches is not None else None
+        # we later set the batch size for validation and test to be 4 times
+        # higher then for training (less memory as no backprop),
+        # so this is a quarter in terms of batches of train.
+        max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
+    return load_seq_len, seq_len_batches, stride_valid_test, max_samples_valid
+
+
+def _create_datasets_and_dataloaders_for_job(
+    cfg: train_test_config_class,
+    job: dict,
+    idx: int,
+    hdf5_dataset: hdf5_dataset_class,
+    hdf5_dataset_norm: hdf5_dataset_class | None,
+    hdf5_dataset_ref: hdf5_dataset_class | None,
+) -> tuple[dict, dict, int]:
+    _log_job_start(idx, job)
+    load_seq_len, seq_len_batches, stride_valid_test, max_samples_valid = _job_dataset_loading_settings(job)
+    datasets = {}
+    for context in ['train', 'test', 'validation', 'common_test']:
+        stride = 1 if context == 'train' else stride_valid_test
+        max_samples = None if context != 'validation' else max_samples_valid
+        datasets[context] = make_stacked_dataset(
+            hdf5_dataset,
+            context,
+            load_seq_len,
+            seq_len_batches,
+            stride=stride,
+            max_samples=max_samples,
+        )
+    if hdf5_dataset_norm is not None:
+        datasets['testnorm'] = make_stacked_dataset(
+            hdf5_dataset_norm,
+            'test',
+            load_seq_len,
+            seq_len_batches,
+            stride=stride_valid_test,
+        )
+    else:
+        datasets['testnorm'] = None
+    if hdf5_dataset_ref is not None:
+        datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
+    else:
+        datasets['ref'] = None
+
+    drop_last = job['test'] is False
+    shuffle = job['test'] is False
+    dataloaders = {}
+    batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+    batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+    for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
+        batch_size = batch_size_valid_test if context in ['validation', 'test', 'testnorm'] else batch_size_train
+        if context == 'testnorm' and datasets[context] is None:
+            dataloaders[context] = None
+            continue
+        if job['test'] is True and len(datasets[context]) == 0:  # when only testing, datasets can be empty
+            # TODO: I believe this is never reached
+            dataloaders[context] = None
+            logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
+            continue
+        num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
+        if batch_size > len(datasets[context]):
+            batch_size_here = len(datasets[context])
+            logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(batch_size, len(datasets[context]), context, batch_size_here))
+        else:
+            batch_size_here = batch_size
+        if len(datasets[context]) == 0:
+            raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
+        dataloaders[context] = torch.utils.data.DataLoader(
+            datasets[context],
+            batch_size=batch_size_here,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            persistent_workers=True if num_workers > 0 else False,
+            pin_memory=True,
+            # multiprocessing_context='fork',
+            drop_last=drop_last,
+            prefetch_factor=cfg.prefetch_factor,
+            collate_fn=timeseries_collate_fn,
+        )
+    if datasets['ref'] is not None:
+        dataloaders['ref'] = torch.utils.data.DataLoader(
+            datasets['ref'],
+            batch_size=len(datasets['ref']),
+            shuffle=False,
+            num_workers=1 if cfg.n_workers_other_loaders > 0 else 0,
+            persistent_workers=True if cfg.n_workers_other_loaders > 0 else False,
+            pin_memory=True,
+            drop_last=False,
+            prefetch_factor=cfg.prefetch_factor,
+            collate_fn=timeseries_collate_fn,
+        )
+    else:
+        dataloaders['ref'] = None
+    if 'seq_len' in datasets['train'].__dict__.keys():  # for custom dataset (with map)
+        job['train_cfg'].seq_len_train = datasets['train'].seq_len
+    else:
+        job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
+    return datasets, dataloaders, batch_size_valid_test
+
+
+def _initialize_or_reload_model_for_job(
+    cfg: train_test_config_class,
+    job: dict,
+    model,
+    model_created: bool,
+    datasets: dict,
+    hdf5_dataset: hdf5_dataset_class,
+    hdf5_dataset_norm: hdf5_dataset_class | None,
+    device: torch.device,
+):
+    created_model_this_job = False
+    if model_created is False:
+        try:
+            model = initialize_model(
+                cfg,
+                datasets['train'],
+                hdf5_dataset_norm if hdf5_dataset_norm is not None else hdf5_dataset,
+            )
+        except Exception as e:
+            logging.error('Error during model initialization: {}'.format(e))
+            logging.error('Maybe dataset and dataset_norm are not compatible?')
+            raise e
+        model_created, created_model_this_job = True, True
+
+    if cfg.nn_model.training.load_pretrained_model is True and created_model_this_job is True:
+        path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_pretrained_model)
+        model.load(path=path, device=device)
+        logging.info('Loaded pretrained model from {}'.format(path))
+        if cfg.nn_model.training.pre_trained_model_seq_len is not None:
+            job['train_cfg'].seq_len_epoch_start = cfg.nn_model.training.pre_trained_model_seq_len
+            logging.info('Set seq_len_epoch_start for next job to {}'.format(cfg.nn_model.training.pre_trained_model_seq_len))
+        else:
+            job['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train
+            logging.info('Set seq_len_epoch_start for this job to seq_len_train {} as no pre_trained_model_seq_len is given in config'.format(job['train_cfg'].seq_len_train))
+
+    if cfg.nn_model.training.load_trained_model_for_test is True:
+        path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_trained_model)
+        model.load(path=path, device=device)
+        logging.info('Loaded trained model from {}'.format(path))
+    return model, model_created
+
+
 @log_hydra_to_mlflow
 def train_all_phases(cfg: train_test_config_class):
     """Execute complete multi-phase training pipeline with MLflow tracking.
@@ -414,18 +607,8 @@ def train_all_phases(cfg: train_test_config_class):
         hdf5_dataset_ref = None
     
     # collect jobs
-
     # job_list=[] filled with dict of style: {'skip': bool, 'test': bool, 'train_cfg': cfg, 'pre_train': bool}
-    job_list = []
-    # pre-training
-    job_list.append({'skip': not cfg.nn_model.training.pre_train or cfg.nn_model.training.load_pretrained_model or cfg.nn_model.training.load_trained_model_for_test,
-                     'test': False, 'train_cfg': cfg.nn_model.training.pre_training, 'pre_train': True})
-    # main training
-    for idx, main_train_cfg in enumerate(cfg.nn_model.training.main_training):
-        job_list.append({'skip': cfg.nn_model.training.load_trained_model_for_test, 'test': False, 'train_cfg': main_train_cfg, 'pre_train': False})
-    # test
-    if cfg.nn_model.training.test is True:
-        job_list.append({'skip': False, 'test': True, 'train_cfg': cfg.nn_model.training.main_training[-1], 'pre_train': False})
+    job_list = _build_job_list(cfg)
     logging.info('Created job list: {}'.format(job_list))
 
     # restart logic
@@ -454,147 +637,30 @@ def train_all_phases(cfg: train_test_config_class):
     # flags
     _created_model=False
     _epoch_0 = restart_state.next_epoch if restart_state is not None else 0
+    model = None
     for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
+        retry_batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
         while True: # loop to catch memory errors
             try:
                 if job['skip'] is False: 
-                    
-                    # create datasets and dataloaders for this job (TODO-CP: This could be refactored into one function)
-                    
-                    # create datasets
-                    if job['pre_train'] is True:
-                        logging.info('Starting Pre-Training with settings {}'.format(job['train_cfg']))
-                    elif job['test'] is True:
-                        logging.info('Starting Testing with settings {}'.format(job['train_cfg']))
-                    else:
-                        logging.info('Starting Train Job {} with settings {}'.format(idx, job['train_cfg']))
-                    # loading datasets and initializing dataloaders
-                    # set seq_len
-                    if job['pre_train'] is True:
-                        _load_seq_len = job['train_cfg'].load_seq_len
-                        _seq_len_batches = 1
-                        _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
-                        _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
-                    elif job['test'] is True:
-                        _load_seq_len = None
-                        _seq_len_batches = None
-                        _stride_valid_test = 1
-                        _max_samples_valid = None
-                    else:
-                        _load_seq_len = job['train_cfg'].load_seq_len
-                        _seq_len_batches = job['train_cfg'].seq_len_train
-                        _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
-                        # we later set the batch size for validation and test to be 4 times
-                        # higher then for training (less memory as no backprop),
-                        # so this is a quarter in terms of batches of train.
-                        _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
-                    # make torch tensor datasets for this phase
-                    datasets = {}
-                    for context in ['train', 'test', 'validation', 'common_test']:
-                        _stride = 1 if context == 'train' else _stride_valid_test
-                        _max_samples = None if context != 'validation' else _max_samples_valid
-                        datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride, max_samples=_max_samples)
-                    if hdf5_dataset_norm is not None:
-                        datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches, stride=_stride_valid_test)
-                    else:
-                        datasets['testnorm'] = None
-                    if hdf5_dataset_ref is not None:
-                        datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
-                    else:
-                        datasets['ref'] = None
-                    
-                    # create new dataloaders for this phase
-                    _drop_last = True if job['test'] is False else False
-                    _shuffle = True if job['test'] is False else False
-                    dataloaders={}
-                    _batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-                    _batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-                    for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
-                        if context in ['validation', 'test', 'testnorm']:
-                            _batch_size = _batch_size_valid_test
-                        else:
-                            _batch_size = _batch_size_train
-                        if context == 'testnorm' and datasets[context] is None:
-                            dataloaders[context] = None
-                            continue
-                        if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
-                            # TODO: I believe this is never reached
-                            dataloaders[context] = None
-                            logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
-                        else:
-                            _num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
-                            if _batch_size > len(datasets[context]):
-                                _batch_size_here = len(datasets[context])
-                                logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(_batch_size, len(datasets[context]), context, _batch_size_here))
-                            else:
-                                _batch_size_here = _batch_size
-                            if len(datasets[context]) == 0:
-                                raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
-                            dataloaders[context] = torch.utils.data.DataLoader(
-                                datasets[context],
-                                batch_size=_batch_size_here,
-                                shuffle=_shuffle,
-                                num_workers=_num_workers,
-                                persistent_workers=True if _num_workers > 0 else False,
-                                pin_memory=True,
-                                # multiprocessing_context='fork',
-                                drop_last=_drop_last,
-                                prefetch_factor=cfg.prefetch_factor,
-                                collate_fn=timeseries_collate_fn,
-                            )
-                    if datasets['ref'] is not None:
-                        dataloaders['ref'] = torch.utils.data.DataLoader(
-                            datasets['ref'],
-                            batch_size=len(datasets['ref']),
-                            shuffle=False,
-                            num_workers=1 if cfg.n_workers_other_loaders > 0 else 0,
-                            persistent_workers=True if cfg.n_workers_other_loaders > 0 else False,
-                            pin_memory=True,
-                            drop_last=False,
-                            prefetch_factor=cfg.prefetch_factor,
-                            collate_fn=timeseries_collate_fn,
-                        )
-                    else: 
-                        dataloaders['ref'] = None
-                    # update seq_len train for this job to the actual seq_len of the dataset
-                    if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (with map)
-                        job['train_cfg'].seq_len_train = datasets['train'].seq_len
-                    else:
-                        job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
-
-                    
-                    # initialize model
-
-                    _created_model_this_job = False	
-                    if _created_model is False:
-                        try:
-                            model = initialize_model(cfg, datasets['train'], hdf5_dataset_norm if hdf5_dataset_norm is not None else hdf5_dataset)
-                        except Exception as e:
-                            logging.error('Error during model initialization: {}'.format(e))
-                            logging.error('Maybe dataset and dataset_norm are not compatible?')
-                            raise e
-                        _created_model, _created_model_this_job = True, True
-                    
-                    # reload model for training (not resume-mode) TODO-CP: This could be refactored, such that model.load is only called once
-
-                    if cfg.nn_model.training.load_pretrained_model is True and _created_model_this_job is True:
-                        _path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_pretrained_model)
-                        model.load(path=_path, device=device)
-                        logging.info('Loaded pretrained model from {}'.format(_path))
-                        if cfg.nn_model.training.pre_trained_model_seq_len is not None: 
-                            job_list[idx]['train_cfg'].seq_len_epoch_start = cfg.nn_model.training.pre_trained_model_seq_len
-                            logging.info('Set seq_len_epoch_start for next job to {}'.format(cfg.nn_model.training.pre_trained_model_seq_len))
-                        else:
-                            job_list[idx]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train
-                            logging.info('Set seq_len_epoch_start for this job to seq_len_train {} as no pre_trained_model_seq_len is given in config'.format(job['train_cfg'].seq_len_train))
-
-                    # reload model for testing
-
-                    if cfg.nn_model.training.load_trained_model_for_test is True:
-                        _path = cfg.nn_model.training.path_trained_model
-                        _path = filepaths.filepath_from_local_or_ml_artifacts(_path)
-                        model.load(path=_path, device=device)
-                        logging.info('Loaded trained model from {}'.format(_path))
+                    datasets, dataloaders, retry_batch_size = _create_datasets_and_dataloaders_for_job(
+                        cfg,
+                        job,
+                        idx,
+                        hdf5_dataset,
+                        hdf5_dataset_norm,
+                        hdf5_dataset_ref,
+                    )
+                    model, _created_model = _initialize_or_reload_model_for_job(
+                        cfg,
+                        job,
+                        model,
+                        _created_model,
+                        datasets,
+                        hdf5_dataset,
+                        hdf5_dataset_norm,
+                        device,
+                    )
 
                 if job['skip'] is True:
                     if job['pre_train'] is True:
@@ -761,11 +827,11 @@ def train_all_phases(cfg: train_test_config_class):
                 if 'CUDA out of memory' in str(e) or 'CUDA memory is almost full' in str(e):
                     logging.warning('CUDA out of memory error. Trying again in 10 seconds')
                     pyTime.sleep(10)
-                    logging.info('Setting batch size to {}'.format(int(_batch_size * 0.7)))
+                    logging.info('Setting batch size to {}'.format(int(retry_batch_size * 0.7)))
                     if not job['test']:
-                        job['train_cfg'].batch_size = int(_batch_size * 0.7)
+                        job['train_cfg'].batch_size = int(retry_batch_size * 0.7)
                     else:
-                        cfg.nn_model.training.batch_size_test = int(_batch_size * 0.7)
+                        cfg.nn_model.training.batch_size_test = int(retry_batch_size * 0.7)
                     if cfg.use_cuda:
                         torch.cuda.empty_cache()
                 else:
