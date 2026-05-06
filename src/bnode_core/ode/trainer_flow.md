@@ -466,7 +466,7 @@ DONE: Extract dataset and dataloader creation into a dedicated per-job setup fun
 
 DONE: Extract model setup / model reload decisions into a helper so the outer loop does not mix "create model once" and "load model for this job" logic.
 
-#TODO: Split final test/export logic into a separate function. That will make the outer loop visibly branch into either `run_training_job(...)` or `run_test_job(...)`.
+DONE: Split final test/export logic into a separate function. That will make the outer loop visibly branch into either `run_training_job(...)` or `run_test_job(...)`.
 
 #TODO: Introduce an explicit outer live state for `train_all_phases()` that owns only long-lived orchestration values such as `job_list`, current job index, shared model, and the next epoch anchor.
 
