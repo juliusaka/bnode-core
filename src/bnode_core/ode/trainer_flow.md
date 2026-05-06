@@ -476,13 +476,13 @@ DONE: In `train_one_phase()`, split setup from execution enough to introduce a d
 DONE: `prepare_phase_runtime(...)` -> build optimizer/schedulers/scaler/early_stopping/paths
 #TODO: `run_phase_epochs(...)` -> own the epoch loop only
 
-#TODO: Inside the epoch loop, extract smaller steps for:
-#TODO: `compute_phase_stop_flags(...)`
-#TODO: `run_training_epoch_or_eval_epoch(...)`
-#TODO: `handle_nan_recovery(...)`
-#TODO: `evaluate_phase_contexts(...)`
-#TODO: `update_phase_control_state(...)`
-#TODO: `save_phase_restart_checkpoint(...)`
+DONE: Inside the epoch loop, extract smaller steps for:
+DONE: `compute_phase_stop_flags(...)`
+DONE: `run_training_epoch_or_eval_epoch(...)`
+DONE: `handle_nan_recovery(...)`
+DONE: `evaluate_phase_contexts(...)`
+DONE: `update_phase_control_state(...)`
+DONE: `save_phase_restart_checkpoint(...)`
 
 #TODO: Replace underscore-prefixed multi-purpose locals such as `_epoch_0`, `_phase_epoch_0`, `_flag_break_after_epoch`, and `_batches_this_phase` with named state fields or clearly scoped helper-return values.
 
