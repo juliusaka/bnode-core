@@ -575,7 +575,7 @@ def train_all_phases(cfg: train_test_config_class):
                             raise e
                         _created_model, _created_model_this_job = True, True
                     
-                    # reload model for training (not resume-mode)
+                    # reload model for training (not resume-mode) TODO-CP: This could be refactored, such that model.load is only called once
 
                     if cfg.nn_model.training.load_pretrained_model is True and _created_model_this_job is True:
                         _path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_pretrained_model)

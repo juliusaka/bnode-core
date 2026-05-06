@@ -4,6 +4,10 @@
 
 **Always update docs and instruction files in the same task as code changes.** See `python-workflows.instructions.md` → "Always update docs and instructions" for the full rule.
 
+## Communication
+
+- Explain proposed changes in enough detail that the user can clearly understand the intended work before or while making it, and provide detailed feedback about the outcome.
+
 ## Scope and baseline
 
 - These instructions apply to the `bnode-core` repository root. If you are working from the superproject root, follow the superproject instruction file instead of translating paths manually.
