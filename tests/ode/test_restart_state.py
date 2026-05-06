@@ -9,13 +9,21 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
 from bnode_core.ode.trainer_utils.restart_state import (
+    INNER_RESTART_STATE_FILENAME,
+    OUTER_RESTART_STATE_FILENAME,
+    InnerTrainingStateCheckpoint,
     LiveTrainingState,
+    OuterTrainingStateCheckpoint,
     RESTART_STATE_FILENAME,
     RESTART_STATE_SCHEMA_VERSION,
     TrainingRestartState,
     apply_training_restart_state,
     capture_rng_state,
+    load_inner_restart_state,
+    load_outer_restart_state,
     load_restart_state,
+    save_inner_restart_state,
+    save_outer_restart_state,
     save_restart_state,
 )
 
@@ -26,6 +34,93 @@ def _sample_rng_triplet():
         np.random.rand(4),
         [random.random() for _ in range(4)],
     )
+
+
+def test_outer_restart_state_roundtrip(tmp_path):
+    restart_path = tmp_path / OUTER_RESTART_STATE_FILENAME
+    state = OuterTrainingStateCheckpoint(
+        hydra_output_dir=str(tmp_path.resolve()),
+        restart_state_path=str(restart_path.resolve()),
+        checkpoint_reason="epoch_end",
+        mlflow_run_id="run-outer",
+        mlflow_tracking_uri="file:///mlruns",
+        mlflow_experiment_name="restart-tests",
+        job_idx=3,
+        next_epoch_anchor=17,
+        slurm_job_id="1234",
+    )
+
+    save_outer_restart_state(restart_path, state)
+    loaded_state = load_outer_restart_state(restart_path)
+
+    assert loaded_state.job_idx == 3
+    assert loaded_state.next_epoch_anchor == 17
+    assert loaded_state.metadata()["mlflow_run_id"] == "run-outer"
+    assert loaded_state.restart_state_path == str(restart_path.resolve())
+
+
+def test_inner_restart_state_roundtrip(tmp_path):
+    hydra_output_dir = tmp_path / "hydra-run"
+    hydra_output_dir.mkdir()
+    restart_path = hydra_output_dir / INNER_RESTART_STATE_FILENAME
+
+    model = torch.nn.Linear(3, 2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+    scheduler = CosineAnnealingLR(optimizer, T_max=5)
+    scaler = torch.amp.GradScaler("cuda", enabled=False)
+    early_stopping = EarlyStopping(
+        patience=9,
+        verbose=False,
+        threshold=0.25,
+        threshold_mode="rel",
+        path=str(hydra_output_dir / "best_model.pt"),
+        optimizer_path=str(hydra_output_dir / "best_optimizer.pt"),
+        trace_func=lambda *_args, **_kwargs: None,
+    )
+
+    inputs = torch.randn(6, 3)
+    loss = model(inputs).pow(2).mean()
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    scheduler.step()
+
+    state = InnerTrainingStateCheckpoint(
+        hydra_output_dir=str(hydra_output_dir.resolve()),
+        restart_state_path=str(restart_path.resolve()),
+        checkpoint_reason="epoch_end",
+        job_idx=2,
+        outer_epoch_anchor=10,
+        phase_epoch=4,
+        first_epoch_is_evaluation=False,
+        current_model_path=str((hydra_output_dir / "model.pt").resolve()),
+        current_optimizer_path=str((hydra_output_dir / "optimizer.pt").resolve()),
+        best_model_path=str((hydra_output_dir / "model_phase_2.pt").resolve()),
+        best_optimizer_path=str((hydra_output_dir / "optimizer_phase_2.pt").resolve()),
+        model_state=model.state_dict(),
+        optimizer_state=optimizer.state_dict(),
+        scheduler_states={"cosine": scheduler.state_dict()},
+        scaler_state=scaler.state_dict(),
+        early_stopping_state=early_stopping.state_dict(),
+        nan_counter=4,
+        grad_norm_last_reduced_counter=2,
+        stable_epochs=5,
+        flag_out_of_seq_len_increase=False,
+        epoch_stop=21,
+        rng_state=capture_rng_state(use_cuda=False),
+        deterministic_mode_active=False,
+        slurm_job_id=None,
+    )
+
+    save_inner_restart_state(restart_path, state)
+    loaded_state = load_inner_restart_state(restart_path)
+
+    assert loaded_state.job_idx == 2
+    assert loaded_state.outer_epoch_anchor == 10
+    assert loaded_state.phase_epoch == 4
+    assert not hasattr(loaded_state, "training_cfg_state")
+    assert loaded_state.metadata()["phase_epoch"] == 4
+    assert loaded_state.restart_state_path == str(restart_path.resolve())
 
 
 def test_restart_state_roundtrip_restores_runtime_state(tmp_path):

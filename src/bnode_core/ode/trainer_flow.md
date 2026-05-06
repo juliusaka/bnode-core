@@ -470,7 +470,7 @@ DONE: Split final test/export logic into a separate function. That will make the
 
 #TODO (restart redesign): Introduce an explicit outer live state for `train_all_phases()` that owns only long-lived orchestration values such as `job_list`, current job index, shared model, and the next epoch anchor.
 
-#TODO: Make the boundary between recreated inputs and checkpoint-worthy state explicit in one place, instead of scattering it across `train_all_phases()`, `train_one_phase()`, and `restart_state.py`.
+DONE: Make the boundary between recreated inputs and checkpoint-worthy state explicit in one place, instead of scattering it across `train_all_phases()`, `train_one_phase()`, and `restart_state.py`.
 
 DONE: In `train_one_phase()`, split setup from execution enough to introduce a dedicated runtime-preparation helper.
 DONE: `prepare_phase_runtime(...)` -> build optimizer/schedulers/scaler/early_stopping/paths

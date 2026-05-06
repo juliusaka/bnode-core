@@ -17,10 +17,156 @@ if TYPE_CHECKING:
 
 RESTART_STATE_SCHEMA_VERSION = 1
 RESTART_STATE_FILENAME = "training_restart.pt"
+OUTER_RESTART_STATE_FILENAME = "training_outer_restart.pt"
+INNER_RESTART_STATE_FILENAME = "training_inner_restart.pt"
 
 
 class CheckpointRequestedExit(RuntimeError):
     """Raised when training should stop after persisting a restart checkpoint."""
+
+
+@dataclass
+class OuterTrainingStateCheckpoint:
+    """Checkpoint schema for outer orchestration state in ``train_all_phases()``.
+
+    This is the target outer checkpoint shape for the restart redesign.  It keeps
+    only orchestration progress and resume metadata, not model/runtime state.
+    """
+
+    schema_version: int = RESTART_STATE_SCHEMA_VERSION
+    hydra_output_dir: str = ""
+    restart_state_path: str = ""
+    checkpoint_reason: str = "epoch_end"
+    mlflow_run_id: str | None = None
+    mlflow_tracking_uri: str | None = None
+    mlflow_experiment_name: str | None = None
+    job_idx: int = 0
+    next_epoch_anchor: int = 0
+    slurm_job_id: str | None = None
+
+    def validate(self) -> None:
+        if self.schema_version != RESTART_STATE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported restart state schema version {self.schema_version}. "
+                f"Expected {RESTART_STATE_SCHEMA_VERSION}."
+            )
+        if not self.hydra_output_dir:
+            raise ValueError("outer restart state missing hydra_output_dir")
+        if not self.restart_state_path:
+            raise ValueError("outer restart state missing restart_state_path")
+        if self.job_idx < 0:
+            raise ValueError("outer restart state job_idx must be non-negative")
+        if self.next_epoch_anchor < 0:
+            raise ValueError("outer restart state next_epoch_anchor must be non-negative")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "hydra_output_dir": self.hydra_output_dir,
+            "restart_state_path": self.restart_state_path,
+            "checkpoint_reason": self.checkpoint_reason,
+            "mlflow_run_id": self.mlflow_run_id,
+            "mlflow_tracking_uri": self.mlflow_tracking_uri,
+            "mlflow_experiment_name": self.mlflow_experiment_name,
+            "job_idx": self.job_idx,
+            "next_epoch_anchor": self.next_epoch_anchor,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "OuterTrainingStateCheckpoint":
+        state = cls(**dict(payload))
+        state.validate()
+        return state
+
+
+@dataclass
+class InnerTrainingStateCheckpoint:
+    """Checkpoint schema for phase-local runtime state in ``train_one_phase()``.
+
+    This is the target inner checkpoint shape for the restart redesign.  It keeps
+    model/runtime state dicts plus the minimum phase-control values needed for
+    resume, but does not persist config or dataloaders.
+    """
+
+    schema_version: int = RESTART_STATE_SCHEMA_VERSION
+    hydra_output_dir: str = ""
+    restart_state_path: str = ""
+    checkpoint_reason: str = "epoch_end"
+    job_idx: int = 0
+    outer_epoch_anchor: int = 0
+    phase_epoch: int = 0
+    first_epoch_is_evaluation: bool = True
+    current_model_path: str = ""
+    current_optimizer_path: str = ""
+    best_model_path: str = ""
+    best_optimizer_path: str = ""
+    model_state: dict[str, Any] = field(default_factory=dict)
+    optimizer_state: dict[str, Any] = field(default_factory=dict)
+    scheduler_states: dict[str, dict[str, Any]] = field(default_factory=dict)
+    scaler_state: dict[str, Any] = field(default_factory=dict)
+    early_stopping_state: dict[str, Any] = field(default_factory=dict)
+    nan_counter: int = 0
+    grad_norm_last_reduced_counter: int = 0
+    stable_epochs: int = 0
+    flag_out_of_seq_len_increase: bool = True
+    epoch_stop: int | None = None
+    rng_state: dict[str, Any] = field(default_factory=dict)
+    deterministic_mode_active: bool = False
+    slurm_job_id: str | None = None
+
+    def validate(self) -> None:
+        if self.schema_version != RESTART_STATE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported restart state schema version {self.schema_version}. "
+                f"Expected {RESTART_STATE_SCHEMA_VERSION}."
+            )
+        if not self.hydra_output_dir:
+            raise ValueError("inner restart state missing hydra_output_dir")
+        if not self.restart_state_path:
+            raise ValueError("inner restart state missing restart_state_path")
+        if not self.current_model_path:
+            raise ValueError("inner restart state missing current_model_path")
+        if not self.model_state:
+            raise ValueError("inner restart state missing model_state")
+        if self.job_idx < 0:
+            raise ValueError("inner restart state job_idx must be non-negative")
+        if self.outer_epoch_anchor < 0:
+            raise ValueError("inner restart state outer_epoch_anchor must be non-negative")
+        if self.phase_epoch < 0:
+            raise ValueError("inner restart state phase_epoch must be non-negative")
+        if not isinstance(self.optimizer_state, dict):
+            raise ValueError("inner restart state optimizer_state must be a dict")
+        if not isinstance(self.scheduler_states, dict):
+            raise ValueError("inner restart state scheduler_states must be a dict")
+        if not isinstance(self.scaler_state, dict):
+            raise ValueError("inner restart state scaler_state must be a dict")
+        if not isinstance(self.early_stopping_state, dict):
+            raise ValueError("inner restart state early_stopping_state must be a dict")
+        if not isinstance(self.rng_state, dict):
+            raise ValueError("inner restart state rng_state must be a dict")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "hydra_output_dir": self.hydra_output_dir,
+            "restart_state_path": self.restart_state_path,
+            "checkpoint_reason": self.checkpoint_reason,
+            "job_idx": self.job_idx,
+            "outer_epoch_anchor": self.outer_epoch_anchor,
+            "phase_epoch": self.phase_epoch,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "InnerTrainingStateCheckpoint":
+        state = cls(**dict(payload))
+        state.validate()
+        return state
 
 
 @dataclass
@@ -310,7 +456,7 @@ class LiveTrainingState:
 
 @dataclass
 class TrainingRestartState:
-    """Serialized checkpoint schema for resuming an interrupted training phase.
+    """Legacy monolithic restart checkpoint schema kept during migration.
 
     See ``docs/bnode_core/ode/restart_training.md`` for how this persisted schema
     relates to ``TrainingPhaseState`` and ``LiveTrainingState``.
@@ -460,12 +606,46 @@ def load_restart_state(path: Path) -> TrainingRestartState:
     return TrainingRestartState.from_dict(payload)
 
 
+def load_outer_restart_state(path: Path) -> OuterTrainingStateCheckpoint:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid outer restart state payload in {path}")
+    payload = dict(payload)
+    payload.setdefault("restart_state_path", str(path.resolve()))
+    return OuterTrainingStateCheckpoint.from_dict(payload)
+
+
+def load_inner_restart_state(path: Path) -> InnerTrainingStateCheckpoint:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Invalid inner restart state payload in {path}")
+    payload = dict(payload)
+    payload.setdefault("restart_state_path", str(path.resolve()))
+    return InnerTrainingStateCheckpoint.from_dict(payload)
+
+
 def save_restart_state(path: Path, state: TrainingRestartState) -> None:
     state.restart_state_path = str(path.resolve())
     state.validate()
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(state.to_dict(), path)
     logging.info("Saved trainer restart state to %s", path)
+
+
+def save_outer_restart_state(path: Path, state: OuterTrainingStateCheckpoint) -> None:
+    state.restart_state_path = str(path.resolve())
+    state.validate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(state.to_dict(), path)
+    logging.info("Saved outer trainer restart state to %s", path)
+
+
+def save_inner_restart_state(path: Path, state: InnerTrainingStateCheckpoint) -> None:
+    state.restart_state_path = str(path.resolve())
+    state.validate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(state.to_dict(), path)
+    logging.info("Saved inner trainer restart state to %s", path)
 
 
 def load_restart_metadata(path: Path) -> dict[str, Any]:
