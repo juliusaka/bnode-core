@@ -23,7 +23,11 @@ import logging
 
 from pathlib import Path
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
-from bnode_core.ode.trainer_utils.restart_state import RESTART_STATE_FILENAME
+from bnode_core.ode.trainer_utils.restart_state import (
+    INNER_RESTART_STATE_FILENAME,
+    OUTER_RESTART_STATE_FILENAME,
+    RESTART_STATE_FILENAME,
+)
 
 
 def config_dir_auto_recognize() -> Path:
@@ -428,6 +432,16 @@ def filepath_optimizer_current_hydra_output(phase: int | None = None) -> Path:
 def filepath_training_restart_state_current_hydra_output() -> Path:
     """Return the trainer restart-state file path in the current Hydra output dir."""
     return dir_current_hydra_output() / RESTART_STATE_FILENAME
+
+
+def filepath_training_outer_restart_state_current_hydra_output() -> Path:
+    """Return the outer trainer restart-state file path in the current Hydra output dir."""
+    return dir_current_hydra_output() / OUTER_RESTART_STATE_FILENAME
+
+
+def filepath_training_inner_restart_state_current_hydra_output() -> Path:
+    """Return the inner trainer restart-state file path in the current Hydra output dir."""
+    return dir_current_hydra_output() / INNER_RESTART_STATE_FILENAME
 
 
 def filepath_from_ml_artifacts_uri(mlflow_uri: str) -> Path:

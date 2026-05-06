@@ -13,9 +13,10 @@ from bnode_core.ode import trainer
 from bnode_core.config import get_config_store
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
-    LiveTrainingState,
-    RESTART_STATE_FILENAME,
-    load_restart_state,
+    INNER_RESTART_STATE_FILENAME,
+    OUTER_RESTART_STATE_FILENAME,
+    load_inner_restart_state,
+    load_outer_restart_state,
 )
 
 
@@ -140,47 +141,49 @@ def _assert_model_states_equal(
 
 
 def _assert_restart_state(
-    restart_state,
+    outer_restart_state,
+    inner_restart_state,
     *,
     expected_job_idx: int,
     deterministic_mode_active: bool | None = None,
     scheduler_key: str | None = None,
 ) -> None:
-    assert restart_state.job_idx == expected_job_idx
-    assert restart_state.next_epoch > restart_state.epoch_0
+    assert outer_restart_state.job_idx == expected_job_idx
+    assert inner_restart_state.job_idx == expected_job_idx
+    assert outer_restart_state.next_epoch_anchor >= inner_restart_state.phase_epoch
     if deterministic_mode_active is not None:
-        masks_set = restart_state.model_state['deterministic_mode_active_masks_set']
+        masks_set = inner_restart_state.model_state['deterministic_mode_active_masks_set']
         assert bool(masks_set.item()) is deterministic_mode_active
     if scheduler_key is not None:
-        assert scheduler_key in restart_state.scheduler_states
-        assert restart_state.scheduler_states[scheduler_key]['last_epoch'] > 0
+        assert scheduler_key in inner_restart_state.scheduler_states
+        assert inner_restart_state.scheduler_states[scheduler_key]['last_epoch'] > 0
 
 
 def _assert_resumed_mlflow_run(
     output_dir: Path,
     *,
     mlflow_scope: str,
-    restart_state,
+    outer_restart_state,
     expected_final_job_idx: int,
 ):
     validated_cfg = _load_validated_cfg(output_dir)
-    assert validated_cfg.mlflow_run_id == restart_state.mlflow_run_id
+    assert validated_cfg.mlflow_run_id == outer_restart_state.mlflow_run_id
     resumed_run = _get_mlflow_run(
         _resume_mlflow_tracking_uri(mlflow_scope),
-        restart_state.mlflow_run_id,
+        outer_restart_state.mlflow_run_id,
     )
-    assert resumed_run.data.params['mlflow_run_id'] == restart_state.mlflow_run_id
+    assert resumed_run.data.params['mlflow_run_id'] == outer_restart_state.mlflow_run_id
     assert f'job_{expected_final_job_idx}_final_epoch' in resumed_run.data.metrics
     return resumed_run
 
 
 def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int) -> None:
     """Interrupt training after n epoch checkpoints by raising CheckpointRequestedExit."""
-    original_save = LiveTrainingState.save_checkpoint
+    original_save = trainer._save_phase_restart_checkpoint
     call_count = [0]
 
-    def _patched_save(self, next_epoch: int):
-        result = original_save(self, next_epoch)
+    def _patched_save(live_state, outer_state, epoch: int):
+        result = original_save(live_state, outer_state, epoch)
         call_count[0] += 1
         if call_count[0] >= n_saves:
             raise CheckpointRequestedExit(
@@ -188,7 +191,7 @@ def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int
             )
         return result
 
-    monkeypatch.setattr(LiveTrainingState, 'save_checkpoint', _patched_save)
+    monkeypatch.setattr(trainer, '_save_phase_restart_checkpoint', _patched_save)
 
 
 @pytest.fixture(scope='module')
@@ -401,10 +404,13 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
             + mlflow_overrides,
         )
 
-    restart_path = interrupted_dir / RESTART_STATE_FILENAME
-    restart_state = load_restart_state(restart_path)
+    outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
+    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+    outer_restart_state = load_outer_restart_state(outer_restart_path)
+    inner_restart_state = load_inner_restart_state(inner_restart_path)
     _assert_restart_state(
-        restart_state,
+        outer_restart_state,
+        inner_restart_state,
         expected_job_idx=2,
         deterministic_mode_active=False,
     )
@@ -421,11 +427,12 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
         clear_output=False,
     )
     assert resumed_dir == interrupted_dir
-    assert not restart_path.exists()
+    assert not outer_restart_path.exists()
+    assert not inner_restart_path.exists()
     _assert_resumed_mlflow_run(
         resumed_dir,
         mlflow_scope=mlflow_scope,
-        restart_state=restart_state,
+        outer_restart_state=outer_restart_state,
         expected_final_job_idx=2,
     )
     _assert_model_states_equal(
@@ -460,11 +467,14 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
             + mlflow_overrides,
         )
 
-    restart_path = interrupted_dir / RESTART_STATE_FILENAME
-    restart_state = load_restart_state(restart_path)
+    outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
+    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+    outer_restart_state = load_outer_restart_state(outer_restart_path)
+    inner_restart_state = load_inner_restart_state(inner_restart_path)
     # Interrupted during phase 2 training before det-mode was applied.
     _assert_restart_state(
-        restart_state,
+        outer_restart_state,
+        inner_restart_state,
         expected_job_idx=2,
         deterministic_mode_active=False,
     )
@@ -484,12 +494,13 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
 
     assert resumed_dir == interrupted_dir
     # Restart state is removed after successful completion.
-    assert not restart_path.exists()
+    assert not outer_restart_path.exists()
+    assert not inner_restart_path.exists()
     # MLflow run ID is preserved and phase-3 metrics were logged.
     _assert_resumed_mlflow_run(
         resumed_dir,
         mlflow_scope=mlflow_scope,
-        restart_state=restart_state,
+        outer_restart_state=outer_restart_state,
         expected_final_job_idx=3,
     )
     # Verify deterministic mode was applied: the final model.pt has the

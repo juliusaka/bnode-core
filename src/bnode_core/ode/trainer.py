@@ -191,8 +191,9 @@ from bnode_core.utils.hydra_mlflow_decorator import log_hydra_to_mlflow
 from bnode_core.utils.mlflow_proxy import mlflow_proxy
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
+    InnerTrainingStateCheckpoint,
     LiveTrainingState,
-    TrainingRestartState,
+    OuterTrainingState,
 )
 from bnode_core.ode.trainer_utils.restart_utils import (
     _clear_restart_state,
@@ -803,7 +804,7 @@ def train_all_phases(cfg: train_test_config_class):
                             idx,
                             next_epoch_anchor,
                             phase_restart_state,
-                            outer_state.restart_state_path,
+                            outer_state.inner_restart_state_path,
                         )
                         # train one phase
                         next_epoch_anchor = train_one_phase(
@@ -816,8 +817,9 @@ def train_all_phases(cfg: train_test_config_class):
                             idx,
                             next_epoch_anchor,
                             restart_state=phase_restart_state,
-                            restart_manager=outer_state.restart_state_path,
+                            restart_manager=outer_state.inner_restart_state_path,
                             live_state=live_state,
+                            outer_state=outer_state,
                         )
                         outer_state.consume_restart_state()
                         outer_state.advance_to_next_epoch_anchor(next_epoch_anchor)
@@ -858,7 +860,10 @@ def train_all_phases(cfg: train_test_config_class):
                         torch.cuda.empty_cache()
                 else:
                     raise e
-    _clear_restart_state(outer_state.restart_state_path)
+    _clear_restart_state(
+        outer_state.outer_restart_state_path,
+        outer_state.inner_restart_state_path,
+    )
 
 
 def _next_batch(data_loader, iterator):
@@ -1224,7 +1229,7 @@ def _prepare_phase_runtime(
     pre_train: bool,
     job_idx: int,
     epoch_0: int,
-    restart_state: TrainingRestartState | None,
+    restart_state: InnerTrainingStateCheckpoint | None,
     restart_manager: Path | None,
     live_state: LiveTrainingState | None = None,
 ) -> LiveTrainingState:
@@ -1277,11 +1282,10 @@ def _create_uninitialized_phase_state(
     pre_train: bool,
     job_idx: int,
     epoch_0: int,
-    restart_state: TrainingRestartState | None,
+    restart_state: InnerTrainingStateCheckpoint | None,
     restart_manager: Path | None,
 ) -> LiveTrainingState:
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
-    phase_epoch_0 = restart_state.epoch_0 if restart_state is not None else epoch_0
     batches_per_epoch, epochs_for_seq_len_increase, max_epochs = _compute_phase_epoch_settings(
         dataloaders,
         train_cfg,
@@ -1297,7 +1301,7 @@ def _create_uninitialized_phase_state(
         job_idx=job_idx,
         pre_train=pre_train,
         device=device,
-        phase_epoch_0=phase_epoch_0,
+        phase_epoch_0=epoch_0,
         max_epochs=max_epochs,
         batches_per_epoch=batches_per_epoch,
         epochs_for_seq_len_increase=epochs_for_seq_len_increase,
@@ -1308,6 +1312,7 @@ def _create_uninitialized_phase_state(
         hydra_output_dir=filepaths.dir_current_hydra_output(),
         restart_manager_path=restart_manager,
         restart_state=restart_state,
+        next_epoch_anchor=epoch_0 if restart_state is not None else None,
     )
 
 
@@ -1652,11 +1657,14 @@ def _update_phase_control_state(
 
 def _save_phase_restart_checkpoint(
     live_state: LiveTrainingState,
-    restart_manager: Path | None,
+    outer_state: OuterTrainingState | None,
     epoch: int,
 ) -> None:
-    if restart_manager is not None:
-        live_state.save_checkpoint(epoch + 1)
+    if outer_state is None:
+        return
+    inner_checkpoint = live_state.save_checkpoint(epoch + 1)
+    if inner_checkpoint is not None:
+        outer_state.save_checkpoint(job_idx=live_state.job_idx, next_epoch_anchor=epoch + 1)
 
 def train_one_phase(
     cfg: train_test_config_class,
@@ -1667,9 +1675,10 @@ def train_one_phase(
     pre_train: bool,
     job_idx: int,
     epoch_0: int = 0,
-    restart_state: TrainingRestartState | None = None,
+    restart_state: InnerTrainingStateCheckpoint | None = None,
     restart_manager: Path | None = None,
     live_state: LiveTrainingState | None = None,
+    outer_state: OuterTrainingState | None = None,
 ):
     logging.info('Start next training phase....')
     if test is False:
@@ -1757,7 +1766,7 @@ def train_one_phase(
                 )
                 if should_break:
                     break
-                _save_phase_restart_checkpoint(live_state, restart_manager, epoch)
+                _save_phase_restart_checkpoint(live_state, outer_state, epoch)
         except KeyboardInterrupt:
             logging.info('Interrupted by user')
             mlflow_proxy.set_tag_if_active('ended by', 'keyboard interrupt')

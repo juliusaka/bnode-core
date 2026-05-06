@@ -90,7 +90,6 @@ def test_inner_restart_state_roundtrip(tmp_path):
         restart_state_path=str(restart_path.resolve()),
         checkpoint_reason="epoch_end",
         job_idx=2,
-        outer_epoch_anchor=10,
         phase_epoch=4,
         first_epoch_is_evaluation=False,
         current_model_path=str((hydra_output_dir / "model.pt").resolve()),
@@ -116,7 +115,6 @@ def test_inner_restart_state_roundtrip(tmp_path):
     loaded_state = load_inner_restart_state(restart_path)
 
     assert loaded_state.job_idx == 2
-    assert loaded_state.outer_epoch_anchor == 10
     assert loaded_state.phase_epoch == 4
     assert not hasattr(loaded_state, "training_cfg_state")
     assert loaded_state.metadata()["phase_epoch"] == 4
@@ -280,7 +278,7 @@ def test_restart_state_rejects_schema_mismatch(tmp_path):
 def test_live_training_state_bind_runtime_objects_restores_runtime_state(tmp_path):
     hydra_output_dir = tmp_path / "hydra-run"
     hydra_output_dir.mkdir()
-    restart_path = hydra_output_dir / RESTART_STATE_FILENAME
+    restart_path = hydra_output_dir / INNER_RESTART_STATE_FILENAME
 
     torch.manual_seed(123)
     np.random.seed(123)
@@ -313,23 +311,17 @@ def test_live_training_state_bind_runtime_objects_restores_runtime_state(tmp_pat
     early_stopping.early_stop = False
     early_stopping.score_last_save = 0.4
 
-    restart_state = TrainingRestartState(
+    restart_state = InnerTrainingStateCheckpoint(
         hydra_output_dir=str(hydra_output_dir.resolve()),
         restart_state_path=str(restart_path.resolve()),
         checkpoint_reason="epoch_end",
-        mlflow_run_id="run-123",
-        mlflow_tracking_uri="file:///mlruns",
-        mlflow_experiment_name="restart-tests",
         job_idx=2,
-        epoch_0=10,
-        next_epoch=14,
         phase_epoch=4,
         first_epoch_is_evaluation=False,
         current_model_path=str((hydra_output_dir / "model.pt").resolve()),
         current_optimizer_path=str((hydra_output_dir / "optimizer.pt").resolve()),
         best_model_path=str((hydra_output_dir / "model_phase_2.pt").resolve()),
         best_optimizer_path=str((hydra_output_dir / "optimizer_phase_2.pt").resolve()),
-        training_cfg_state={"clip_grad_norm": 1.5, "seq_len_train": 17},
         model_state=model.state_dict(),
         optimizer_state=optimizer.state_dict(),
         scheduler_states={"cosine": scheduler.state_dict()},
@@ -365,7 +357,7 @@ def test_live_training_state_bind_runtime_objects_restores_runtime_state(tmp_pat
         job_idx=2,
         pre_train=False,
         device=torch.device("cpu"),
-        phase_epoch_0=restart_state.epoch_0,
+        phase_epoch_0=10,
         max_epochs=11,
         batches_per_epoch=7,
         epochs_for_seq_len_increase=0,
@@ -376,12 +368,13 @@ def test_live_training_state_bind_runtime_objects_restores_runtime_state(tmp_pat
         hydra_output_dir=hydra_output_dir,
         restart_manager_path=restart_path,
         restart_state=restart_state,
+        next_epoch_anchor=14,
     )
 
     assert live_state.model is None
     assert live_state.optimizer is None
     assert live_state.batches_per_epoch == 7
-    assert live_state.phase_state.epoch_start == restart_state.next_epoch
+    assert live_state.phase_state.epoch_start == 14
 
     live_state.bind_runtime_objects(
         model=restored_model,
@@ -395,10 +388,101 @@ def test_live_training_state_bind_runtime_objects_restores_runtime_state(tmp_pat
     for key, value in model.state_dict().items():
         torch.testing.assert_close(live_state.model.state_dict()[key], value)
 
-    assert live_state.phase_state.epoch_start == restart_state.next_epoch
+    assert live_state.phase_state.epoch_start == 14
     assert live_state.phase_state.epoch_stop == restart_state.epoch_stop
     assert live_state.phase_state.nan_counter == restart_state.nan_counter
     assert live_state.phase_state.stable_epochs == restart_state.stable_epochs
     assert live_state.phase_state.flag_out_of_seq_len_increase is False
     assert restored_scheduler.state_dict()["last_epoch"] == scheduler.state_dict()["last_epoch"]
     assert restored_early_stopping.counter == 3
+
+
+def test_live_training_state_create_wrapper_restores_runtime_state(tmp_path):
+    hydra_output_dir = tmp_path / "hydra-run"
+    hydra_output_dir.mkdir()
+    restart_path = hydra_output_dir / INNER_RESTART_STATE_FILENAME
+
+    model = torch.nn.Linear(3, 2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+    scheduler = CosineAnnealingLR(optimizer, T_max=5)
+    scaler = torch.amp.GradScaler("cuda", enabled=False)
+    early_stopping = EarlyStopping(
+        patience=9,
+        verbose=False,
+        threshold=0.25,
+        threshold_mode="rel",
+        path=str(hydra_output_dir / "best_model.pt"),
+        optimizer_path=str(hydra_output_dir / "best_optimizer.pt"),
+        trace_func=lambda *_args, **_kwargs: None,
+    )
+
+    inputs = torch.randn(6, 3)
+    loss = model(inputs).pow(2).mean()
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+    scheduler.step()
+
+    restart_state = InnerTrainingStateCheckpoint(
+        hydra_output_dir=str(hydra_output_dir.resolve()),
+        restart_state_path=str(restart_path.resolve()),
+        checkpoint_reason="epoch_end",
+        job_idx=1,
+        phase_epoch=2,
+        first_epoch_is_evaluation=False,
+        current_model_path=str((hydra_output_dir / "model.pt").resolve()),
+        current_optimizer_path=str((hydra_output_dir / "optimizer.pt").resolve()),
+        best_model_path=str((hydra_output_dir / "model_phase_1.pt").resolve()),
+        best_optimizer_path=str((hydra_output_dir / "optimizer_phase_1.pt").resolve()),
+        model_state=model.state_dict(),
+        optimizer_state=optimizer.state_dict(),
+        scheduler_states={"cosine": scheduler.state_dict()},
+        scaler_state=scaler.state_dict(),
+        early_stopping_state=early_stopping.state_dict(),
+        epoch_stop=9,
+        rng_state=capture_rng_state(use_cuda=False),
+    )
+
+    restored_model = torch.nn.Linear(3, 2)
+    restored_optimizer = torch.optim.Adam(restored_model.parameters(), lr=0.99)
+    restored_scheduler = CosineAnnealingLR(restored_optimizer, T_max=5)
+    restored_scaler = torch.amp.GradScaler("cuda", enabled=False)
+    restored_early_stopping = EarlyStopping(
+        patience=1,
+        verbose=True,
+        threshold=0.0,
+        threshold_mode="abs",
+        path="placeholder.pt",
+        optimizer_path="placeholder_optimizer.pt",
+        trace_func=lambda *_args, **_kwargs: None,
+    )
+
+    live_state = LiveTrainingState.create(
+        cfg=SimpleNamespace(mlflow_experiment_name="restart-tests", use_cuda=False),
+        model=restored_model,
+        optimizer=restored_optimizer,
+        lr_schedulers={"cosine": restored_scheduler},
+        scaler=restored_scaler,
+        early_stopping=restored_early_stopping,
+        train_cfg=SimpleNamespace(),
+        job_idx=1,
+        pre_train=False,
+        device=torch.device("cpu"),
+        phase_epoch_0=3,
+        max_epochs=6,
+        epochs_for_seq_len_increase=0,
+        path_best_model=Path(restart_state.best_model_path),
+        path_optimizer_best_model=Path(restart_state.best_optimizer_path),
+        path_current_model=Path(restart_state.current_model_path),
+        path_current_optimizer=Path(restart_state.current_optimizer_path),
+        hydra_output_dir=hydra_output_dir,
+        restart_manager_path=restart_path,
+        restart_state=restart_state,
+        batches_per_epoch=4,
+        next_epoch_anchor=5,
+    )
+
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(live_state.model.state_dict()[key], value)
+    assert live_state.phase_state.epoch_start == 5
+    assert live_state.phase_state.phase_epoch_0 == 3

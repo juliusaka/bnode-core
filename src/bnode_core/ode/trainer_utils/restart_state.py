@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 import logging
 import os
@@ -96,7 +96,6 @@ class InnerTrainingStateCheckpoint:
     restart_state_path: str = ""
     checkpoint_reason: str = "epoch_end"
     job_idx: int = 0
-    outer_epoch_anchor: int = 0
     phase_epoch: int = 0
     first_epoch_is_evaluation: bool = True
     current_model_path: str = ""
@@ -133,8 +132,6 @@ class InnerTrainingStateCheckpoint:
             raise ValueError("inner restart state missing model_state")
         if self.job_idx < 0:
             raise ValueError("inner restart state job_idx must be non-negative")
-        if self.outer_epoch_anchor < 0:
-            raise ValueError("inner restart state outer_epoch_anchor must be non-negative")
         if self.phase_epoch < 0:
             raise ValueError("inner restart state phase_epoch must be non-negative")
         if not isinstance(self.optimizer_state, dict):
@@ -158,7 +155,6 @@ class InnerTrainingStateCheckpoint:
             "restart_state_path": self.restart_state_path,
             "checkpoint_reason": self.checkpoint_reason,
             "job_idx": self.job_idx,
-            "outer_epoch_anchor": self.outer_epoch_anchor,
             "phase_epoch": self.phase_epoch,
         }
 
@@ -181,20 +177,35 @@ class OuterTrainingState:
         *,
         cfg: Any,
         job_list: list[dict[str, Any]],
-        restart_state_path: Path,
-        restart_state: "TrainingRestartState | None" = None,
+        outer_restart_state_path: Path,
+        inner_restart_state_path: Path,
+        outer_restart_state: OuterTrainingStateCheckpoint | None = None,
+        inner_restart_state: InnerTrainingStateCheckpoint | None = None,
     ) -> None:
         self.cfg = cfg
         self.job_list = job_list
-        self.restart_state_path = restart_state_path
-        self.restart_state = restart_state
-        self.job_start_idx = restart_state.job_idx if restart_state is not None else 0
-        self.next_epoch_anchor = restart_state.next_epoch if restart_state is not None else 0
+        self.outer_restart_state_path = outer_restart_state_path
+        self.inner_restart_state_path = inner_restart_state_path
+        self.outer_restart_state = outer_restart_state
+        self.inner_restart_state = inner_restart_state
+        self.job_start_idx = outer_restart_state.job_idx if outer_restart_state is not None else 0
+        self.next_epoch_anchor = (
+            outer_restart_state.next_epoch_anchor if outer_restart_state is not None else 0
+        )
         self._validate_restart_target()
 
     def _validate_restart_target(self) -> None:
-        if self.restart_state is None:
+        if self.outer_restart_state is None and self.inner_restart_state is None:
             return
+        if self.outer_restart_state is None or self.inner_restart_state is None:
+            raise ValueError(
+                "Trainer restart requires both outer and inner restart checkpoints; found only one."
+            )
+        if self.outer_restart_state.job_idx != self.inner_restart_state.job_idx:
+            raise ValueError(
+                "Outer and inner restart checkpoints disagree on the resumed job index: "
+                f"{self.outer_restart_state.job_idx} != {self.inner_restart_state.job_idx}"
+            )
         if self.job_start_idx >= len(self.job_list):
             raise ValueError(
                 f"Restart state refers to job index {self.job_start_idx}, but only {len(self.job_list)} jobs exist."
@@ -203,15 +214,34 @@ class OuterTrainingState:
         if target_job["test"] or target_job["pre_train"]:
             raise ValueError("Trainer restart currently supports main-training phases only.")
 
-    def restart_state_for_job(self, job_idx: int) -> "TrainingRestartState | None":
-        if self.restart_state is None or job_idx != self.job_start_idx:
+    def restart_state_for_job(self, job_idx: int) -> InnerTrainingStateCheckpoint | None:
+        if self.inner_restart_state is None or job_idx != self.job_start_idx:
             return None
-        return self.restart_state
+        return self.inner_restart_state
 
     def consume_restart_state(self) -> None:
-        self.restart_state = None
+        self.outer_restart_state = None
+        self.inner_restart_state = None
 
     def advance_to_next_epoch_anchor(self, next_epoch_anchor: int) -> None:
+        self.next_epoch_anchor = next_epoch_anchor
+
+    def save_checkpoint(self, *, job_idx: int, next_epoch_anchor: int) -> None:
+        checkpoint = OuterTrainingStateCheckpoint(
+            hydra_output_dir=str(Path(self.outer_restart_state_path).resolve().parent.resolve()),
+            restart_state_path=str(self.outer_restart_state_path.resolve()),
+            checkpoint_reason="epoch_end",
+            mlflow_run_id=(
+                mlflow.active_run().info.run_id if mlflow.active_run() is not None else None
+            ),
+            mlflow_tracking_uri=mlflow.get_tracking_uri(),
+            mlflow_experiment_name=self.cfg.mlflow_experiment_name,
+            job_idx=job_idx,
+            next_epoch_anchor=next_epoch_anchor,
+            slurm_job_id=os.getenv("SLURM_JOB_ID"),
+        )
+        save_outer_restart_state(self.outer_restart_state_path, checkpoint)
+        self.outer_restart_state = checkpoint
         self.next_epoch_anchor = next_epoch_anchor
 
 
@@ -277,6 +307,31 @@ class TrainingPhaseState:
         return cls(
             phase_epoch_0=restart_state.epoch_0,
             epoch_start=restart_state.next_epoch,
+            epoch_stop=(
+                restart_state.epoch_stop
+                if restart_state.epoch_stop is not None
+                else default_epoch_stop
+            ),
+            first_epoch_is_evaluation=restart_state.first_epoch_is_evaluation,
+            nan_counter=restart_state.nan_counter,
+            grad_norm_last_reduced_counter=restart_state.grad_norm_last_reduced_counter,
+            stable_epochs=restart_state.stable_epochs,
+            flag_out_of_seq_len_increase=restart_state.flag_out_of_seq_len_increase,
+            deterministic_mode_active=restart_state.deterministic_mode_active,
+        )
+
+    @classmethod
+    def from_inner_checkpoint(
+        cls,
+        restart_state: InnerTrainingStateCheckpoint,
+        *,
+        next_epoch_anchor: int,
+        default_epoch_stop: int,
+    ) -> "TrainingPhaseState":
+        phase_epoch_0 = next_epoch_anchor - restart_state.phase_epoch
+        return cls(
+            phase_epoch_0=phase_epoch_0,
+            epoch_start=next_epoch_anchor,
             epoch_stop=(
                 restart_state.epoch_stop
                 if restart_state.epoch_stop is not None
@@ -364,12 +419,16 @@ class LiveTrainingState:
         path_current_optimizer: Path,
         hydra_output_dir: Path,
         restart_manager_path: Path | None,
-        restart_state: "TrainingRestartState | None" = None,
+        restart_state: InnerTrainingStateCheckpoint | None = None,
+        next_epoch_anchor: int | None = None,
     ) -> "LiveTrainingState":
         default_epoch_stop = phase_epoch_0 + max_epochs
         if restart_state is not None:
-            phase_state = TrainingPhaseState.from_restart(
+            if next_epoch_anchor is None:
+                raise ValueError("next_epoch_anchor is required when resuming from an inner checkpoint")
+            phase_state = TrainingPhaseState.from_inner_checkpoint(
                 restart_state,
+                next_epoch_anchor=next_epoch_anchor,
                 default_epoch_stop=default_epoch_stop,
             )
         else:
@@ -411,7 +470,7 @@ class LiveTrainingState:
         lr_schedulers: dict | None,
         scaler: GradScaler | None,
         early_stopping: Any | None,
-        restart_state: "TrainingRestartState | None" = None,
+        restart_state: InnerTrainingStateCheckpoint | None = None,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
@@ -444,8 +503,9 @@ class LiveTrainingState:
         path_current_optimizer: Path,
         hydra_output_dir: Path,
         restart_manager_path: Path | None,
-        restart_state: "TrainingRestartState | None" = None,
+        restart_state: InnerTrainingStateCheckpoint | None = None,
         batches_per_epoch: int | None = None,
+        next_epoch_anchor: int | None = None,
     ) -> "LiveTrainingState":
         live_state = cls.create_uninitialized(
             cfg=cfg,
@@ -464,6 +524,7 @@ class LiveTrainingState:
             hydra_output_dir=hydra_output_dir,
             restart_manager_path=restart_manager_path,
             restart_state=restart_state,
+            next_epoch_anchor=next_epoch_anchor,
         )
         live_state.bind_runtime_objects(
             model=model,
@@ -475,14 +536,14 @@ class LiveTrainingState:
         )
         return live_state
 
-    def load_checkpoint(self, restart_state: "TrainingRestartState") -> None:
+    def load_checkpoint(self, restart_state: InnerTrainingStateCheckpoint) -> None:
         if self.model is None:
             raise ValueError("Cannot load checkpoint before binding runtime model")
         if restart_state.job_idx != self.job_idx:
             raise ValueError(
                 f"Restart state job_idx {restart_state.job_idx} does not match current job {self.job_idx}."
             )
-        apply_training_restart_state(
+        apply_inner_training_restart_state(
             restart_state,
             model=self.model,
             optimizer=self.optimizer,
@@ -494,19 +555,19 @@ class LiveTrainingState:
         logging.info(
             "Restored restart bundle for job %s at global epoch %s (phase epoch %s)",
             self.job_idx,
-            restart_state.next_epoch,
+            self.phase_state.epoch_start,
             restart_state.phase_epoch,
         )
 
-    def save_checkpoint(self, next_epoch: int) -> None:
+    def save_checkpoint(self, next_epoch: int) -> InnerTrainingStateCheckpoint | None:
         """Persist a restart checkpoint for the current epoch.
 
         Writes model and optimizer to their *current* paths, then builds and
-        saves a ``TrainingRestartState`` to ``restart_manager_path``.  Does
-        nothing when ``restart_manager_path`` is ``None``.
+        saves an ``InnerTrainingStateCheckpoint`` to ``restart_manager_path``.
+        Does nothing when ``restart_manager_path`` is ``None``.
         """
         if self.restart_manager_path is None:
-            return
+            return None
         if self.model is None:
             raise ValueError("Cannot save checkpoint before binding runtime model")
         self.model.save(self.path_current_model)
@@ -519,18 +580,11 @@ class LiveTrainingState:
                 for name, sched in self.lr_schedulers.items()
             }
         phase_state = self.phase_state
-        restart_state = TrainingRestartState(
+        restart_state = InnerTrainingStateCheckpoint(
             hydra_output_dir=str(self.hydra_output_dir.resolve()),
             restart_state_path=str(self.restart_manager_path.resolve()),
             checkpoint_reason='epoch_end',
-            mlflow_run_id=(
-                mlflow.active_run().info.run_id if mlflow.active_run() is not None else None
-            ),
-            mlflow_tracking_uri=mlflow.get_tracking_uri(),
-            mlflow_experiment_name=self.cfg.mlflow_experiment_name,
             job_idx=self.job_idx,
-            epoch_0=phase_state.phase_epoch_0,
-            next_epoch=next_epoch,
             phase_epoch=next_epoch - phase_state.phase_epoch_0,
             first_epoch_is_evaluation=phase_state.first_epoch_is_evaluation,
             current_model_path=str(self.path_current_model.resolve()),
@@ -547,7 +601,6 @@ class LiveTrainingState:
                 if self.path_optimizer_best_model is not None
                 else ""
             ),
-            training_cfg_state=_cfg_state_to_dict(self.train_cfg),
             model_state=_move_to_cpu(self.model.state_dict()),
             optimizer_state=(
                 _move_to_cpu(self.optimizer.state_dict())
@@ -572,7 +625,8 @@ class LiveTrainingState:
             deterministic_mode_active=phase_state.deterministic_mode_active,
             slurm_job_id=os.getenv("SLURM_JOB_ID"),
         )
-        save_restart_state(self.restart_manager_path, restart_state)
+        save_inner_restart_state(self.restart_manager_path, restart_state)
+        return restart_state
 
 
 
@@ -688,16 +742,6 @@ def _move_to_cpu(obj: Any) -> Any:
     return obj
 
 
-def _cfg_state_to_dict(training_cfg_state: Any) -> dict[str, Any]:
-    if training_cfg_state is None:
-        return {}
-    if is_dataclass(training_cfg_state):
-        return asdict(training_cfg_state)
-    if isinstance(training_cfg_state, dict):
-        return dict(training_cfg_state)
-    raise TypeError("training_cfg_state must be a dataclass or dict")
-
-
 def capture_rng_state(use_cuda: bool) -> dict[str, Any]:
     state: dict[str, Any] = {
         "torch_cpu": torch.random.get_rng_state(),
@@ -774,6 +818,56 @@ def load_restart_metadata(path: Path) -> dict[str, Any]:
     return load_restart_state(path).metadata()
 
 
+def load_outer_restart_metadata(path: Path) -> dict[str, Any]:
+    return load_outer_restart_state(path).metadata()
+
+
+def _apply_runtime_checkpoint(
+    *,
+    model_state: dict[str, Any],
+    optimizer_state: dict[str, Any],
+    scheduler_states: dict[str, dict[str, Any]],
+    scaler_state: dict[str, Any],
+    early_stopping_state: dict[str, Any],
+    rng_state: dict[str, Any],
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer | None = None,
+    lr_schedulers: dict[str, Any] | None = None,
+    scaler: torch.amp.GradScaler | None = None,
+    early_stopping: Any = None,
+    use_cuda: bool = False,
+) -> None:
+    model.load_state_dict(model_state)
+
+    if optimizer_state:
+        if optimizer is None:
+            raise ValueError("restart state contains optimizer_state but no optimizer was provided")
+        optimizer.load_state_dict(optimizer_state)
+
+    scheduler_keys = set(scheduler_states.keys())
+    provided_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
+    if scheduler_keys != provided_scheduler_keys:
+        raise ValueError(
+            "restart state scheduler keys do not match current schedulers: "
+            f"saved={sorted(scheduler_keys)}, current={sorted(provided_scheduler_keys)}"
+        )
+    if lr_schedulers is not None:
+        for name, scheduler in lr_schedulers.items():
+            scheduler.load_state_dict(scheduler_states[name])
+
+    if scaler_state:
+        if scaler is None:
+            raise ValueError("restart state contains scaler_state but no scaler was provided")
+        scaler.load_state_dict(scaler_state)
+
+    if early_stopping_state:
+        if early_stopping is None:
+            raise ValueError("restart state contains early_stopping_state but no early_stopping was provided")
+        early_stopping.load_state_dict(early_stopping_state)
+
+    restore_rng_state(rng_state, use_cuda=use_cuda)
+
+
 def apply_training_restart_state(
     state: TrainingRestartState,
     *,
@@ -785,32 +879,44 @@ def apply_training_restart_state(
     use_cuda: bool = False,
 ) -> None:
     state.validate()
-    model.load_state_dict(state.model_state)
+    _apply_runtime_checkpoint(
+        model_state=state.model_state,
+        optimizer_state=state.optimizer_state,
+        scheduler_states=state.scheduler_states,
+        scaler_state=state.scaler_state,
+        early_stopping_state=state.early_stopping_state,
+        rng_state=state.rng_state,
+        model=model,
+        optimizer=optimizer,
+        lr_schedulers=lr_schedulers,
+        scaler=scaler,
+        early_stopping=early_stopping,
+        use_cuda=use_cuda,
+    )
 
-    if state.optimizer_state:
-        if optimizer is None:
-            raise ValueError("restart state contains optimizer_state but no optimizer was provided")
-        optimizer.load_state_dict(state.optimizer_state)
 
-    scheduler_keys = set(state.scheduler_states.keys())
-    provided_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
-    if scheduler_keys != provided_scheduler_keys:
-        raise ValueError(
-            "restart state scheduler keys do not match current schedulers: "
-            f"saved={sorted(scheduler_keys)}, current={sorted(provided_scheduler_keys)}"
-        )
-    if lr_schedulers is not None:
-        for name, scheduler in lr_schedulers.items():
-            scheduler.load_state_dict(state.scheduler_states[name])
-
-    if state.scaler_state:
-        if scaler is None:
-            raise ValueError("restart state contains scaler_state but no scaler was provided")
-        scaler.load_state_dict(state.scaler_state)
-
-    if state.early_stopping_state:
-        if early_stopping is None:
-            raise ValueError("restart state contains early_stopping_state but no early_stopping was provided")
-        early_stopping.load_state_dict(state.early_stopping_state)
-
-    restore_rng_state(state.rng_state, use_cuda=use_cuda)
+def apply_inner_training_restart_state(
+    state: InnerTrainingStateCheckpoint,
+    *,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer | None = None,
+    lr_schedulers: dict[str, Any] | None = None,
+    scaler: torch.amp.GradScaler | None = None,
+    early_stopping: Any = None,
+    use_cuda: bool = False,
+) -> None:
+    state.validate()
+    _apply_runtime_checkpoint(
+        model_state=state.model_state,
+        optimizer_state=state.optimizer_state,
+        scheduler_states=state.scheduler_states,
+        scaler_state=state.scaler_state,
+        early_stopping_state=state.early_stopping_state,
+        rng_state=state.rng_state,
+        model=model,
+        optimizer=optimizer,
+        lr_schedulers=lr_schedulers,
+        scaler=scaler,
+        early_stopping=early_stopping,
+        use_cuda=use_cuda,
+    )
