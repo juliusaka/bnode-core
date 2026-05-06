@@ -414,6 +414,7 @@ def train_all_phases(cfg: train_test_config_class):
         hdf5_dataset_ref = None
     
     # collect jobs
+
     # job_list=[] filled with dict of style: {'skip': bool, 'test': bool, 'train_cfg': cfg, 'pre_train': bool}
     job_list = []
     # pre-training
@@ -426,6 +427,9 @@ def train_all_phases(cfg: train_test_config_class):
     if cfg.nn_model.training.test is True:
         job_list.append({'skip': False, 'test': True, 'train_cfg': cfg.nn_model.training.main_training[-1], 'pre_train': False})
     logging.info('Created job list: {}'.format(job_list))
+
+    # restart logic
+
     # We inspect the serialized restart checkpoint here only to decide where the
     # outer job loop resumes. A full LiveTrainingState cannot be materialized at
     # this point yet because the selected phase has not created its model,
@@ -442,7 +446,7 @@ def train_all_phases(cfg: train_test_config_class):
             )
         if job_list[job_start_idx]['test'] or job_list[job_start_idx]['pre_train']:
             raise ValueError('Trainer restart currently supports main-training phases only.')
-        job_list[job_start_idx]['train_cfg'] = _apply_saved_train_cfg(
+        job_list[job_start_idx]['train_cfg'] = _apply_saved_train_cfg( # TODO-CP: do we need to reload training config? This should not change!
             job_list[job_start_idx]['train_cfg'],
             restart_state.training_cfg_state,
         )
@@ -450,322 +454,323 @@ def train_all_phases(cfg: train_test_config_class):
     # flags
     _created_model=False
     _epoch_0 = restart_state.next_epoch if restart_state is not None else 0
-    try:
-        for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
-            while True: # loop to catch memory errors
-                try:
-                    if job['skip'] is False: # create dataloaders for this job
-                        if job['pre_train'] is True:
-                            logging.info('Starting Pre-Training with settings {}'.format(job['train_cfg']))
-                        elif job['test'] is True:
-                            logging.info('Starting Testing with settings {}'.format(job['train_cfg']))
+    for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
+        while True: # loop to catch memory errors
+            try:
+                if job['skip'] is False: 
+                    
+                    # create datasets and dataloaders for this job (TODO-CP: This could be refactored into one function)
+                    
+                    # create datasets
+                    if job['pre_train'] is True:
+                        logging.info('Starting Pre-Training with settings {}'.format(job['train_cfg']))
+                    elif job['test'] is True:
+                        logging.info('Starting Testing with settings {}'.format(job['train_cfg']))
+                    else:
+                        logging.info('Starting Train Job {} with settings {}'.format(idx, job['train_cfg']))
+                    # loading datasets and initializing dataloaders
+                    # set seq_len
+                    if job['pre_train'] is True:
+                        _load_seq_len = job['train_cfg'].load_seq_len
+                        _seq_len_batches = 1
+                        _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
+                        _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
+                    elif job['test'] is True:
+                        _load_seq_len = None
+                        _seq_len_batches = None
+                        _stride_valid_test = 1
+                        _max_samples_valid = None
+                    else:
+                        _load_seq_len = job['train_cfg'].load_seq_len
+                        _seq_len_batches = job['train_cfg'].seq_len_train
+                        _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
+                        # we later set the batch size for validation and test to be 4 times
+                        # higher then for training (less memory as no backprop),
+                        # so this is a quarter in terms of batches of train.
+                        _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
+                    # make torch tensor datasets for this phase
+                    datasets = {}
+                    for context in ['train', 'test', 'validation', 'common_test']:
+                        _stride = 1 if context == 'train' else _stride_valid_test
+                        _max_samples = None if context != 'validation' else _max_samples_valid
+                        datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride, max_samples=_max_samples)
+                    if hdf5_dataset_norm is not None:
+                        datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches, stride=_stride_valid_test)
+                    else:
+                        datasets['testnorm'] = None
+                    if hdf5_dataset_ref is not None:
+                        datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
+                    else:
+                        datasets['ref'] = None
+                    
+                    # create new dataloaders for this phase
+                    _drop_last = True if job['test'] is False else False
+                    _shuffle = True if job['test'] is False else False
+                    dataloaders={}
+                    _batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+                    _batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+                    for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
+                        if context in ['validation', 'test', 'testnorm']:
+                            _batch_size = _batch_size_valid_test
                         else:
-                            logging.info('Starting Train Job {} with settings {}'.format(idx, job['train_cfg']))
-                        # loading datasets and initializing dataloaders
-                        # set seq_len
-                        if job['pre_train'] is True:
-                            _load_seq_len = job['train_cfg'].load_seq_len
-                            _seq_len_batches = 1
-                            _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
-                            _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
-                        elif job['test'] is True:
-                            _load_seq_len = None
-                            _seq_len_batches = None
-                            _stride_valid_test = 1
-                            _max_samples_valid = None
+                            _batch_size = _batch_size_train
+                        if context == 'testnorm' and datasets[context] is None:
+                            dataloaders[context] = None
+                            continue
+                        if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
+                            # TODO: I believe this is never reached
+                            dataloaders[context] = None
+                            logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
                         else:
-                            _load_seq_len = job['train_cfg'].load_seq_len
-                            _seq_len_batches = job['train_cfg'].seq_len_train
-                            _stride_valid_test = _seq_len_batches if _seq_len_batches is not None else None
-                            # we later set the batch size for validation and test to be 4 times
-                            # higher then for training (less memory as no backprop),
-                            # so this is a quarter in terms of batches of train.
-                            _max_samples_valid = job['train_cfg'].batches_per_epoch * job['train_cfg'].batch_size
-                        # make torch tensor datasets for this phase
-                        datasets = {}
-                        for context in ['train', 'test', 'validation', 'common_test']:
-                            _stride = 1 if context == 'train' else _stride_valid_test
-                            _max_samples = None if context != 'validation' else _max_samples_valid
-                            datasets[context] = make_stacked_dataset(hdf5_dataset, context, _load_seq_len, _seq_len_batches, stride=_stride, max_samples=_max_samples)
-                        
-                        if hdf5_dataset_norm is not None:
-                            datasets['testnorm'] = make_stacked_dataset(hdf5_dataset_norm, 'test', _load_seq_len, _seq_len_batches, stride=_stride_valid_test)
-                        else:
-                            datasets['testnorm'] = None
-
-                        if hdf5_dataset_ref is not None:
-                            datasets['ref'] = make_stacked_dataset(hdf5_dataset_ref, 'test', None, None)
-                        else:
-                            datasets['ref'] = None
-                        
-                        _drop_last = True if job['test'] is False else False
-                        _shuffle = True if job['test'] is False else False
-                        # create new dataloaders for this phase
-                        dataloaders={}
-
-                        _batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-                        _batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
-                            if context in ['validation', 'test', 'testnorm']:
-                                _batch_size = _batch_size_valid_test
+                            _num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
+                            if _batch_size > len(datasets[context]):
+                                _batch_size_here = len(datasets[context])
+                                logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(_batch_size, len(datasets[context]), context, _batch_size_here))
                             else:
-                                _batch_size = _batch_size_train
-                            if context == 'testnorm' and datasets[context] is None:
-                                dataloaders[context] = None
-                                continue
-                            if job['test'] is True and len(datasets[context]) == 0: # when only testing, datasets can be empty
-                                # TODO: I believe this is never reached
-                                dataloaders[context] = None
-                                logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
-                            else:
-                                _num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
-                                
-                                if _batch_size > len(datasets[context]):
-                                    _batch_size_here = len(datasets[context])
-                                    logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(_batch_size, len(datasets[context]), context, _batch_size_here))
-                                else:
-                                    _batch_size_here = _batch_size
-
-                                if len(datasets[context]) == 0:
-                                    raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
-                                
-                                dataloaders[context] = torch.utils.data.DataLoader(
-                                    datasets[context],
-                                    batch_size=_batch_size_here,
-                                    shuffle=_shuffle,
-                                    num_workers=_num_workers,
-                                    persistent_workers=True if _num_workers > 0 else False,
-                                    pin_memory=True,
-                                    # multiprocessing_context='fork',
-                                    drop_last=_drop_last,
-                                    prefetch_factor=cfg.prefetch_factor,
-                                    collate_fn=timeseries_collate_fn,
-                                )
-                        if datasets['ref'] is not None:
-                            dataloaders['ref'] = torch.utils.data.DataLoader(
-                                datasets['ref'],
-                                batch_size=len(datasets['ref']),
-                                shuffle=False,
-                                num_workers=1 if cfg.n_workers_other_loaders > 0 else 0,
-                                persistent_workers=True if cfg.n_workers_other_loaders > 0 else False,
+                                _batch_size_here = _batch_size
+                            if len(datasets[context]) == 0:
+                                raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
+                            dataloaders[context] = torch.utils.data.DataLoader(
+                                datasets[context],
+                                batch_size=_batch_size_here,
+                                shuffle=_shuffle,
+                                num_workers=_num_workers,
+                                persistent_workers=True if _num_workers > 0 else False,
                                 pin_memory=True,
-                                drop_last=False,
+                                # multiprocessing_context='fork',
+                                drop_last=_drop_last,
                                 prefetch_factor=cfg.prefetch_factor,
                                 collate_fn=timeseries_collate_fn,
                             )
-                        else: 
-                            dataloaders['ref'] = None
-                        # update seq_len train for this job to the actual seq_len of the dataset
-                        if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (with map)
-                            job['train_cfg'].seq_len_train = datasets['train'].seq_len
-                        else:
-                            job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
-
-                        
-                        _created_model_this_job = False	
-                        # initialize model
-                        if _created_model is False:
-                            try:
-                                model = initialize_model(cfg, datasets['train'], hdf5_dataset_norm if hdf5_dataset_norm is not None else hdf5_dataset)
-                            except Exception as e:
-                                logging.error('Error during model initialization: {}'.format(e))
-                                logging.error('Maybe dataset and dataset_norm are not compatible?')
-                                raise e
-                            _created_model, _created_model_this_job = True, True
-                        if cfg.nn_model.training.load_pretrained_model is True and _created_model_this_job is True:
-                            _path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_pretrained_model)
-                            model.load(path=_path, device=device)
-                            logging.info('Loaded pretrained model from {}'.format(_path))
-                            if cfg.nn_model.training.pre_trained_model_seq_len is not None: 
-                                job_list[idx]['train_cfg'].seq_len_epoch_start = cfg.nn_model.training.pre_trained_model_seq_len
-                                logging.info('Set seq_len_epoch_start for next job to {}'.format(cfg.nn_model.training.pre_trained_model_seq_len))
-                            else:
-                                job_list[idx]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train
-                                logging.info('Set seq_len_epoch_start for this job to seq_len_train {} as no pre_trained_model_seq_len is given in config'.format(job['train_cfg'].seq_len_train))
-                        if cfg.nn_model.training.load_trained_model_for_test is True:
-                            _path = cfg.nn_model.training.path_trained_model
-                            _path = filepaths.filepath_from_local_or_ml_artifacts(_path)
-                            model.load(path=_path, device=device)
-                            logging.info('Loaded trained model from {}'.format(_path))
-
-                    if job['skip'] is True:
-                        if job['pre_train'] is True:
-                            logging.info('Skipping Pre-Training')
-                        else:
-                            logging.info('Skipping Train Job {} as trained model is loaded in following phases'.format(idx))
+                    if datasets['ref'] is not None:
+                        dataloaders['ref'] = torch.utils.data.DataLoader(
+                            datasets['ref'],
+                            batch_size=len(datasets['ref']),
+                            shuffle=False,
+                            num_workers=1 if cfg.n_workers_other_loaders > 0 else 0,
+                            persistent_workers=True if cfg.n_workers_other_loaders > 0 else False,
+                            pin_memory=True,
+                            drop_last=False,
+                            prefetch_factor=cfg.prefetch_factor,
+                            collate_fn=timeseries_collate_fn,
+                        )
+                    else: 
+                        dataloaders['ref'] = None
+                    # update seq_len train for this job to the actual seq_len of the dataset
+                    if 'seq_len' in datasets['train'].__dict__.keys(): # for custom dataset (with map)
+                        job['train_cfg'].seq_len_train = datasets['train'].seq_len
                     else:
-                        if job['test'] is False:
-                            # train one phase
-                            _epoch_0 = train_one_phase(
-                                cfg,
-                                model,
-                                dataloaders,
-                                job['train_cfg'],
-                                job['test'],
-                                job['pre_train'],
-                                idx,
-                                _epoch_0,
-                                restart_state=restart_state if restart_state is not None and idx == restart_state.job_idx else None,
-                                restart_manager=restart_state_path,
-                            )
-                            restart_state = None
-                            # set seq_len_epoch_start for next job
-                            if len(job_list) > idx+1:
-                                # consequently, seq_len_epoch_start should be seq_len_train
-                                job_list[idx+1]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train if job['pre_train'] is False else 1
-                                logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx+1]['train_cfg'].seq_len_epoch_start))
+                        job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[2]
+
+                    
+                    # initialize model
+
+                    _created_model_this_job = False	
+                    if _created_model is False:
+                        try:
+                            model = initialize_model(cfg, datasets['train'], hdf5_dataset_norm if hdf5_dataset_norm is not None else hdf5_dataset)
+                        except Exception as e:
+                            logging.error('Error during model initialization: {}'.format(e))
+                            logging.error('Maybe dataset and dataset_norm are not compatible?')
+                            raise e
+                        _created_model, _created_model_this_job = True, True
+                    
+                    # reload model for training (not resume-mode)
+
+                    if cfg.nn_model.training.load_pretrained_model is True and _created_model_this_job is True:
+                        _path = filepaths.filepath_from_local_or_ml_artifacts(cfg.nn_model.training.path_pretrained_model)
+                        model.load(path=_path, device=device)
+                        logging.info('Loaded pretrained model from {}'.format(_path))
+                        if cfg.nn_model.training.pre_trained_model_seq_len is not None: 
+                            job_list[idx]['train_cfg'].seq_len_epoch_start = cfg.nn_model.training.pre_trained_model_seq_len
+                            logging.info('Set seq_len_epoch_start for next job to {}'.format(cfg.nn_model.training.pre_trained_model_seq_len))
                         else:
-                            logging.info('Testing model')
-                            saved_predictions_to_dataset = False
-                            for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
-                                if dataloaders[context] is None:
-                                    logging.info('No data for context {} in dataset. Skipping.'.format(context))
-                                else:
-                                    logging.info('Testing of dataset for context {}'.format(context))
-                                    # determine if predictions should be saved for this context according to config
-                                    _save_predictions = cfg.nn_model.training.save_predictions_in_dataset
-                                    _save_predictions = _save_predictions and context in cfg.nn_model.training.save_predictions_for
-                                    _save_predictions = _save_predictions or (context in cfg.nn_model.training.test_save_internal_variables_for)
+                            job_list[idx]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train
+                            logging.info('Set seq_len_epoch_start for this job to seq_len_train {} as no pre_trained_model_seq_len is given in config'.format(job['train_cfg'].seq_len_train))
 
-                                    if _save_predictions is True:
-                                        if not filepaths.filepath_dataset_current_hydra_output().exists():
-                                            logging.warning('Creating dataset file: {}'.format(filepaths.filepath_dataset_current_hydra_output()))
-                                            hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'w')
-                                            for key in hdf5_dataset.keys():
-                                                if key not in ['train', 'test', 'validation', 'common_test', 'common_validation', 'time']:
-                                                    hdf5_dataset_pred.copy(hdf5_dataset[key], key)
-                                                    logging.info('Copying dataset key {} to hdf5 file for testing.'.format(key))
-                                        else:
-                                            hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'a')
+                    # reload model for testing
 
-                                        logging.info('Copying dataset for context {} to hdf5 file for testing.'.format(context))
-                                        
-                                        if context in ['train', 'test', 'validation', 'common_test', 'common_validation']:
-                                            # copy contents from dataloader dataset to hdf5_dataset_pred
-                                            hdf5_dataset_pred.create_group(context)
-                                            for key in hdf5_dataset[context].keys():
-                                                data = hdf5_dataset[context][key][:]
-                                                hdf5_dataset_pred[context].create_dataset(key, data=data)
-                                            hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset['time'][:])
-                                        elif context in ['testnorm']:
-                                            # copy contents from dataloader dataset to hdf5_dataset_pred
-                                            hdf5_dataset_pred.create_group(context)
-                                            for key in hdf5_dataset_norm['test'].keys():
-                                                data = hdf5_dataset_norm['test'][key][:]
-                                                hdf5_dataset_pred[context].create_dataset(key, data=data)
-                                            hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset_norm['time'][:])
-                                        elif context in ['ref']:
-                                            # copy contents from dataloader dataset to hdf5_dataset_pred
-                                            hdf5_dataset_pred.create_group(context)
-                                            for key in hdf5_dataset_ref['test'].keys():
-                                                data = hdf5_dataset_ref['test'][key][:]
-                                                hdf5_dataset_pred[context].create_dataset(key, data=data)
-                                            hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset_ref['time'][:])
-                                        else:
-                                            raise ValueError('Context {} not recognized for copying dataset to hdf5 file for testing.'.format(context))
+                    if cfg.nn_model.training.load_trained_model_for_test is True:
+                        _path = cfg.nn_model.training.path_trained_model
+                        _path = filepaths.filepath_from_local_or_ml_artifacts(_path)
+                        model.load(path=_path, device=device)
+                        logging.info('Loaded trained model from {}'.format(_path))
 
-                                        logging.info('Adding model predictions to hdf5 file for context {}.'.format(context))
+                if job['skip'] is True:
+                    if job['pre_train'] is True:
+                        logging.info('Skipping Pre-Training')
+                    else:
+                        logging.info('Skipping Train Job {} as trained model is loaded in following phases'.format(idx))
+                else:
+                    if job['test'] is False:
+                        # train one phase
+                        _epoch_0 = train_one_phase(
+                            cfg,
+                            model,
+                            dataloaders,
+                            job['train_cfg'],
+                            job['test'],
+                            job['pre_train'],
+                            idx,
+                            _epoch_0,
+                            restart_state=restart_state if restart_state is not None and idx == restart_state.job_idx else None,
+                            restart_manager=restart_state_path,
+                        )
+                        restart_state = None
+                        # set seq_len_epoch_start for next job
+                        if len(job_list) > idx+1:
+                            # consequently, seq_len_epoch_start should be seq_len_train
+                            job_list[idx+1]['train_cfg'].seq_len_epoch_start = job['train_cfg'].seq_len_train if job['pre_train'] is False else 1
+                            logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx+1]['train_cfg'].seq_len_epoch_start))
+                    else:
+                        logging.info('Testing model')
+                        saved_predictions_to_dataset = False
+                        for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
+                            if dataloaders[context] is None:
+                                logging.info('No data for context {} in dataset. Skipping.'.format(context))
+                            else:
+                                logging.info('Testing of dataset for context {}'.format(context))
+                                # determine if predictions should be saved for this context according to config
+                                _save_predictions = cfg.nn_model.training.save_predictions_in_dataset
+                                _save_predictions = _save_predictions and context in cfg.nn_model.training.save_predictions_for
+                                _save_predictions = _save_predictions or (context in cfg.nn_model.training.test_save_internal_variables_for)
 
-                                        # Stream results batch-by-batch to HDF5 to reduce RAM usage
-                                        total_len = len(dataloaders[context].dataset)
-                                        data_iter = iter(dataloaders[context])
-                                        created_dsets = False
-                                        write_offset = 0
-                                        metrics_sum = {}
-                                        n_batches = 0
-                                        keys_to_save = []
-                                        while True:
-                                            try:
-                                                data_batch = next(data_iter)
-                                            except StopIteration:
-                                                break
-                                            with torch.no_grad():
-                                                logging.info(f"\t Batch {n_batches+1}/{int(total_len/cfg.nn_model.training.batch_size_test)+1}")
-                                                ret_vals_batch, model_outputs_batch = model.model_and_loss_evaluation(
-                                                    data_batch, job['train_cfg'], job['pre_train'], device,
-                                                    return_model_outputs=True, test=True
-                                                )
-                                            # Initialize datasets on first batch according to save policy
-                                            if not created_dsets:
-                                                # Decide which keys to save
-                                                for key in model_outputs_batch.keys():
-                                                    if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
-                                                        _save = True
-                                                    elif cfg.nn_model.training.test_save_internal_variables is True and context in cfg.nn_model.training.test_save_internal_variables_for:
-                                                        _save = True
-                                                        logging.info('Saving internal variable {} for context {} according to config.'.format(key, context))
-                                                    else:
-                                                        _save = False
-                                                    if _save:
-                                                        keys_to_save.append(key)
-                                                # Create HDF5 datasets per key with full size on first dimension
-                                                for key in keys_to_save:
-                                                    arr = model_outputs_batch[key]
-                                                    shape_rest = arr.shape[1:]
-                                                    dset_shape = (total_len,) + shape_rest
-                                                    hdf5_dataset_pred.create_dataset(context + '/' + key, shape=dset_shape, dtype=arr.dtype)
-                                                created_dsets = True
-                                            # Write this batch to HDF5
-                                            Batch = next(iter(model_outputs_batch.values())).shape[0] if len(model_outputs_batch) > 0 else 0
+                                if _save_predictions is True:
+                                    if not filepaths.filepath_dataset_current_hydra_output().exists():
+                                        logging.warning('Creating dataset file: {}'.format(filepaths.filepath_dataset_current_hydra_output()))
+                                        hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'w')
+                                        for key in hdf5_dataset.keys():
+                                            if key not in ['train', 'test', 'validation', 'common_test', 'common_validation', 'time']:
+                                                hdf5_dataset_pred.copy(hdf5_dataset[key], key)
+                                                logging.info('Copying dataset key {} to hdf5 file for testing.'.format(key))
+                                    else:
+                                        hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'a')
+
+                                    logging.info('Copying dataset for context {} to hdf5 file for testing.'.format(context))
+                                    
+                                    if context in ['train', 'test', 'validation', 'common_test', 'common_validation']:
+                                        # copy contents from dataloader dataset to hdf5_dataset_pred
+                                        hdf5_dataset_pred.create_group(context)
+                                        for key in hdf5_dataset[context].keys():
+                                            data = hdf5_dataset[context][key][:]
+                                            hdf5_dataset_pred[context].create_dataset(key, data=data)
+                                        hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset['time'][:])
+                                    elif context in ['testnorm']:
+                                        # copy contents from dataloader dataset to hdf5_dataset_pred
+                                        hdf5_dataset_pred.create_group(context)
+                                        for key in hdf5_dataset_norm['test'].keys():
+                                            data = hdf5_dataset_norm['test'][key][:]
+                                            hdf5_dataset_pred[context].create_dataset(key, data=data)
+                                        hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset_norm['time'][:])
+                                    elif context in ['ref']:
+                                        # copy contents from dataloader dataset to hdf5_dataset_pred
+                                        hdf5_dataset_pred.create_group(context)
+                                        for key in hdf5_dataset_ref['test'].keys():
+                                            data = hdf5_dataset_ref['test'][key][:]
+                                            hdf5_dataset_pred[context].create_dataset(key, data=data)
+                                        hdf5_dataset_pred[context].create_dataset('time', data=hdf5_dataset_ref['time'][:])
+                                    else:
+                                        raise ValueError('Context {} not recognized for copying dataset to hdf5 file for testing.'.format(context))
+
+                                    logging.info('Adding model predictions to hdf5 file for context {}.'.format(context))
+
+                                    # Stream results batch-by-batch to HDF5 to reduce RAM usage
+                                    total_len = len(dataloaders[context].dataset)
+                                    data_iter = iter(dataloaders[context])
+                                    created_dsets = False
+                                    write_offset = 0
+                                    metrics_sum = {}
+                                    n_batches = 0
+                                    keys_to_save = []
+                                    while True:
+                                        try:
+                                            data_batch = next(data_iter)
+                                        except StopIteration:
+                                            break
+                                        with torch.no_grad():
+                                            logging.info(f"\t Batch {n_batches+1}/{int(total_len/cfg.nn_model.training.batch_size_test)+1}")
+                                            ret_vals_batch, model_outputs_batch = model.model_and_loss_evaluation(
+                                                data_batch, job['train_cfg'], job['pre_train'], device,
+                                                return_model_outputs=True, test=True
+                                            )
+                                        # Initialize datasets on first batch according to save policy
+                                        if not created_dsets:
+                                            # Decide which keys to save
+                                            for key in model_outputs_batch.keys():
+                                                if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
+                                                    _save = True
+                                                elif cfg.nn_model.training.test_save_internal_variables is True and context in cfg.nn_model.training.test_save_internal_variables_for:
+                                                    _save = True
+                                                    logging.info('Saving internal variable {} for context {} according to config.'.format(key, context))
+                                                else:
+                                                    _save = False
+                                                if _save:
+                                                    keys_to_save.append(key)
+                                            # Create HDF5 datasets per key with full size on first dimension
                                             for key in keys_to_save:
                                                 arr = model_outputs_batch[key]
-                                                hdf5_dataset_pred[context + '/' + key][write_offset:write_offset + arr.shape[0], ...] = arr
-                                            write_offset += Batch
-                                            # Accumulate metrics for averaging later (match old np.mean over batches)
-                                            if n_batches == 0:
-                                                metrics_sum = {k: float(v) for k, v in ret_vals_batch.items()}
-                                            else:
-                                                for k, v in ret_vals_batch.items():
-                                                    metrics_sum[k] += float(v)
-                                            n_batches += 1
-                                        # Compute mean metrics across batches
-                                        ret_vals = {k: (metrics_sum[k] / max(n_batches, 1)) for k in metrics_sum.keys()}
-                                    else:
-                                        # Full-dataset evaluation for this context; iterator is not reused.
-                                        ret_vals = test_or_validate_one_epoch(
-                                            model,
-                                            dataloaders[context],
-                                            job['train_cfg'],
-                                            job['pre_train'],
-                                            device,
-                                            all_batches=True,
-                                            return_model_outputs=False,
-                                        )
-                                    # log stats with logging
-                                    logging.info('Stats for context {}: {}'.format(context, ret_vals))
-                                    # log stats with mlflow
-                                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, context), step=_epoch_0+1) 
-                                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, '{}_final'.format(context)), step=_epoch_0+1)
-                                    # save loss function values
-                                    if _save_predictions is True:
-                                        for key, value in ret_vals.items():
-                                            hdf5_dataset_pred.create_dataset(context+'/'+key, data=value)
-                                        hdf5_dataset_pred.close()
-                                        saved_predictions_to_dataset = True
-                            if saved_predictions_to_dataset:
-                                # save this file
-                                shutil.copy(Path(__file__), filepaths.dir_current_hydra_output())
-                                logging.info('copied current trainer.py: {} \nto: \n{}'.format(Path(__file__), filepaths.dir_current_hydra_output()))
-                    if cfg.use_cuda:
-                        torch.cuda.empty_cache() 
-                    break # break the exception loop
-                except RuntimeError as e:
-                    if 'CUDA out of memory' in str(e) or 'CUDA memory is almost full' in str(e):
-                        logging.warning('CUDA out of memory error. Trying again in 10 seconds')
-                        pyTime.sleep(10)
-                        logging.info('Setting batch size to {}'.format(int(_batch_size * 0.7)))
-                        if not job['test']:
-                            job['train_cfg'].batch_size = int(_batch_size * 0.7)
-                        else:
-                            cfg.nn_model.training.batch_size_test = int(_batch_size * 0.7)
-                        if cfg.use_cuda:
-                            torch.cuda.empty_cache()
+                                                shape_rest = arr.shape[1:]
+                                                dset_shape = (total_len,) + shape_rest
+                                                hdf5_dataset_pred.create_dataset(context + '/' + key, shape=dset_shape, dtype=arr.dtype)
+                                            created_dsets = True
+                                        # Write this batch to HDF5
+                                        Batch = next(iter(model_outputs_batch.values())).shape[0] if len(model_outputs_batch) > 0 else 0
+                                        for key in keys_to_save:
+                                            arr = model_outputs_batch[key]
+                                            hdf5_dataset_pred[context + '/' + key][write_offset:write_offset + arr.shape[0], ...] = arr
+                                        write_offset += Batch
+                                        # Accumulate metrics for averaging later (match old np.mean over batches)
+                                        if n_batches == 0:
+                                            metrics_sum = {k: float(v) for k, v in ret_vals_batch.items()}
+                                        else:
+                                            for k, v in ret_vals_batch.items():
+                                                metrics_sum[k] += float(v)
+                                        n_batches += 1
+                                    # Compute mean metrics across batches
+                                    ret_vals = {k: (metrics_sum[k] / max(n_batches, 1)) for k in metrics_sum.keys()}
+                                else:
+                                    # Full-dataset evaluation for this context; iterator is not reused.
+                                    ret_vals = test_or_validate_one_epoch(
+                                        model,
+                                        dataloaders[context],
+                                        job['train_cfg'],
+                                        job['pre_train'],
+                                        device,
+                                        all_batches=True,
+                                        return_model_outputs=False,
+                                    )
+                                # log stats with logging
+                                logging.info('Stats for context {}: {}'.format(context, ret_vals))
+                                # log stats with mlflow
+                                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, context), step=_epoch_0+1) 
+                                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, '{}_final'.format(context)), step=_epoch_0+1)
+                                # save loss function values
+                                if _save_predictions is True:
+                                    for key, value in ret_vals.items():
+                                        hdf5_dataset_pred.create_dataset(context+'/'+key, data=value)
+                                    hdf5_dataset_pred.close()
+                                    saved_predictions_to_dataset = True
+                        if saved_predictions_to_dataset:
+                            # save this file
+                            shutil.copy(Path(__file__), filepaths.dir_current_hydra_output())
+                            logging.info('copied current trainer.py: {} \nto: \n{}'.format(Path(__file__), filepaths.dir_current_hydra_output()))
+                if cfg.use_cuda:
+                    torch.cuda.empty_cache() 
+                break # break the exception loop
+            except RuntimeError as e:
+                if 'CUDA out of memory' in str(e) or 'CUDA memory is almost full' in str(e):
+                    logging.warning('CUDA out of memory error. Trying again in 10 seconds')
+                    pyTime.sleep(10)
+                    logging.info('Setting batch size to {}'.format(int(_batch_size * 0.7)))
+                    if not job['test']:
+                        job['train_cfg'].batch_size = int(_batch_size * 0.7)
                     else:
-                        raise e
-        _clear_restart_state(restart_state_path)
-    except CheckpointRequestedExit as exc:
-        logging.info('%s', exc)
-        mlflow_proxy.set_tag_if_active('ended by', 'checkpoint request')
+                        cfg.nn_model.training.batch_size_test = int(_batch_size * 0.7)
+                    if cfg.use_cuda:
+                        torch.cuda.empty_cache()
+                else:
+                    raise e
+    _clear_restart_state(restart_state_path)
 
 
 def _next_batch(data_loader, iterator):
@@ -917,6 +922,8 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
                 if key == 'cosine':
                     live_state.lr_schedulers[key].step()
         _time_step += pyTime.time() - _time
+        
+        # print training stats for this batch
         if batch_idx % live_state.cfg.batch_print_interval == 0:
             _total_time = _time_forward + _time_backward + _time_step + _time_loader
             _total_time = _total_time
@@ -930,6 +937,7 @@ def train_one_epoch(live_state: LiveTrainingState, train_loader, train_iter, epo
             except Exception as e:
                 logging.info('error in logging train epoch info: {}'.format(e))
         _time_l = pyTime.time()
+    # return values for this epoch
     ret_vals_train = dict(
         {
             key: value.item() if isinstance(value, torch.Tensor) else value
