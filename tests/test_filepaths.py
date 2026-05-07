@@ -21,13 +21,17 @@ def test_raises_when_nothing_found(tmp_path, monkeypatch):
     assert "Please ensure you are in a correct working directory" in str(exc.value)
 
 
-def test_training_restart_path_uses_restart_filename(monkeypatch, tmp_path):
+def test_training_restart_paths_use_restart_filenames(monkeypatch, tmp_path):
     hydra_output_dir = tmp_path / "hydra-run"
     hydra_output_dir.mkdir()
     hydra_cfg = SimpleNamespace(runtime=SimpleNamespace(output_dir=str(hydra_output_dir)))
     monkeypatch.setattr(filepaths.hydra.core.hydra_config.HydraConfig, "get", lambda: hydra_cfg)
 
     assert (
-        filepaths.filepath_training_restart_state_current_hydra_output()
-        == hydra_output_dir / "training_restart.pt"
+        filepaths.filepath_training_outer_restart_state_current_hydra_output()
+        == hydra_output_dir / "training_outer_restart.pt"
+    )
+    assert (
+        filepaths.filepath_training_inner_restart_state_current_hydra_output()
+        == hydra_output_dir / "training_inner_restart.pt"
     )

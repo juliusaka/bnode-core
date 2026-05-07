@@ -38,6 +38,7 @@ Apply these instructions when editing `docs/**/*.md` or `mkdocs.yml` in `bnode-c
 - Do not place Copilot-only instructions in `docs/`.
 - When a page explains a script or module workflow, mention the real file/module names used in the codebase.
 - Keep spelling consistent with the repository, including established names like `data_preperation`.
+- Do not preserve removed workflow variants or legacy terminology in user-facing docs unless the user explicitly asks for compatibility notes.
 
 ## When updating navigation
 

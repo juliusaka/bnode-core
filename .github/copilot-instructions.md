@@ -4,6 +4,8 @@
 
 **Always update docs and instruction files in the same task as code changes.** See `python-workflows.instructions.md` → "Always update docs and instructions" for the full rule.
 
+Do not preserve legacy compatibility branches, old schema support, historical aliases, or obsolete artifact names unless the user explicitly asks for compatibility.
+
 ## Communication
 
 - Explain proposed changes in enough detail that the user can clearly understand the intended work before or while making it, and provide detailed feedback about the outcome.

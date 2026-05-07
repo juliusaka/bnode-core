@@ -40,6 +40,7 @@ When behavior, commands, paths, outputs, or terminology change:
 - Update the code, the relevant MkDocs pages, and the relevant `.instructions.md` files in the **same task**. Do not treat this as optional cleanup.
 - When tests or fixtures change, review the corresponding instruction sections for variant names, dataset names, prerequisite lists, and output locations. Replace stale content instead of layering new bullets on top of obsolete ones.
 - If a section is stale, rewrite it in the same task instead of appending a note and leaving the old text in place.
+- Do not preserve legacy compatibility branches, old schema support, historical aliases, or obsolete artifact names unless the user explicitly asks for compatibility.
 
 ## Instruction precedence
 

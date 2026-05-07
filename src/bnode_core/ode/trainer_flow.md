@@ -352,7 +352,7 @@ Observation:
 
 ### Proposed split for persisted state in the new two-state design
 
-This section is written with the target restart plan in mind, not as a defense of the current single `TrainingRestartState`.
+This section is written with the target restart plan in mind, not as a defense of the older monolithic restart design.
 
 The current checkpoint still stores one mixed bundle, but the refactor target should be two explicit state classes with two smaller checkpoint data structures.
 

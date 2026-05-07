@@ -118,6 +118,7 @@ SISO exports additionally write:
 - The model is switched to `eval()` before export.
 - `torch.onnx.export(..., dynamo=False)` is intentional here; do not change to the new exporter casually.
 - The exporter saves example I/O HDF5 files for validation. Keep them in sync if you add or rename inputs/outputs.
+- Do not add legacy export-schema fallbacks, alternate artifact-name support, or compatibility branches unless the user explicitly asks for compatibility.
 - Decoder normalization statistics are copied into `siso_dimensions.json` during SISO export and are consumed downstream by other applications.
 - In this self-contained exporter workflow, treat `siso_dimensions.json` and the exported artifact layout as contract data for downstream consumers in this workspace. Do **not** add fallback branches for hypothetical alternate metadata layouts unless the user explicitly asks for compatibility support.
 - For linear latent ODEs with parameter dependence, the SSM parameter mapping is exported separately as `latent_ode_ssm_from_param.onnx`.

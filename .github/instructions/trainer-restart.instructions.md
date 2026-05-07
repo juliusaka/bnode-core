@@ -19,7 +19,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - `training_outer_restart.pt`
   - `training_inner_restart.pt`
 - Do not re-introduce a single mixed restart payload as the main workflow contract.
-- `TrainingRestartState` is legacy compatibility only. It may remain for older saved checkpoints or unit coverage, but new trainer control flow should not depend on it.
+- Do not add legacy compatibility readers, old single-file restart schemas, or obsolete restart filenames unless the user explicitly asks for compatibility.
 
 ## Construction and restore order
 
@@ -69,7 +69,6 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - `create_uninitialized()` with runtime object fields still `None`
   - `bind_runtime_objects()` restoring runtime state from an inner checkpoint
   - `create()` as the backward-compatible convenience wrapper
-  - legacy `TrainingRestartState` coverage only as compatibility coverage
 - `tests/ode/test_bnode.py` resume tests should assert the two-file layout explicitly:
   - interrupted runs leave both restart files behind
   - successful resumed runs remove both restart files

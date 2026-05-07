@@ -83,5 +83,6 @@ Apply these instructions when changing `src/bnode_core/config.py`, `tests/test_c
 
 - Package-local runtime and pytest configs live under `resources/config/`.
 - The superproject keeps its own top-level `config/` tree; do not assume both roots are active at once.
-- `train_test_config_class` resumes training only from `training_restart.pt` in the active Hydra output directory; do not add config fields that redirect resume state to an external path unless the user explicitly asks for that behavior.
+- `train_test_config_class` resumes training only from `training_outer_restart.pt` and `training_inner_restart.pt` in the active Hydra output directory; do not add config fields that redirect resume state to an external path unless the user explicitly asks for that behavior.
+- Do not add legacy config aliases, compatibility fields, or older restart-path options unless the user explicitly asks for compatibility.
 - If you change schema fields or defaults, update the matching YAML fixtures and `tests/test_config.py` expectations together.

@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 
 RESTART_STATE_SCHEMA_VERSION = 1
-RESTART_STATE_FILENAME = "training_restart.pt"
 OUTER_RESTART_STATE_FILENAME = "training_outer_restart.pt"
 INNER_RESTART_STATE_FILENAME = "training_inner_restart.pt"
 
@@ -254,7 +253,7 @@ class TrainingPhaseState:
     lengthy parameter list in ``_save_training_restart_state``.
 
     See ``docs/bnode_core/ode/restart_training.md`` for how this differs from
-    ``LiveTrainingState`` and ``TrainingRestartState``.
+    ``OuterTrainingState`` and ``LiveTrainingState``.
     """
 
     phase_epoch_0: int
@@ -295,29 +294,6 @@ class TrainingPhaseState:
             epoch_stop=epoch_stop,
             first_epoch_is_evaluation=True,
             flag_out_of_seq_len_increase=flag_out_of_seq_len_increase,
-        )
-
-    @classmethod
-    def from_restart(
-        cls,
-        restart_state: "TrainingRestartState",
-        default_epoch_stop: int,
-    ) -> "TrainingPhaseState":
-        """Restore a phase state from a persisted restart checkpoint."""
-        return cls(
-            phase_epoch_0=restart_state.epoch_0,
-            epoch_start=restart_state.next_epoch,
-            epoch_stop=(
-                restart_state.epoch_stop
-                if restart_state.epoch_stop is not None
-                else default_epoch_stop
-            ),
-            first_epoch_is_evaluation=restart_state.first_epoch_is_evaluation,
-            nan_counter=restart_state.nan_counter,
-            grad_norm_last_reduced_counter=restart_state.grad_norm_last_reduced_counter,
-            stable_epochs=restart_state.stable_epochs,
-            flag_out_of_seq_len_increase=restart_state.flag_out_of_seq_len_increase,
-            deterministic_mode_active=restart_state.deterministic_mode_active,
         )
 
     @classmethod
@@ -629,108 +605,6 @@ class LiveTrainingState:
         save_inner_restart_state(self.restart_manager_path, restart_state)
         return restart_state
 
-
-
-@dataclass
-class TrainingRestartState:
-    """Legacy monolithic restart checkpoint schema kept for compatibility.
-
-    See ``docs/bnode_core/ode/restart_training.md`` for how this persisted schema
-    relates to ``TrainingPhaseState`` and ``LiveTrainingState``.
-    """
-    schema_version: int = RESTART_STATE_SCHEMA_VERSION
-    hydra_output_dir: str = ""
-    restart_state_path: str = ""
-    checkpoint_reason: str = "epoch_end"
-    mlflow_run_id: str | None = None
-    mlflow_tracking_uri: str | None = None
-    mlflow_experiment_name: str | None = None
-    job_idx: int = 0
-    epoch_0: int = 0
-    next_epoch: int = 0
-    phase_epoch: int = 0
-    first_epoch_is_evaluation: bool = True
-    current_model_path: str = ""
-    current_optimizer_path: str = ""
-    best_model_path: str = ""
-    best_optimizer_path: str = ""
-    training_cfg_state: dict[str, Any] = field(default_factory=dict)
-    model_state: dict[str, Any] = field(default_factory=dict)
-    optimizer_state: dict[str, Any] = field(default_factory=dict)
-    scheduler_states: dict[str, dict[str, Any]] = field(default_factory=dict)
-    scaler_state: dict[str, Any] = field(default_factory=dict)
-    early_stopping_state: dict[str, Any] = field(default_factory=dict)
-    nan_counter: int = 0
-    grad_norm_last_reduced_counter: int = 0
-    stable_epochs: int = 0
-    flag_out_of_seq_len_increase: bool = True
-    epoch_stop: int | None = None
-    rng_state: dict[str, Any] = field(default_factory=dict)
-    deterministic_mode_active: bool = False
-    slurm_job_id: str | None = None
-
-    def validate(self) -> None:
-        if self.schema_version != RESTART_STATE_SCHEMA_VERSION:
-            raise ValueError(
-                f"Unsupported restart state schema version {self.schema_version}. "
-                f"Expected {RESTART_STATE_SCHEMA_VERSION}."
-            )
-        if not self.hydra_output_dir:
-            raise ValueError("restart state missing hydra_output_dir")
-        if not self.restart_state_path:
-            raise ValueError("restart state missing restart_state_path")
-        if not self.current_model_path:
-            raise ValueError("restart state missing current_model_path")
-        if not self.model_state:
-            raise ValueError("restart state missing model_state")
-        if self.next_epoch < self.epoch_0:
-            raise ValueError(
-                f"restart state next_epoch {self.next_epoch} cannot be smaller than epoch_0 {self.epoch_0}"
-            )
-        if self.phase_epoch != self.next_epoch - self.epoch_0:
-            raise ValueError(
-                "restart state phase_epoch does not match next_epoch - epoch_0 "
-                f"({self.phase_epoch} != {self.next_epoch - self.epoch_0})"
-            )
-        if not isinstance(self.training_cfg_state, dict):
-            raise ValueError("restart state training_cfg_state must be a dict")
-        if not isinstance(self.optimizer_state, dict):
-            raise ValueError("restart state optimizer_state must be a dict")
-        if not isinstance(self.scheduler_states, dict):
-            raise ValueError("restart state scheduler_states must be a dict")
-        if not isinstance(self.scaler_state, dict):
-            raise ValueError("restart state scaler_state must be a dict")
-        if not isinstance(self.early_stopping_state, dict):
-            raise ValueError("restart state early_stopping_state must be a dict")
-        if not isinstance(self.rng_state, dict):
-            raise ValueError("restart state rng_state must be a dict")
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    def metadata(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "hydra_output_dir": self.hydra_output_dir,
-            "restart_state_path": self.restart_state_path,
-            "checkpoint_reason": self.checkpoint_reason,
-            "mlflow_run_id": self.mlflow_run_id,
-            "mlflow_tracking_uri": self.mlflow_tracking_uri,
-            "mlflow_experiment_name": self.mlflow_experiment_name,
-            "job_idx": self.job_idx,
-            "next_epoch": self.next_epoch,
-        }
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "TrainingRestartState":
-        payload = dict(payload)
-        if "phase_epoch" not in payload and "next_epoch" in payload and "epoch_0" in payload:
-            payload["phase_epoch"] = payload["next_epoch"] - payload["epoch_0"]
-        state = cls(**payload)
-        state.validate()
-        return state
-
-
 def _move_to_cpu(obj: Any) -> Any:
     if isinstance(obj, torch.Tensor):
         return obj.detach().cpu()
@@ -762,17 +636,6 @@ def restore_rng_state(state: dict[str, Any], use_cuda: bool) -> None:
     random.setstate(state["python"])
     if use_cuda and torch.cuda.is_available() and "torch_cuda" in state:
         torch.cuda.set_rng_state_all(state["torch_cuda"])
-
-
-def load_restart_state(path: Path) -> TrainingRestartState:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(payload, dict):
-        raise ValueError(f"Invalid restart state payload in {path}")
-    payload = dict(payload)
-    payload.setdefault("restart_state_path", str(path.resolve()))
-    return TrainingRestartState.from_dict(payload)
-
-
 def load_outer_restart_state(path: Path) -> OuterTrainingStateCheckpoint:
     payload = torch.load(path, map_location="cpu", weights_only=False)
     if not isinstance(payload, dict):
@@ -789,16 +652,6 @@ def load_inner_restart_state(path: Path) -> InnerTrainingStateCheckpoint:
     payload = dict(payload)
     payload.setdefault("restart_state_path", str(path.resolve()))
     return InnerTrainingStateCheckpoint.from_dict(payload)
-
-
-def save_restart_state(path: Path, state: TrainingRestartState) -> None:
-    state.restart_state_path = str(path.resolve())
-    state.validate()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(state.to_dict(), path)
-    logging.info("Saved trainer restart state to %s", path)
-
-
 def save_outer_restart_state(path: Path, state: OuterTrainingStateCheckpoint) -> None:
     state.restart_state_path = str(path.resolve())
     state.validate()
@@ -813,12 +666,6 @@ def save_inner_restart_state(path: Path, state: InnerTrainingStateCheckpoint) ->
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(state.to_dict(), path)
     logging.info("Saved inner trainer restart state to %s", path)
-
-
-def load_restart_metadata(path: Path) -> dict[str, Any]:
-    return load_restart_state(path).metadata()
-
-
 def load_outer_restart_metadata(path: Path) -> dict[str, Any]:
     return load_outer_restart_state(path).metadata()
 
@@ -867,35 +714,6 @@ def _apply_runtime_checkpoint(
         early_stopping.load_state_dict(early_stopping_state)
 
     restore_rng_state(rng_state, use_cuda=use_cuda)
-
-
-def apply_training_restart_state(
-    state: TrainingRestartState,
-    *,
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer | None = None,
-    lr_schedulers: dict[str, Any] | None = None,
-    scaler: torch.amp.GradScaler | None = None,
-    early_stopping: Any = None,
-    use_cuda: bool = False,
-) -> None:
-    state.validate()
-    _apply_runtime_checkpoint(
-        model_state=state.model_state,
-        optimizer_state=state.optimizer_state,
-        scheduler_states=state.scheduler_states,
-        scaler_state=state.scaler_state,
-        early_stopping_state=state.early_stopping_state,
-        rng_state=state.rng_state,
-        model=model,
-        optimizer=optimizer,
-        lr_schedulers=lr_schedulers,
-        scaler=scaler,
-        early_stopping=early_stopping,
-        use_cuda=use_cuda,
-    )
-
-
 def apply_inner_training_restart_state(
     state: InnerTrainingStateCheckpoint,
     *,

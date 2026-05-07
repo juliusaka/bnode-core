@@ -26,8 +26,6 @@ The current restart design separates outer orchestration state from inner phase 
 | `OuterTrainingStateCheckpoint` | on disk in `training_outer_restart.pt` | Stores outer resume metadata only |
 | `InnerTrainingStateCheckpoint` | on disk in `training_inner_restart.pt` | Stores phase runtime state and phase-control values |
 
-`TrainingRestartState` still exists in the codebase only as a legacy compatibility schema for older restart bundles and targeted unit coverage. Current trainer runs no longer write `training_restart.pt`.
-
 ## Checkpoint boundary
 
 ### Outer checkpoint
