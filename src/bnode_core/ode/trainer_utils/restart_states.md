@@ -39,7 +39,7 @@ Live outer state used by `train_all_phases()`.
 | `job_start_idx` | derived from `outer_restart_state.job_idx` or `0` |
 | `next_epoch_anchor` | derived from `outer_restart_state.next_epoch_anchor` or `0` |
 
-USER: completely remove this. Re-Add the variables as before
+USER: completely remove this. Re-add the variables as before the adding the centralized restart states (see git commits)
 
 ## 2. `train_one_phase()` side
 
@@ -49,11 +49,11 @@ Persisted inner checkpoint written to `training_inner_restart.pt`.
 
 | Field | Type |
 | --- | --- |
-| `schema_version` | `int` |
-| `hydra_output_dir` | `str` |
-| `restart_state_path` | `str` |
-| `checkpoint_reason` | `str` |
-| `job_idx` | `int` |
+| `schema_version` | `int` | USER: not needed
+| `hydra_output_dir` | `str` | USER: not needed
+| `restart_state_path` | `str` | USER: not needed
+| `checkpoint_reason` | `str` | USER: not needed
+| `job_idx` | `int` | USER: not needed
 | `phase_epoch` | `int` |
 | `first_epoch_is_evaluation` | `bool` |
 | `current_model_path` | `str` |
