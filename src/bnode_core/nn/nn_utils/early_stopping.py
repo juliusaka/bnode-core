@@ -16,7 +16,8 @@ from typing import Optional, Callable
 import torch.nn as nn
 import torch.optim as optim
 
-class EarlyStopping:
+
+class EarlyStopping(nn.Module):
     """Stop training early if validation loss doesn't improve after given patience.
     
     Tracks validation loss and saves model checkpoints when improvements occur.
@@ -59,6 +60,7 @@ class EarlyStopping:
             optimizer_path: Path to save optimizer state. Default: 'optimizer.pt'.
             trace_func: Logging function for status messages. Default: print.
         """
+        super().__init__()
         self.patience = patience
         self.verbose = verbose
         self.counter = 0

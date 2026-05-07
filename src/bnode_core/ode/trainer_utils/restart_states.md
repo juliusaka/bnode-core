@@ -36,7 +36,7 @@ Persisted inner state written to `training_inner_restart.pt`.
 | `optimizer_state` | restore optimizer state after recreation |
 | `scheduler_states` | restore scheduler state after recreation |
 | `scaler_state` | restore AMP scaler state after recreation |
-| `early_stopping_state` | restore early-stopping progress |
+| `early_stopping_state` | restore module-backed `EarlyStopping` progress |
 | `nan_counter` | continue NaN-recovery behavior |
 | `grad_norm_last_reduced_counter` | continue clip-grad reduction behavior |
 | `stable_epochs` | preserve seq-len-stability progress |

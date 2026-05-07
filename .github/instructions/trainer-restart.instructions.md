@@ -56,6 +56,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - scaler
   - early-stopping
   before restoring `TrainOnePhaseState`.
+- Keep `EarlyStopping` module-backed so its state remains an explicit, well-scoped runtime object rather than another ad-hoc restart dict owner.
 - The model checkpoint stays separate from `TrainOnePhaseState` and must be loaded explicitly in `train_one_phase()`.
 - Restore optimizer / scheduler / scaler state whenever `training_inner_restart.pt` exists in the current Hydra output directory.
 
