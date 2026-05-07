@@ -149,11 +149,9 @@ def _assert_restart_state(
     scheduler_key: str | None = None,
 ) -> None:
     assert outer_restart_state.job_idx == expected_job_idx
-    assert inner_restart_state.job_idx == expected_job_idx
     assert outer_restart_state.next_epoch_anchor >= inner_restart_state.phase_epoch
     if deterministic_mode_active is not None:
-        masks_set = inner_restart_state.model_state['deterministic_mode_active_masks_set']
-        assert bool(masks_set.item()) is deterministic_mode_active
+        assert inner_restart_state.deterministic_mode_active is deterministic_mode_active
     if scheduler_key is not None:
         assert scheduler_key in inner_restart_state.scheduler_states
         assert inner_restart_state.scheduler_states[scheduler_key]['last_epoch'] > 0
@@ -182,8 +180,8 @@ def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int
     original_save = trainer._save_phase_restart_checkpoint
     call_count = [0]
 
-    def _patched_save(live_state, outer_state, epoch: int):
-        result = original_save(live_state, outer_state, epoch)
+    def _patched_save(*args, **kwargs):
+        result = original_save(*args, **kwargs)
         call_count[0] += 1
         if call_count[0] >= n_saves:
             raise CheckpointRequestedExit(

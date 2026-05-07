@@ -1,27 +1,17 @@
 """Restart-state utility helpers for the trainer."""
 
 import logging
-import mlflow
 from pathlib import Path
+
+import mlflow
 
 import bnode_core.filepaths as filepaths
 from bnode_core.ode.trainer_utils.restart_state import (
-    InnerTrainingStateCheckpoint,
-    OuterTrainingStateCheckpoint,
-    OuterTrainingState,
-    load_inner_restart_state,
-    load_outer_restart_state,
+    TrainAllPhasesState,
+    TrainOnePhaseState,
+    load_train_all_phases_state,
+    load_train_one_phase_state,
 )
-
-
-def _validate_restart_hydra_output(*, stored_hydra_output: str, current_hydra_output: Path) -> None:
-    resolved_stored_output = Path(stored_hydra_output).resolve()
-    if resolved_stored_output != current_hydra_output:
-        raise ValueError(
-            "Restart state hydra output directory does not match current Hydra output directory. "
-            f"Expected {stored_hydra_output}, got {current_hydra_output}. "
-            "Resume runs must reuse the same hydra.run.dir."
-        )
 
 
 def _validate_restart_run_id(mlflow_run_id: str | None) -> None:
@@ -32,10 +22,10 @@ def _validate_restart_run_id(mlflow_run_id: str | None) -> None:
         )
 
 
-def _load_restart_checkpoints_if_available(
+def _load_restart_states_if_available(
 ) -> tuple[
-    OuterTrainingStateCheckpoint | None,
-    InnerTrainingStateCheckpoint | None,
+    TrainAllPhasesState | None,
+    TrainOnePhaseState | None,
     Path,
     Path,
 ]:
@@ -47,20 +37,11 @@ def _load_restart_checkpoints_if_available(
         raise ValueError(
             "Trainer restart requires both outer and inner restart checkpoints in the Hydra output directory."
         )
-    outer_restart_state = load_outer_restart_state(outer_restart_state_path)
-    inner_restart_state = load_inner_restart_state(inner_restart_state_path)
-    current_hydra_output = filepaths.dir_current_hydra_output().resolve()
-    _validate_restart_hydra_output(
-        stored_hydra_output=outer_restart_state.hydra_output_dir,
-        current_hydra_output=current_hydra_output,
-    )
-    _validate_restart_hydra_output(
-        stored_hydra_output=inner_restart_state.hydra_output_dir,
-        current_hydra_output=current_hydra_output,
-    )
+    outer_restart_state = load_train_all_phases_state(outer_restart_state_path)
+    inner_restart_state = load_train_one_phase_state(inner_restart_state_path)
     _validate_restart_run_id(outer_restart_state.mlflow_run_id)
-    logging.info("Loaded outer trainer restart state from %s", outer_restart_state_path)
-    logging.info("Loaded inner trainer restart state from %s", inner_restart_state_path)
+    logging.info("Loaded train_all_phases_state from %s", outer_restart_state_path)
+    logging.info("Loaded train_one_phase_state from %s", inner_restart_state_path)
     return (
         outer_restart_state,
         inner_restart_state,
@@ -69,24 +50,48 @@ def _load_restart_checkpoints_if_available(
     )
 
 
-def _load_outer_training_state(
+def _validate_restart_target(
     *,
-    cfg,
     job_list: list[dict],
-) -> OuterTrainingState:
+    train_all_phases_state: TrainAllPhasesState | None,
+    train_one_phase_state: TrainOnePhaseState | None,
+) -> None:
+    if train_all_phases_state is None and train_one_phase_state is None:
+        return
+    if train_all_phases_state is None or train_one_phase_state is None:
+        raise ValueError(
+            "Trainer restart requires both train_all_phases_state and train_one_phase_state."
+        )
+    if train_all_phases_state.job_idx >= len(job_list):
+        raise ValueError(
+            "Restart state refers to job index "
+            f"{train_all_phases_state.job_idx}, but only {len(job_list)} jobs exist."
+        )
+    target_job = job_list[train_all_phases_state.job_idx]
+    if target_job["test"] or target_job["pre_train"]:
+        raise ValueError("Trainer restart currently supports main-training phases only.")
+
+
+def load_restart_state_pair(
+    *,
+    job_list: list[dict],
+) -> tuple[TrainAllPhasesState | None, TrainOnePhaseState | None, Path, Path]:
     (
-        outer_restart_state,
-        inner_restart_state,
+        train_all_phases_state,
+        train_one_phase_state,
         outer_restart_state_path,
         inner_restart_state_path,
-    ) = _load_restart_checkpoints_if_available()
-    return OuterTrainingState(
-        cfg=cfg,
+    ) = _load_restart_states_if_available()
+    _validate_restart_target(
         job_list=job_list,
-        outer_restart_state_path=outer_restart_state_path,
-        inner_restart_state_path=inner_restart_state_path,
-        outer_restart_state=outer_restart_state,
-        inner_restart_state=inner_restart_state,
+        train_all_phases_state=train_all_phases_state,
+        train_one_phase_state=train_one_phase_state,
+    )
+    return (
+        train_all_phases_state,
+        train_one_phase_state,
+        outer_restart_state_path,
+        inner_restart_state_path,
     )
 
 

@@ -1,141 +1,62 @@
 # Current restart state inventory
 
-This file summarizes the **current** state-like objects and their fields in
-`restart_state.py` so the structure can be redesigned more easily.
+This file summarizes the **current** persisted restart-state contract after the
+wrapper-state removal.
 
 ## 1. `train_all_phases()` side
 
-### `OuterTrainingStateCheckpoint`
+### `TrainAllPhasesState`
 
-Persisted outer checkpoint written to `training_outer_restart.pt`.
+Persisted outer state written to `training_outer_restart.pt`.
 
-| Field | Type |
+| Field | Purpose |
 | --- | --- |
-| `schema_version` | `int` | USER: we do not need version numbers
-| `hydra_output_dir` | `str` | USER: given by hydra
-| `restart_state_path` | `str` | USER: is always in the output dir, can be removed
-| `checkpoint_reason` | `str` | USER: not needed
-| `mlflow_run_id` | `str | None` | 
-| `mlflow_tracking_uri` | `str | None` | USER: not needed
-| `mlflow_experiment_name` | `str | None` | USER: not needed
-| `job_idx` | `int` | USER: needed 
-| `next_epoch_anchor` | `int` | 
-| `slurm_job_id` | `str | None` | USER: not needed
+| `job_idx` | which main-training job resumes |
+| `next_epoch_anchor` | next global epoch passed back into `train_one_phase()` |
+| `mlflow_run_id` | strict resume into the same MLflow run |
 
-USER: Rename to train_all_phases_state, use a torch.nn.module superclass. no need for custom checkpointing
+Everything else is local again in `train_all_phases()`:
 
-### `OuterTrainingState`
-
-Live outer state used by `train_all_phases()`.
-
-| Attribute | Type / source |
-| --- | --- |
-| `cfg` | constructor arg |
-| `job_list` | constructor arg |
-| `outer_restart_state_path` | constructor arg |
-| `inner_restart_state_path` | constructor arg |
-| `outer_restart_state` | `OuterTrainingStateCheckpoint | None` |
-| `inner_restart_state` | `InnerTrainingStateCheckpoint | None` |
-| `job_start_idx` | derived from `outer_restart_state.job_idx` or `0` |
-| `next_epoch_anchor` | derived from `outer_restart_state.next_epoch_anchor` or `0` |
-
-USER: completely remove this. Re-add the variables as before the adding the centralized restart states (see git commits)
+- `job_list`
+- outer / inner restart paths
+- datasets / dataloaders
+- `model_created`
+- `model`
+- retry batch-size locals
 
 ## 2. `train_one_phase()` side
 
-### `InnerTrainingStateCheckpoint`
+### `TrainOnePhaseState`
 
-Persisted inner checkpoint written to `training_inner_restart.pt`.
+Persisted inner state written to `training_inner_restart.pt`.
 
-| Field | Type |
+| Field | Purpose |
 | --- | --- |
-| `schema_version` | `int` | USER: not needed
-| `hydra_output_dir` | `str` | USER: not needed
-| `restart_state_path` | `str` | USER: not needed
-| `checkpoint_reason` | `str` | USER: not needed
-| `job_idx` | `int` | USER: not needed
-| `phase_epoch` | `int` |
-| `first_epoch_is_evaluation` | `bool` |
-| `current_model_path` | `str` |
-| `current_optimizer_path` | `str` |
-| `best_model_path` | `str` |
-| `best_optimizer_path` | `str` |
-| `model_state` | `dict[str, Any]` |
-| `optimizer_state` | `dict[str, Any]` |
-| `scheduler_states` | `dict[str, dict[str, Any]]` |
-| `scaler_state` | `dict[str, Any]` |
-| `early_stopping_state` | `dict[str, Any]` |
-| `nan_counter` | `int` |
-| `grad_norm_last_reduced_counter` | `int` |
-| `stable_epochs` | `int` |
-| `flag_out_of_seq_len_increase` | `bool` |
-| `epoch_stop` | `int | None` |
-| `rng_state` | `dict[str, Any]` |
-| `deterministic_mode_active` | `bool` |
-| `slurm_job_id` | `str | None` |
+| `phase_epoch` | progress inside the current phase |
+| `optimizer_state` | restore optimizer state after recreation |
+| `scheduler_states` | restore scheduler state after recreation |
+| `scaler_state` | restore AMP scaler state after recreation |
+| `early_stopping_state` | restore early-stopping progress |
+| `nan_counter` | continue NaN-recovery behavior |
+| `grad_norm_last_reduced_counter` | continue clip-grad reduction behavior |
+| `stable_epochs` | preserve seq-len-stability progress |
+| `rng_state` | preserve RNG continuity |
+| `deterministic_mode_active` | preserve deterministic-mode status |
+| `seq_len_increase_in_batches` | preserve the exact resumed seq-len / epoch schedule |
 
-### `TrainingPhaseState`
+The model is **not** embedded in this state object. It remains an explicit checkpoint file.
 
-Phase-local mutable counters and flags.
+## 3. Variables that are local again
 
-| Field | Type |
-| --- | --- |
-| `phase_epoch_0` | `int` |
-| `epoch_start` | `int` |
-| `epoch_stop` | `int` |
-| `first_epoch_is_evaluation` | `bool` |
-| `nan_counter` | `int` |
-| `grad_norm_last_reduced_counter` | `int` |
-| `stable_epochs` | `int` |
-| `flag_out_of_seq_len_increase` | `bool` |
-| `deterministic_mode_active` | `bool` |
+These are intentionally not persisted in restart-state files anymore:
 
-### `LiveTrainingState`
+- `first_epoch_is_evaluation`
+- `flag_out_of_seq_len_increase`
+- `epoch_stop`
+- `_seq_len_now`
+- current / best checkpoint paths
+- `batches_per_epoch`
+- `max_epochs`
+- datasets / dataloaders
 
-Live inner runtime state used by `train_one_phase()`.
-
-| Attribute | Type / source |
-| --- | --- |
-| `cfg` | constructor arg |
-| `model` | `torch.nn.Module | None` |
-| `optimizer` | `torch.optim.Optimizer | None` |
-| `lr_schedulers` | `dict | None` |
-| `scaler` | `GradScaler | None` |
-| `early_stopping` | `Any | None` |
-| `train_cfg` | constructor arg |
-| `job_idx` | `int` |
-| `pre_train` | `bool` |
-| `device` | `torch.device` |
-| `phase_state` | `TrainingPhaseState` |
-| `path_best_model` | `Path` |
-| `path_optimizer_best_model` | `Path` |
-| `path_current_model` | `Path` |
-| `path_current_optimizer` | `Path` |
-| `hydra_output_dir` | `Path` |
-| `restart_manager_path` | `Path | None` |
-| `max_epochs` | `int` |
-| `batches_per_epoch` | `int | None` |
-
-## 3. Current file shape
-
-The current file effectively contains:
-
-1. one outer checkpoint object
-2. one outer live object
-3. one inner checkpoint object
-4. one phase-local helper state
-5. one inner live object
-
-## 4. If reduced to only two states
-
-If the target is really only:
-
-1. `train_all_phases_state`
-2. `train_one_phase_state`
-
-then the main current split to collapse is:
-
-- merge or remove the separate checkpoint-vs-live naming layers
-- decide whether `TrainingPhaseState` remains separate or is absorbed into the
-  `train_one_phase_state`
-- decide whether the phase-local counters stay as a separate helper state or move fully into `train_one_phase_state`
+Those values are reconstructed from config, filepaths, and the two minimal restart states.

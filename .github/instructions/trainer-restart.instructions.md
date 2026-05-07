@@ -9,68 +9,73 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 
 ## State model contract
 
-- Keep the responsibilities distinct:
-  - `OuterTrainingState` owns orchestration in `train_all_phases()`
-  - `TrainingPhaseState` owns mutable counters and flags for one phase
-  - `LiveTrainingState` owns the active runtime objects for one phase
-  - `OuterTrainingStateCheckpoint` persists only outer resume metadata
-  - `InnerTrainingStateCheckpoint` persists only phase runtime/control state
+- Keep exactly two persisted restart-state classes:
+  - `TrainAllPhasesState`
+  - `TrainOnePhaseState`
 - Current trainer runs use **two restart files**:
   - `training_outer_restart.pt`
   - `training_inner_restart.pt`
-- Do not re-introduce a single mixed restart payload as the main workflow contract.
+- Do not re-introduce wrapper-state layers such as `OuterTrainingState`, `TrainingPhaseState`, or `LiveTrainingState`.
 - Do not add legacy compatibility readers, old single-file restart schemas, or obsolete restart filenames unless the user explicitly asks for compatibility.
 
-## Construction and restore order
+## Ownership boundary
 
-- `LiveTrainingState` uses a **two-phase construction pattern**:
-  1. `create_uninitialized()` in `train_all_phases()` after dataloaders and checkpoint paths are known
-  2. `bind_runtime_objects()` inside `train_one_phase()` after optimizer, schedulers, scaler, and early-stopping have been created
-- Restore must happen only in `bind_runtime_objects()`, never as a side effect of outer-state creation.
-- `trainer.py` may inspect outer checkpoint metadata early to choose the resumed job, but it must not restore runtime state until runtime objects exist.
-
-## Checkpoint boundary
-
-- Outer checkpoint owns:
-  - Hydra output directory
-  - MLflow run metadata
-  - resumed job index
+- `TrainAllPhasesState` owns only the outer resume anchor:
+  - `job_idx`
   - `next_epoch_anchor`
-- Inner checkpoint owns:
-  - model / optimizer / scheduler / scaler / early-stopping state dicts
+  - `mlflow_run_id`
+- `TrainOnePhaseState` owns only the persisted inner runtime/control state:
   - `phase_epoch`
-  - `first_epoch_is_evaluation`
+  - optimizer state
+  - scheduler states
+  - scaler state
+  - early-stopping state
   - `nan_counter`
   - `grad_norm_last_reduced_counter`
   - `stable_epochs`
+  - RNG state
+  - `deterministic_mode_active`
+  - effective `seq_len_increase_in_batches`
+- Keep these as explicit locals in `trainer.py`, not persisted restart fields:
+  - `job_list`
+  - dataset / dataloader objects
+  - retry batch-size locals
+  - `first_epoch_is_evaluation`
   - `flag_out_of_seq_len_increase`
   - `epoch_stop`
-  - `deterministic_mode_active`
-  - RNG state
-  - current/best checkpoint paths for the active phase
-- Do **not** persist:
-  - `cfg`
-  - dataloaders or dataset handles
-  - retry batch-size locals
+  - checkpoint-path locals
+  - `_seq_len_now`
   - copied `train_cfg` state
+
+## Construction and restore order
+
+- `train_all_phases()` may load the two restart-state files early only to choose the resumed job and epoch anchor.
+- `train_one_phase()` must construct:
+  - optimizer
+  - schedulers
+  - scaler
+  - early-stopping
+  before restoring `TrainOnePhaseState`.
+- The model checkpoint stays separate from `TrainOnePhaseState` and must be loaded explicitly in `train_one_phase()`.
+- Restore optimizer / scheduler / scaler state whenever `training_inner_restart.pt` exists in the current Hydra output directory.
 
 ## Documentation contract
 
 - Keep `docs/bnode_core/ode/restart_training.md` aligned with:
   - the actual two-file resume workflow
-  - the current ownership split between outer state, phase state, live phase state, and the two checkpoint dataclasses
+  - the explicit-local-variable flow in `trainer.py`
+  - the current persisted-field lists for `TrainAllPhasesState` and `TrainOnePhaseState`
 - When code comments or docstrings explain restart ownership, point readers to `docs/bnode_core/ode/restart_training.md`.
 
 ## Test expectations
 
 - `tests/ode/test_restart_state.py` should cover:
-  - roundtrips for `OuterTrainingStateCheckpoint`
-  - roundtrips for `InnerTrainingStateCheckpoint`
-  - `create_uninitialized()` with runtime object fields still `None`
-  - `bind_runtime_objects()` restoring runtime state from an inner checkpoint
-  - `create()` as the backward-compatible convenience wrapper
+  - roundtrips for `TrainAllPhasesState`
+  - roundtrips for `TrainOnePhaseState`
+  - restoring optimizer / scheduler / scaler / early-stopping / RNG state from `TrainOnePhaseState`
+  - invalid payload rejection
 - `tests/ode/test_bnode.py` resume tests should assert the two-file layout explicitly:
   - interrupted runs leave both restart files behind
   - successful resumed runs remove both restart files
-  - MLflow resume metadata comes from the outer checkpoint
-- If checkpoint fields, filenames, or restore ordering change, update docs and all relevant restart tests in the same task.
+  - MLflow resume metadata comes from the outer restart state
+- If persisted fields, restore ordering, or restart filenames change, update docs and all relevant restart tests in the same task.
