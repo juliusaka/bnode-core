@@ -245,7 +245,7 @@ def load_train_all_phases_state(path: Path) -> TrainAllPhasesState:
     return state
 
 
-def load_outer_restart_metadata(path: Path) -> dict[str, Any]:
+def load_train_all_phases_state_metadata(path: Path) -> dict[str, Any]:
     metadata = load_train_all_phases_state(path).metadata()
     metadata["restart_state_path"] = str(path.resolve())
     metadata["hydra_output_dir"] = str(path.resolve().parent.resolve())
@@ -265,14 +265,6 @@ def load_train_one_phase_state(path: Path) -> TrainOnePhaseState:
         raise ValueError(f"Invalid train_one_phase_state payload in {path}")
     state.validate()
     return state
-
-
-def load_outer_restart_state(path: Path) -> TrainAllPhasesState:
-    return load_train_all_phases_state(path)
-
-
-def load_inner_restart_state(path: Path) -> TrainOnePhaseState:
-    return load_train_one_phase_state(path)
 
 
 def save_train_one_phase_state(path: Path, state: TrainOnePhaseState) -> None:

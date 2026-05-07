@@ -15,7 +15,7 @@ import subprocess
 
 from bnode_core.ode.trainer_utils.restart_state import (
   OUTER_RESTART_STATE_FILENAME,
-  load_outer_restart_metadata,
+  load_train_all_phases_state_metadata,
 )
 
 
@@ -128,7 +128,7 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
       restart_state_path = hydra_output_dir / OUTER_RESTART_STATE_FILENAME
       if not restart_state_path.exists():
         return None
-      return load_outer_restart_metadata(restart_state_path)
+      return load_train_all_phases_state_metadata(restart_state_path)
 
     # set mlflow tracking uri and experiment name from config
     if cfg.mlflow_tracking_uri is not None:

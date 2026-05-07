@@ -15,8 +15,8 @@ from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     INNER_RESTART_STATE_FILENAME,
     OUTER_RESTART_STATE_FILENAME,
-    load_inner_restart_state,
-    load_outer_restart_state,
+    load_train_all_phases_state,
+    load_train_one_phase_state,
 )
 
 
@@ -404,8 +404,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
 
     outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
     inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
-    outer_restart_state = load_outer_restart_state(outer_restart_path)
-    inner_restart_state = load_inner_restart_state(inner_restart_path)
+    outer_restart_state = load_train_all_phases_state(outer_restart_path)
+    inner_restart_state = load_train_one_phase_state(inner_restart_path)
     _assert_restart_state(
         outer_restart_state,
         inner_restart_state,
@@ -467,8 +467,8 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
 
     outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
     inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
-    outer_restart_state = load_outer_restart_state(outer_restart_path)
-    inner_restart_state = load_inner_restart_state(inner_restart_path)
+    outer_restart_state = load_train_all_phases_state(outer_restart_path)
+    inner_restart_state = load_train_one_phase_state(inner_restart_path)
     # Interrupted during phase 2 training before det-mode was applied.
     _assert_restart_state(
         outer_restart_state,
