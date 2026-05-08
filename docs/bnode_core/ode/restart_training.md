@@ -13,9 +13,11 @@ At the end of every completed training epoch, the trainer updates the current Hy
 - `training_inner_restart.pt`: minimal inner resume state with phase counters, deterministic-mode status, seq-len state, RNG state, and attached `EarlyStopping` state
 - `model.pt`: latest in-progress model checkpoint
 - `optimizer.pt`: latest in-progress optimizer checkpoint
+- `lr_schedulers.pt`: latest in-progress LR scheduler checkpoint dict
+- `grad_scaler.pt`: latest in-progress AMP scaler checkpoint dict
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
 
-Finished runs remove both restart files.
+Finished runs remove both restart-state files and both runtime checkpoint files.
 
 ## State model
 
@@ -31,7 +33,6 @@ Important runtime values are **not** wrapped in a long-lived live-state object a
 - `job_list`
 - restart file paths
 - dataset / dataloader objects
-- `model_created`
 - `model`
 - `first_epoch_is_evaluation`
 - `flag_out_of_seq_len_increase`
@@ -100,12 +101,14 @@ Resume now happens in this order:
 4. `train_one_phase()` constructs the optimizer, schedulers, scaler, and early-stopping helper, then attaches the live objects to `train_one_phase_state`.
 5. It explicitly loads `model.pt`.
 6. It explicitly loads `optimizer.pt`.
-7. It loads `train_one_phase_state` into the live state object, restoring its counters, RNG state, and attached `EarlyStopping` module state.
-8. Local-only flags such as `first_epoch_is_evaluation`, `flag_out_of_seq_len_increase`, and `epoch_stop` are recomputed from config plus the persisted minimal state.
+7. It explicitly loads `lr_schedulers.pt` and `grad_scaler.pt`.
+8. It loads `train_one_phase_state` into the live state object, restoring its counters, RNG state, attached `EarlyStopping` module state, and the effective `seq_len_increase_in_batches`.
+9. Local-only flags such as `first_epoch_is_evaluation`, `flag_out_of_seq_len_increase`, and `epoch_stop` are recomputed from config plus the persisted minimal state.
 
 That keeps the restore boundary visible:
 
 - model checkpoint load is explicit
+- scheduler and scaler checkpoint loads are explicit
 - runtime-object attachment happens before `train_one_phase_state.load(...)`
 - non-persisted loop control remains local in the trainer
 
@@ -125,5 +128,5 @@ Use the same MLflow tracking URI and experiment as the original run. The outer r
 ## Operational expectations
 
 - Restart support currently targets interrupted **main-training phases**.
-- A resumable run must have both `training_outer_restart.pt` and `training_inner_restart.pt`.
+- A resumable run must have both restart-state files plus the current runtime checkpoints: `model.pt`, `optimizer.pt`, `lr_schedulers.pt`, and `grad_scaler.pt`.
 - The trainer does not keep legacy restart schemas or legacy single-file restart bundles.

@@ -20,7 +20,6 @@ Everything else is local again in `train_all_phases()`:
 - `job_list`
 - outer / inner restart paths
 - datasets / dataloaders
-- `model_created`
 - `model`
 - retry batch-size locals
 
@@ -45,8 +44,13 @@ constructed state object. The persisted fields are:
 | attached `EarlyStopping` module | restore early-stopping progress when the trainer attaches it before `load()` |
 
 The model is **not** embedded in this state object. It remains an explicit checkpoint file.
-The optimizer is restored from `optimizer.pt` in the Hydra output directory after the
-runtime optimizer object is created.
+The runtime optimizer, schedulers, and scaler are also **not** embedded in this state object.
+They are restored from explicit runtime checkpoint files in the Hydra output directory after the
+runtime objects are created:
+
+- `optimizer.pt`
+- `lr_schedulers.pt`
+- `grad_scaler.pt`
 
 ## 3. Variables that are local again
 

@@ -37,7 +37,6 @@ Important locals:
 - `inner_restart_state_path`
 - `job_start_idx`
 - `next_epoch_anchor`
-- `model_created`
 - `model`
 - `datasets`
 - `dataloaders`
@@ -112,9 +111,10 @@ Responsibilities:
 - instantiates `TrainOnePhaseState()` and attaches the live runtime objects to it
 - explicitly loads `model.pt` on resume
 - explicitly loads `optimizer.pt` on resume
+- explicitly loads `lr_schedulers.pt` and `grad_scaler.pt` on resume
 - restores counters / RNG / attached early-stopping state by calling `train_one_phase_state.load(...)`
 - runs the epoch loop
-- saves both restart-state files at epoch boundaries
+- saves both restart-state files plus the scheduler/scaler runtime checkpoints at epoch boundaries
 - returns the next global epoch anchor for the next outer job
 
 Important persisted state:
@@ -155,6 +155,8 @@ def train_one_phase(...):
     if train_one_phase_state exists:
         load model.pt
         load optimizer.pt
+        load lr_schedulers.pt
+        load grad_scaler.pt
         attach early_stopping to state
         state.load(inner_path)
         restore RNG from state
@@ -176,7 +178,8 @@ def train_one_phase(...):
         run validation / test / ref / testnorm evaluations
         update early stopping and stable epoch counters
         maybe mark seq-len increase as finished
-        save train_one_phase_state and train_all_phases_state
+        sync effective seq_len_increase_in_batches into state
+        save train_one_phase_state, train_all_phases_state, lr_schedulers.pt, and grad_scaler.pt
 
     return epoch + 1
 ```

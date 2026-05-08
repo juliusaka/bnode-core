@@ -56,7 +56,11 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   before calling `TrainOnePhaseState.load(...)`.
 - Keep `EarlyStopping` module-backed so it can be attached directly to `TrainOnePhaseState` before save/load instead of being converted into a separate restart dict.
 - The model checkpoint stays separate from `TrainOnePhaseState` and must be loaded explicitly in `train_one_phase()`.
-- Restore the optimizer explicitly from `optimizer.pt` whenever `training_inner_restart.pt` exists in the current Hydra output directory.
+- Restore the runtime optimizer, schedulers, and scaler explicitly from:
+  - `optimizer.pt`
+  - `lr_schedulers.pt`
+  - `grad_scaler.pt`
+  whenever `training_inner_restart.pt` exists in the current Hydra output directory.
 - Do not add validation helpers, payload-shape checkers, or wrapper restore methods to the state classes; keep them to `__init__`, `save()`, and `load()`.
 
 ## Documentation contract
@@ -72,10 +76,11 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 - `tests/ode/test_restart_state.py` should cover:
   - roundtrips for `TrainAllPhasesState`
   - roundtrips for `TrainOnePhaseState`
-  - restoring optimizer / scheduler / scaler / early-stopping / RNG state from `TrainOnePhaseState`
-  - invalid payload rejection
+  - syncing effective `seq_len_increase_in_batches` at the restart-checkpoint save boundary
+  - restoring early-stopping and RNG state from `TrainOnePhaseState`
 - `tests/ode/test_bnode.py` resume tests should assert the two-file layout explicitly:
   - interrupted runs leave both restart files behind
-  - successful resumed runs remove both restart files
+  - interrupted runs also leave `lr_schedulers.pt` and `grad_scaler.pt` behind
+  - successful resumed runs remove all four restart/runtime checkpoint files
   - MLflow resume metadata comes from the outer restart state
 - If persisted fields, restore ordering, or restart filenames change, update docs and all relevant restart tests in the same task.
