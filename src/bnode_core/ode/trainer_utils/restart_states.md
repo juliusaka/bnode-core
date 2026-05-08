@@ -30,21 +30,23 @@ Everything else is local again in `train_all_phases()`:
 
 Persisted inner state written to `training_inner_restart.pt`.
 
+The class now saves only its own `state_dict()` and loads it back into a freshly
+constructed state object. The persisted fields are:
+
 | Field | Purpose |
 | --- | --- |
 | `phase_epoch` | progress inside the current phase |
-| `optimizer_state` | restore optimizer state after recreation |
-| `scheduler_states` | restore scheduler state after recreation |
-| `scaler_state` | restore AMP scaler state after recreation |
-| `early_stopping_state` | restore module-backed `EarlyStopping` progress |
 | `nan_counter` | continue NaN-recovery behavior |
 | `grad_norm_last_reduced_counter` | continue clip-grad reduction behavior |
 | `stable_epochs` | preserve seq-len-stability progress |
-| `rng_state` | preserve RNG continuity |
 | `deterministic_mode_active` | preserve deterministic-mode status |
-| `seq_len_increase_in_batches` | preserve the exact resumed seq-len / epoch schedule |
+| `seq_len_increase_in_batches` | preserve the resumed seq-len / epoch schedule |
+| `rng_state` | preserve RNG continuity |
+| attached `EarlyStopping` module | restore early-stopping progress when the trainer attaches it before `load()` |
 
 The model is **not** embedded in this state object. It remains an explicit checkpoint file.
+The optimizer is restored from `optimizer.pt` in the Hydra output directory after the
+runtime optimizer object is created.
 
 ## 3. Variables that are local again
 
@@ -54,6 +56,7 @@ These are intentionally not persisted in restart-state files anymore:
 - `flag_out_of_seq_len_increase`
 - `epoch_stop`
 - `_seq_len_now`
+- optimizer / scheduler / scaler objects
 - current / best checkpoint paths
 - `batches_per_epoch`
 - `max_epochs`

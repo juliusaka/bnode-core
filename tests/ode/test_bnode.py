@@ -146,15 +146,11 @@ def _assert_restart_state(
     *,
     expected_job_idx: int,
     deterministic_mode_active: bool | None = None,
-    scheduler_key: str | None = None,
 ) -> None:
     assert outer_restart_state.job_idx == expected_job_idx
     assert outer_restart_state.next_epoch_anchor >= inner_restart_state.phase_epoch
     if deterministic_mode_active is not None:
         assert inner_restart_state.deterministic_mode_active is deterministic_mode_active
-    if scheduler_key is not None:
-        assert scheduler_key in inner_restart_state.scheduler_states
-        assert inner_restart_state.scheduler_states[scheduler_key]['last_epoch'] > 0
 
 
 def _assert_resumed_mlflow_run(

@@ -109,8 +109,10 @@ Responsibilities:
 
 - recreates local phase-control variables instead of using a live wrapper object
 - builds optimizer, scheduler, scaler, and early stopping helpers
+- instantiates `TrainOnePhaseState()` and attaches the live runtime objects to it
 - explicitly loads `model.pt` on resume
-- restores optimizer / scheduler / scaler / early-stopping / RNG state from `train_one_phase_state`
+- explicitly loads `optimizer.pt` on resume
+- restores counters / RNG / attached early-stopping state by calling `train_one_phase_state.load(...)`
 - runs the epoch loop
 - saves both restart-state files at epoch boundaries
 - returns the next global epoch anchor for the next outer job
@@ -118,13 +120,13 @@ Responsibilities:
 Important persisted state:
 
 - `train_one_phase_state.phase_epoch`
-- optimizer / scheduler / scaler / early-stopping state
 - `nan_counter`
 - `grad_norm_last_reduced_counter`
 - `stable_epochs`
 - `rng_state`
 - `deterministic_mode_active`
 - `seq_len_increase_in_batches`
+- attached `train_one_phase_state.early_stopping`
 
 Important locals:
 
@@ -152,7 +154,10 @@ def train_one_phase(...):
 
     if train_one_phase_state exists:
         load model.pt
-        restore optimizer/scheduler/scaler/early-stopping/RNG from state
+        load optimizer.pt
+        attach early_stopping to state
+        state.load(inner_path)
+        restore RNG from state
 
     recreate local flags and counters
 

@@ -183,7 +183,7 @@ class EarlyStopping(nn.Module):
         if optimizer is not None:
                 torch.save(optimizer.state_dict(), Path(self.optimizer_path))
 
-    def state_dict(self) -> dict:
+    def get_extra_state(self) -> dict:
         return {
             'patience': self.patience,
             'verbose': self.verbose,
@@ -198,7 +198,7 @@ class EarlyStopping(nn.Module):
             'optimizer_path': str(self.optimizer_path),
         }
 
-    def load_state_dict(self, state: dict) -> None:
+    def set_extra_state(self, state: dict) -> None:
         self.patience = state['patience']
         self.verbose = state['verbose']
         self.counter = state['counter']

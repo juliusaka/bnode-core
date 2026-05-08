@@ -17,203 +17,19 @@ class CheckpointRequestedExit(RuntimeError):
     """Raised when training should stop after persisting a restart checkpoint."""
 
 
-class TrainAllPhasesState(torch.nn.Module):
-    """Minimal persisted state for ``train_all_phases()``."""
-
-    def __init__(
-        self,
-        *,
-        job_idx: int = 0,
-        next_epoch_anchor: int = 0,
-        mlflow_run_id: str | None = None,
-    ) -> None:
-        super().__init__()
-        self.job_idx = job_idx
-        self.next_epoch_anchor = next_epoch_anchor
-        self.mlflow_run_id = mlflow_run_id
-
-    def validate(self) -> None:
-        if self.job_idx < 0:
-            raise ValueError("train_all_phases_state.job_idx must be non-negative")
-        if self.next_epoch_anchor < 0:
-            raise ValueError("train_all_phases_state.next_epoch_anchor must be non-negative")
-
-    def metadata(self) -> dict[str, Any]:
-        return {
-            "job_idx": self.job_idx,
-            "next_epoch_anchor": self.next_epoch_anchor,
-            "mlflow_run_id": self.mlflow_run_id,
-        }
+def _encode_optional_string(value: str | None) -> tuple[torch.Tensor, torch.Tensor]:
+    if value is None:
+        return torch.zeros(0, dtype=torch.uint8), torch.tensor(True, dtype=torch.bool)
+    return (
+        torch.tensor(list(value.encode("utf-8")), dtype=torch.uint8),
+        torch.tensor(False, dtype=torch.bool),
+    )
 
 
-class TrainOnePhaseState(torch.nn.Module):
-    """Minimal persisted state for ``train_one_phase()``."""
-
-    def __init__(
-        self,
-        *,
-        phase_epoch: int = 0,
-        optimizer_state: dict[str, Any] | None = None,
-        scheduler_states: dict[str, dict[str, Any]] | None = None,
-        scaler_state: dict[str, Any] | None = None,
-        early_stopping_state: dict[str, Any] | None = None,
-        nan_counter: int = 0,
-        grad_norm_last_reduced_counter: int = 0,
-        stable_epochs: int = 0,
-        rng_state: dict[str, Any] | None = None,
-        deterministic_mode_active: bool = False,
-        seq_len_increase_in_batches: int | None = None,
-    ) -> None:
-        super().__init__()
-        self.phase_epoch = phase_epoch
-        self.optimizer_state = optimizer_state or {}
-        self.scheduler_states = scheduler_states or {}
-        self.scaler_state = scaler_state or {}
-        self.early_stopping_state = early_stopping_state or {}
-        self.nan_counter = nan_counter
-        self.grad_norm_last_reduced_counter = grad_norm_last_reduced_counter
-        self.stable_epochs = stable_epochs
-        self.rng_state = rng_state or {}
-        self.deterministic_mode_active = deterministic_mode_active
-        self.seq_len_increase_in_batches = seq_len_increase_in_batches
-
-    def validate(self) -> None:
-        if self.phase_epoch < 0:
-            raise ValueError("train_one_phase_state.phase_epoch must be non-negative")
-        if self.nan_counter < 0:
-            raise ValueError("train_one_phase_state.nan_counter must be non-negative")
-        if self.grad_norm_last_reduced_counter < 0:
-            raise ValueError(
-                "train_one_phase_state.grad_norm_last_reduced_counter must be non-negative"
-            )
-        if self.stable_epochs < 0:
-            raise ValueError("train_one_phase_state.stable_epochs must be non-negative")
-        if not isinstance(self.optimizer_state, dict):
-            raise ValueError("train_one_phase_state.optimizer_state must be a dict")
-        if not isinstance(self.scheduler_states, dict):
-            raise ValueError("train_one_phase_state.scheduler_states must be a dict")
-        if not isinstance(self.scaler_state, dict):
-            raise ValueError("train_one_phase_state.scaler_state must be a dict")
-        if not isinstance(self.early_stopping_state, dict):
-            raise ValueError("train_one_phase_state.early_stopping_state must be a dict")
-        if not isinstance(self.rng_state, dict):
-            raise ValueError("train_one_phase_state.rng_state must be a dict")
-        if (
-            self.seq_len_increase_in_batches is not None
-            and self.seq_len_increase_in_batches < 0
-        ):
-            raise ValueError(
-                "train_one_phase_state.seq_len_increase_in_batches must be non-negative"
-            )
-
-    def metadata(self) -> dict[str, Any]:
-        return {
-            "phase_epoch": self.phase_epoch,
-            "nan_counter": self.nan_counter,
-            "grad_norm_last_reduced_counter": self.grad_norm_last_reduced_counter,
-            "stable_epochs": self.stable_epochs,
-            "deterministic_mode_active": self.deterministic_mode_active,
-            "seq_len_increase_in_batches": self.seq_len_increase_in_batches,
-        }
-
-    @classmethod
-    def from_runtime(
-        cls,
-        *,
-        phase_epoch: int,
-        optimizer: torch.optim.Optimizer | None,
-        lr_schedulers: dict[str, Any] | None,
-        scaler: torch.amp.GradScaler | None,
-        early_stopping: Any,
-        nan_counter: int,
-        grad_norm_last_reduced_counter: int,
-        stable_epochs: int,
-        deterministic_mode_active: bool,
-        seq_len_increase_in_batches: int | None,
-        use_cuda: bool,
-    ) -> "TrainOnePhaseState":
-        scheduler_states: dict[str, dict[str, Any]] = {}
-        if lr_schedulers is not None:
-            scheduler_states = {
-                name: _move_to_cpu(scheduler.state_dict())
-                for name, scheduler in lr_schedulers.items()
-            }
-        return cls(
-            phase_epoch=phase_epoch,
-            optimizer_state=(
-                _move_to_cpu(optimizer.state_dict()) if optimizer is not None else {}
-            ),
-            scheduler_states=scheduler_states,
-            scaler_state=_move_to_cpu(scaler.state_dict()) if scaler is not None else {},
-            early_stopping_state=(
-                _move_to_cpu(early_stopping.state_dict())
-                if early_stopping is not None
-                else {}
-            ),
-            nan_counter=nan_counter,
-            grad_norm_last_reduced_counter=grad_norm_last_reduced_counter,
-            stable_epochs=stable_epochs,
-            rng_state=_move_to_cpu(capture_rng_state(use_cuda)),
-            deterministic_mode_active=deterministic_mode_active,
-            seq_len_increase_in_batches=seq_len_increase_in_batches,
-        )
-
-    def restore_runtime_objects(
-        self,
-        *,
-        optimizer: torch.optim.Optimizer | None,
-        lr_schedulers: dict[str, Any] | None,
-        scaler: torch.amp.GradScaler | None,
-        early_stopping: Any,
-        use_cuda: bool,
-    ) -> None:
-        self.validate()
-
-        if self.optimizer_state:
-            if optimizer is None:
-                raise ValueError(
-                    "train_one_phase_state contains optimizer_state but no optimizer was provided"
-                )
-            optimizer.load_state_dict(self.optimizer_state)
-
-        saved_scheduler_keys = set(self.scheduler_states.keys())
-        current_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
-        if saved_scheduler_keys != current_scheduler_keys:
-            raise ValueError(
-                "train_one_phase_state scheduler keys do not match current schedulers: "
-                f"saved={sorted(saved_scheduler_keys)}, current={sorted(current_scheduler_keys)}"
-            )
-        if lr_schedulers is not None:
-            for name, scheduler in lr_schedulers.items():
-                scheduler.load_state_dict(self.scheduler_states[name])
-
-        if self.scaler_state:
-            if scaler is None:
-                raise ValueError(
-                    "train_one_phase_state contains scaler_state but no scaler was provided"
-                )
-            scaler.load_state_dict(self.scaler_state)
-
-        if self.early_stopping_state:
-            if early_stopping is None:
-                raise ValueError(
-                    "train_one_phase_state contains early_stopping_state but no early_stopping was provided"
-                )
-            early_stopping.load_state_dict(self.early_stopping_state)
-
-        restore_rng_state(self.rng_state, use_cuda=use_cuda)
-
-
-def _move_to_cpu(obj: Any) -> Any:
-    if isinstance(obj, torch.Tensor):
-        return obj.detach().cpu()
-    if isinstance(obj, dict):
-        return {key: _move_to_cpu(value) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [_move_to_cpu(value) for value in obj]
-    if isinstance(obj, tuple):
-        return tuple(_move_to_cpu(value) for value in obj)
-    return obj
+def _decode_optional_string(value_bytes: torch.Tensor, is_none: torch.Tensor) -> str | None:
+    if bool(is_none.item()):
+        return None
+    return bytes(int(x) for x in value_bytes.tolist()).decode("utf-8")
 
 
 def capture_rng_state(use_cuda: bool) -> dict[str, Any]:
@@ -237,38 +53,298 @@ def restore_rng_state(state: dict[str, Any], use_cuda: bool) -> None:
         torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
+def _encode_rng_state(
+    state: dict[str, Any],
+) -> dict[str, torch.Tensor]:
+    if not state:
+        return {
+            "torch_cpu": torch.zeros(0, dtype=torch.uint8),
+            "torch_cuda_flat": torch.zeros(0, dtype=torch.uint8),
+            "torch_cuda_lengths": torch.zeros(0, dtype=torch.int64),
+            "numpy_alg": torch.zeros(0, dtype=torch.uint8),
+            "numpy_state": torch.zeros(0, dtype=torch.int64),
+            "numpy_pos": torch.tensor(0, dtype=torch.int64),
+            "numpy_has_gauss": torch.tensor(False, dtype=torch.bool),
+            "numpy_cached_gaussian": torch.tensor(0.0, dtype=torch.float64),
+            "python_version": torch.tensor(0, dtype=torch.int64),
+            "python_state": torch.zeros(0, dtype=torch.int64),
+            "python_has_gauss": torch.tensor(False, dtype=torch.bool),
+            "python_cached_gaussian": torch.tensor(0.0, dtype=torch.float64),
+        }
+
+    numpy_alg, numpy_state, numpy_pos, numpy_has_gauss, numpy_cached_gaussian = state["numpy"]
+    python_version, python_internal_state, python_cached_gaussian = state["python"]
+    torch_cuda_states = state.get("torch_cuda", [])
+    torch_cuda_lengths = torch.tensor(
+        [tensor.numel() for tensor in torch_cuda_states],
+        dtype=torch.int64,
+    )
+    torch_cuda_flat = (
+        torch.cat([tensor.cpu().to(torch.uint8).flatten() for tensor in torch_cuda_states])
+        if torch_cuda_states
+        else torch.zeros(0, dtype=torch.uint8)
+    )
+
+    return {
+        "torch_cpu": state["torch_cpu"].cpu().to(torch.uint8),
+        "torch_cuda_flat": torch_cuda_flat,
+        "torch_cuda_lengths": torch_cuda_lengths,
+        "numpy_alg": torch.tensor(list(numpy_alg.encode("utf-8")), dtype=torch.uint8),
+        "numpy_state": torch.as_tensor(numpy_state.astype(np.int64), dtype=torch.int64),
+        "numpy_pos": torch.tensor(int(numpy_pos), dtype=torch.int64),
+        "numpy_has_gauss": torch.tensor(bool(numpy_has_gauss), dtype=torch.bool),
+        "numpy_cached_gaussian": torch.tensor(float(numpy_cached_gaussian), dtype=torch.float64),
+        "python_version": torch.tensor(int(python_version), dtype=torch.int64),
+        "python_state": torch.tensor(list(python_internal_state), dtype=torch.int64),
+        "python_has_gauss": torch.tensor(python_cached_gaussian is not None, dtype=torch.bool),
+        "python_cached_gaussian": torch.tensor(
+            float(python_cached_gaussian) if python_cached_gaussian is not None else 0.0,
+            dtype=torch.float64,
+        ),
+    }
+
+
+def _decode_rng_state(
+    *,
+    torch_cpu: torch.Tensor,
+    torch_cuda_flat: torch.Tensor,
+    torch_cuda_lengths: torch.Tensor,
+    numpy_alg: torch.Tensor,
+    numpy_state: torch.Tensor,
+    numpy_pos: torch.Tensor,
+    numpy_has_gauss: torch.Tensor,
+    numpy_cached_gaussian: torch.Tensor,
+    python_version: torch.Tensor,
+    python_state: torch.Tensor,
+    python_has_gauss: torch.Tensor,
+    python_cached_gaussian: torch.Tensor,
+) -> dict[str, Any]:
+    numpy_alg_str = bytes(int(x) for x in numpy_alg.tolist()).decode("utf-8")
+    numpy_tuple = (
+        numpy_alg_str,
+        np.asarray(numpy_state.tolist(), dtype=np.uint32),
+        int(numpy_pos.item()),
+        bool(numpy_has_gauss.item()),
+        float(numpy_cached_gaussian.item()),
+    )
+    python_tuple = (
+        int(python_version.item()),
+        tuple(int(x) for x in python_state.tolist()),
+        float(python_cached_gaussian.item()) if bool(python_has_gauss.item()) else None,
+    )
+    rng_state: dict[str, Any] = {
+        "torch_cpu": torch_cpu.cpu().to(torch.uint8),
+        "numpy": numpy_tuple,
+        "python": python_tuple,
+    }
+    if torch_cuda_lengths.numel() > 0:
+        torch_cuda_states = []
+        offset = 0
+        for length in torch_cuda_lengths.tolist():
+            next_offset = offset + int(length)
+            torch_cuda_states.append(torch_cuda_flat[offset:next_offset].clone())
+            offset = next_offset
+        rng_state["torch_cuda"] = torch_cuda_states
+    return rng_state
+
+
+class TrainAllPhasesState(torch.nn.Module):
+    """Minimal persisted state for ``train_all_phases()``."""
+
+    def __init__(
+        self,
+        *,
+        job_idx: int = 0,
+        next_epoch_anchor: int = 0,
+        mlflow_run_id: str | None = None,
+    ) -> None:
+        super().__init__()
+        self.job_idx = job_idx
+        self.next_epoch_anchor = next_epoch_anchor
+        self.mlflow_run_id = mlflow_run_id
+        self.register_buffer("_job_idx", torch.tensor(job_idx, dtype=torch.int64))
+        self.register_buffer(
+            "_next_epoch_anchor",
+            torch.tensor(next_epoch_anchor, dtype=torch.int64),
+        )
+        mlflow_run_id_bytes, mlflow_run_id_is_none = _encode_optional_string(mlflow_run_id)
+        self.register_buffer("_mlflow_run_id_bytes", mlflow_run_id_bytes)
+        self.register_buffer("_mlflow_run_id_is_none", mlflow_run_id_is_none)
+
+    def save(self, path: Path) -> None:
+        self._job_idx = torch.tensor(int(self.job_idx), dtype=torch.int64)
+        self._next_epoch_anchor = torch.tensor(int(self.next_epoch_anchor), dtype=torch.int64)
+        self._mlflow_run_id_bytes, self._mlflow_run_id_is_none = _encode_optional_string(
+            self.mlflow_run_id
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(self.state_dict(), path)
+        logging.info("Saved train_all_phases_state to %s", path)
+
+    def load(self, path: Path) -> "TrainAllPhasesState":
+        state_dict = torch.load(path, map_location="cpu", weights_only=False)
+        self._mlflow_run_id_bytes = state_dict["_mlflow_run_id_bytes"]
+        self.load_state_dict(state_dict, strict=False)
+        self.job_idx = int(self._job_idx.item())
+        self.next_epoch_anchor = int(self._next_epoch_anchor.item())
+        self.mlflow_run_id = _decode_optional_string(
+            self._mlflow_run_id_bytes,
+            self._mlflow_run_id_is_none,
+        )
+        return self
+
+
+class TrainOnePhaseState(torch.nn.Module):
+    """Minimal persisted state for ``train_one_phase()``."""
+
+    def __init__(
+        self,
+        *,
+        phase_epoch: int = 0,
+        nan_counter: int = 0,
+        grad_norm_last_reduced_counter: int = 0,
+        stable_epochs: int = 0,
+        deterministic_mode_active: bool = False,
+        seq_len_increase_in_batches: int | None = None,
+        rng_state: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__()
+        self.phase_epoch = phase_epoch
+        self.nan_counter = nan_counter
+        self.grad_norm_last_reduced_counter = grad_norm_last_reduced_counter
+        self.stable_epochs = stable_epochs
+        self.deterministic_mode_active = deterministic_mode_active
+        self.seq_len_increase_in_batches = seq_len_increase_in_batches
+        self.rng_state = rng_state or {}
+
+        self.optimizer = None
+        self.lr_schedulers = None
+        self.scaler = None
+        self.early_stopping = None
+
+        self.register_buffer("_phase_epoch", torch.tensor(phase_epoch, dtype=torch.int64))
+        self.register_buffer("_nan_counter", torch.tensor(nan_counter, dtype=torch.int64))
+        self.register_buffer(
+            "_grad_norm_last_reduced_counter",
+            torch.tensor(grad_norm_last_reduced_counter, dtype=torch.int64),
+        )
+        self.register_buffer("_stable_epochs", torch.tensor(stable_epochs, dtype=torch.int64))
+        self.register_buffer(
+            "_deterministic_mode_active",
+            torch.tensor(deterministic_mode_active, dtype=torch.bool),
+        )
+        self.register_buffer(
+            "_seq_len_increase_in_batches",
+            torch.tensor(
+                -1 if seq_len_increase_in_batches is None else seq_len_increase_in_batches,
+                dtype=torch.int64,
+            ),
+        )
+        self.register_buffer("_torch_cpu_rng", torch.zeros(0, dtype=torch.uint8))
+        self.register_buffer("_torch_cuda_rng_flat", torch.zeros(0, dtype=torch.uint8))
+        self.register_buffer("_torch_cuda_rng_lengths", torch.zeros(0, dtype=torch.int64))
+        self.register_buffer("_numpy_alg", torch.zeros(0, dtype=torch.uint8))
+        self.register_buffer("_numpy_state", torch.zeros(0, dtype=torch.int64))
+        self.register_buffer("_numpy_pos", torch.tensor(0, dtype=torch.int64))
+        self.register_buffer("_numpy_has_gauss", torch.tensor(False, dtype=torch.bool))
+        self.register_buffer("_numpy_cached_gaussian", torch.tensor(0.0, dtype=torch.float64))
+        self.register_buffer("_python_version", torch.tensor(0, dtype=torch.int64))
+        self.register_buffer("_python_state", torch.zeros(0, dtype=torch.int64))
+        self.register_buffer("_python_has_gauss", torch.tensor(False, dtype=torch.bool))
+        self.register_buffer("_python_cached_gaussian", torch.tensor(0.0, dtype=torch.float64))
+
+    def save(self, path: Path) -> None:
+        self._phase_epoch = torch.tensor(int(self.phase_epoch), dtype=torch.int64)
+        self._nan_counter = torch.tensor(int(self.nan_counter), dtype=torch.int64)
+        self._grad_norm_last_reduced_counter = torch.tensor(
+            int(self.grad_norm_last_reduced_counter),
+            dtype=torch.int64,
+        )
+        self._stable_epochs = torch.tensor(int(self.stable_epochs), dtype=torch.int64)
+        self._deterministic_mode_active = torch.tensor(
+            bool(self.deterministic_mode_active),
+            dtype=torch.bool,
+        )
+        self._seq_len_increase_in_batches = torch.tensor(
+            -1 if self.seq_len_increase_in_batches is None else int(self.seq_len_increase_in_batches),
+            dtype=torch.int64,
+        )
+        encoded_rng_state = _encode_rng_state(self.rng_state)
+        self._torch_cpu_rng = encoded_rng_state["torch_cpu"]
+        self._torch_cuda_rng_flat = encoded_rng_state["torch_cuda_flat"]
+        self._torch_cuda_rng_lengths = encoded_rng_state["torch_cuda_lengths"]
+        self._numpy_alg = encoded_rng_state["numpy_alg"]
+        self._numpy_state = encoded_rng_state["numpy_state"]
+        self._numpy_pos = encoded_rng_state["numpy_pos"]
+        self._numpy_has_gauss = encoded_rng_state["numpy_has_gauss"]
+        self._numpy_cached_gaussian = encoded_rng_state["numpy_cached_gaussian"]
+        self._python_version = encoded_rng_state["python_version"]
+        self._python_state = encoded_rng_state["python_state"]
+        self._python_has_gauss = encoded_rng_state["python_has_gauss"]
+        self._python_cached_gaussian = encoded_rng_state["python_cached_gaussian"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(self.state_dict(), path)
+        logging.info("Saved train_one_phase_state to %s", path)
+
+    def load(self, path: Path) -> "TrainOnePhaseState":
+        state_dict = torch.load(path, map_location="cpu", weights_only=False)
+        self._torch_cpu_rng = state_dict["_torch_cpu_rng"]
+        self._torch_cuda_rng_flat = state_dict["_torch_cuda_rng_flat"]
+        self._torch_cuda_rng_lengths = state_dict["_torch_cuda_rng_lengths"]
+        self._numpy_alg = state_dict["_numpy_alg"]
+        self._numpy_state = state_dict["_numpy_state"]
+        self._python_state = state_dict["_python_state"]
+        self.load_state_dict(state_dict, strict=False)
+        self.phase_epoch = int(self._phase_epoch.item())
+        self.nan_counter = int(self._nan_counter.item())
+        self.grad_norm_last_reduced_counter = int(
+            self._grad_norm_last_reduced_counter.item()
+        )
+        self.stable_epochs = int(self._stable_epochs.item())
+        self.deterministic_mode_active = bool(self._deterministic_mode_active.item())
+        seq_len_increase_in_batches = int(self._seq_len_increase_in_batches.item())
+        self.seq_len_increase_in_batches = (
+            None if seq_len_increase_in_batches < 0 else seq_len_increase_in_batches
+        )
+        self.rng_state = _decode_rng_state(
+            torch_cpu=self._torch_cpu_rng,
+            torch_cuda_flat=self._torch_cuda_rng_flat,
+            torch_cuda_lengths=self._torch_cuda_rng_lengths,
+            numpy_alg=self._numpy_alg,
+            numpy_state=self._numpy_state,
+            numpy_pos=self._numpy_pos,
+            numpy_has_gauss=self._numpy_has_gauss,
+            numpy_cached_gaussian=self._numpy_cached_gaussian,
+            python_version=self._python_version,
+            python_state=self._python_state,
+            python_has_gauss=self._python_has_gauss,
+            python_cached_gaussian=self._python_cached_gaussian,
+        )
+        return self
+
+
 def load_train_all_phases_state(path: Path) -> TrainAllPhasesState:
-    state = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(state, TrainAllPhasesState):
-        raise ValueError(f"Invalid train_all_phases_state payload in {path}")
-    state.validate()
-    return state
+    return TrainAllPhasesState().load(path)
 
 
 def load_train_all_phases_state_metadata(path: Path) -> dict[str, Any]:
-    metadata = load_train_all_phases_state(path).metadata()
-    metadata["restart_state_path"] = str(path.resolve())
-    metadata["hydra_output_dir"] = str(path.resolve().parent.resolve())
-    return metadata
+    state = load_train_all_phases_state(path)
+    return {
+        "job_idx": state.job_idx,
+        "next_epoch_anchor": state.next_epoch_anchor,
+        "mlflow_run_id": state.mlflow_run_id,
+        "restart_state_path": str(path.resolve()),
+        "hydra_output_dir": str(path.resolve().parent.resolve()),
+    }
 
 
 def save_train_all_phases_state(path: Path, state: TrainAllPhasesState) -> None:
-    state.validate()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(state, path)
-    logging.info("Saved train_all_phases_state to %s", path)
+    state.save(path)
 
 
 def load_train_one_phase_state(path: Path) -> TrainOnePhaseState:
-    state = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(state, TrainOnePhaseState):
-        raise ValueError(f"Invalid train_one_phase_state payload in {path}")
-    state.validate()
-    return state
+    return TrainOnePhaseState().load(path)
 
 
 def save_train_one_phase_state(path: Path, state: TrainOnePhaseState) -> None:
-    state.validate()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(state, path)
-    logging.info("Saved train_one_phase_state to %s", path)
+    state.save(path)

@@ -26,19 +26,17 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - `mlflow_run_id`
 - `TrainOnePhaseState` owns only the persisted inner runtime/control state:
   - `phase_epoch`
-  - optimizer state
-  - scheduler states
-  - scaler state
-  - early-stopping state
   - `nan_counter`
   - `grad_norm_last_reduced_counter`
   - `stable_epochs`
   - RNG state
   - `deterministic_mode_active`
   - effective `seq_len_increase_in_batches`
+  - attached `EarlyStopping` module state when the trainer attaches it before `load()`
 - Keep these as explicit locals in `trainer.py`, not persisted restart fields:
   - `job_list`
   - dataset / dataloader objects
+  - optimizer / scheduler / scaler runtime objects
   - retry batch-size locals
   - `first_epoch_is_evaluation`
   - `flag_out_of_seq_len_increase`
@@ -55,10 +53,11 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - schedulers
   - scaler
   - early-stopping
-  before restoring `TrainOnePhaseState`.
-- Keep `EarlyStopping` module-backed so its state remains an explicit, well-scoped runtime object rather than another ad-hoc restart dict owner.
+  before calling `TrainOnePhaseState.load(...)`.
+- Keep `EarlyStopping` module-backed so it can be attached directly to `TrainOnePhaseState` before save/load instead of being converted into a separate restart dict.
 - The model checkpoint stays separate from `TrainOnePhaseState` and must be loaded explicitly in `train_one_phase()`.
-- Restore optimizer / scheduler / scaler state whenever `training_inner_restart.pt` exists in the current Hydra output directory.
+- Restore the optimizer explicitly from `optimizer.pt` whenever `training_inner_restart.pt` exists in the current Hydra output directory.
+- Do not add validation helpers, payload-shape checkers, or wrapper restore methods to the state classes; keep them to `__init__`, `save()`, and `load()`.
 
 ## Documentation contract
 

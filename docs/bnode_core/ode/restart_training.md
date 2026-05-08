@@ -10,7 +10,7 @@
 At the end of every completed training epoch, the trainer updates the current Hydra output directory with:
 
 - `training_outer_restart.pt`: minimal outer resume state with the resumed job index, the next global epoch anchor, and the MLflow run id
-- `training_inner_restart.pt`: minimal inner resume state with optimizer, scheduler, scaler, early-stopping, RNG, and phase-progress state
+- `training_inner_restart.pt`: minimal inner resume state with phase counters, deterministic-mode status, seq-len state, RNG state, and attached `EarlyStopping` state
 - `model.pt`: latest in-progress model checkpoint
 - `optimizer.pt`: latest in-progress optimizer checkpoint
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
@@ -63,23 +63,23 @@ It does **not** store:
 
 ### `train_one_phase_state`
 
-`training_inner_restart.pt` stores only what the phase must restore after runtime objects already exist:
+`training_inner_restart.pt` stores only what the phase must restore through the restart state's own `state_dict()`:
 
 - `phase_epoch`
-- optimizer state
-- scheduler states
-- scaler state
-- early-stopping state
 - `nan_counter`
 - `grad_norm_last_reduced_counter`
 - `stable_epochs`
 - RNG state
 - `deterministic_mode_active`
 - effective `seq_len_increase_in_batches`
+- attached `EarlyStopping` module state when the trainer has attached that runtime object before saving
 
 It does **not** store:
 
 - model state inside the restart-state file
+- optimizer state inside the restart-state file
+- scheduler state inside the restart-state file
+- scaler state inside the restart-state file
 - checkpoint paths
 - `first_epoch_is_evaluation`
 - `flag_out_of_seq_len_increase`
@@ -97,15 +97,16 @@ Resume now happens in this order:
 1. `train_all_phases()` loads `training_outer_restart.pt` and `training_inner_restart.pt`.
 2. It recreates outer-loop locals and uses `train_all_phases_state.job_idx` plus `next_epoch_anchor` to choose the resumed main-training job.
 3. `train_one_phase()` recreates local path and epoch-bound variables.
-4. `train_one_phase()` constructs the optimizer, schedulers, scaler, and early-stopping helper.
+4. `train_one_phase()` constructs the optimizer, schedulers, scaler, and early-stopping helper, then attaches the live objects to `train_one_phase_state`.
 5. It explicitly loads `model.pt`.
-6. It restores optimizer / scheduler / scaler / early-stopping / RNG state from `train_one_phase_state`.
-7. Local-only flags such as `first_epoch_is_evaluation`, `flag_out_of_seq_len_increase`, and `epoch_stop` are recomputed from config plus the persisted minimal state.
+6. It explicitly loads `optimizer.pt`.
+7. It loads `train_one_phase_state` into the live state object, restoring its counters, RNG state, and attached `EarlyStopping` module state.
+8. Local-only flags such as `first_epoch_is_evaluation`, `flag_out_of_seq_len_increase`, and `epoch_stop` are recomputed from config plus the persisted minimal state.
 
 That keeps the restore boundary visible:
 
 - model checkpoint load is explicit
-- runtime-object restore happens only after those runtime objects already exist
+- runtime-object attachment happens before `train_one_phase_state.load(...)`
 - non-persisted loop control remains local in the trainer
 
 ## Manual resume entry point
