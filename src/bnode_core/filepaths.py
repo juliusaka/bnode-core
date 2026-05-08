@@ -426,6 +426,18 @@ def filepath_optimizer_current_hydra_output(phase: int | None = None) -> Path:
         return dir_current_hydra_output() / 'optimizer_phase_{}.pt'.format(phase)
     else:
         return dir_current_hydra_output() / 'optimizer.pt'
+
+
+def filepath_lr_schedulers_current_hydra_output() -> Path:
+    """Return the LR scheduler checkpoint path in the current Hydra output dir."""
+    return dir_current_hydra_output() / 'lr_schedulers.pt'
+
+
+def filepath_grad_scaler_current_hydra_output() -> Path:
+    """Return the GradScaler checkpoint path in the current Hydra output dir."""
+    return dir_current_hydra_output() / 'grad_scaler.pt'
+
+
 def filepath_training_outer_restart_state_current_hydra_output() -> Path:
     """Return the outer trainer restart-state file path in the current Hydra output dir."""
     return dir_current_hydra_output() / OUTER_RESTART_STATE_FILENAME

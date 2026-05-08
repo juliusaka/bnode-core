@@ -115,6 +115,10 @@ def _load_model_state(path: Path) -> dict:
     return torch.load(path, map_location='cpu', weights_only=False)
 
 
+def _load_runtime_state(path: Path) -> dict:
+    return torch.load(path, map_location='cpu', weights_only=False)
+
+
 def _set_training_seeds(seed: int = 0) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -196,6 +200,7 @@ def resume_main_reference_dir():
         overrides=_resume_training_overrides(
             nn_model='bnode_pytest',
             max_epochs=(3, 3),
+            scheduler_phase=1,
         )
         + _fixed_seq_len_phase_overrides(1)
         + _resume_mlflow_overrides('resume_main_reference'),
@@ -384,15 +389,16 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
     with monkeypatch.context() as ctx:
         _set_training_seeds()
-        # Interrupt after the last training epoch of phase 2 (save #4).
+        # Interrupt after the last saved restart checkpoint of phase 2 (save #2).
         # Resume will only run phase 2's max-epoch (no training), so model.pt
         # is already final and matches the reference exactly.
-        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
+        _interrupt_after_n_epoch_saves(ctx, n_saves=2)
         interrupted_dir = ode_training(
             interrupted_case,
             overrides=_resume_training_overrides(
                 nn_model='bnode_pytest',
                 max_epochs=(3, 3),
+                scheduler_phase=1,
             )
             + _fixed_seq_len_phase_overrides(1)
             + mlflow_overrides,
@@ -400,6 +406,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
 
     outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
     inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+    scheduler_restart_path = interrupted_dir / 'lr_schedulers.pt'
+    scaler_restart_path = interrupted_dir / 'grad_scaler.pt'
     outer_restart_state = load_train_all_phases_state(outer_restart_path)
     inner_restart_state = load_train_one_phase_state(inner_restart_path)
     _assert_restart_state(
@@ -408,6 +416,12 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
         expected_job_idx=2,
         deterministic_mode_active=False,
     )
+    assert scheduler_restart_path.exists()
+    assert scaler_restart_path.exists()
+    scheduler_state = _load_runtime_state(scheduler_restart_path)
+    assert 'cosine' in scheduler_state
+    assert scheduler_state['cosine']['last_epoch'] > 0
+    assert isinstance(_load_runtime_state(scaler_restart_path), dict)
 
     _set_training_seeds()
     resumed_dir = ode_training(
@@ -415,6 +429,7 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
         overrides=_resume_training_overrides(
             nn_model='bnode_pytest',
             max_epochs=(3, 3),
+            scheduler_phase=1,
         )
         + _fixed_seq_len_phase_overrides(1)
         + mlflow_overrides,
@@ -423,6 +438,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     assert resumed_dir == interrupted_dir
     assert not outer_restart_path.exists()
     assert not inner_restart_path.exists()
+    assert not scheduler_restart_path.exists()
+    assert not scaler_restart_path.exists()
     _assert_resumed_mlflow_run(
         resumed_dir,
         mlflow_scope=mlflow_scope,
@@ -443,13 +460,13 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
     with monkeypatch.context() as ctx:
         _set_training_seeds()
-        # Interrupt at the last training epoch of phase 2 (save #4), before
+        # Interrupt at the last saved restart checkpoint of phase 2 (save #2), before
         # deterministic mode is activated.  Activation happens at phase 2's
         # max-epoch (epoch 5), which the resumed run will still execute.
         # We cannot interrupt after det-mode is active because the model
         # state-dict then contains zero-sized masked tensors that cannot be
         # loaded into a freshly-initialised model.
-        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
+        _interrupt_after_n_epoch_saves(ctx, n_saves=2)
         interrupted_dir = ode_training(
             interrupted_case,
             overrides=_resume_training_overrides(

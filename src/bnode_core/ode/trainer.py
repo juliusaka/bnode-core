@@ -1230,6 +1230,8 @@ def _save_phase_restart_checkpoint(
     job_idx: int,
     epoch: int,
     phase_epoch_0: int,
+    lr_schedulers,
+    scaler,
     train_all_phases_state: TrainAllPhasesState,
     train_one_phase_state: TrainOnePhaseState,
     outer_restart_state_path: Path | None,
@@ -1237,6 +1239,18 @@ def _save_phase_restart_checkpoint(
 ) -> None:
     if outer_restart_state_path is None or inner_restart_state_path is None:
         return
+    torch.save(
+        (
+            {name: scheduler.state_dict() for name, scheduler in lr_schedulers.items()}
+            if lr_schedulers is not None
+            else {}
+        ),
+        filepaths.filepath_lr_schedulers_current_hydra_output(),
+    )
+    torch.save(
+        scaler.state_dict(),
+        filepaths.filepath_grad_scaler_current_hydra_output(),
+    )
     train_one_phase_state.phase_epoch = epoch + 1 - phase_epoch_0
     train_one_phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
     train_one_phase_state.save(inner_restart_state_path)
@@ -1269,6 +1283,8 @@ def train_one_phase(
         pre_train,
         job_idx,
     )
+    path_current_lr_schedulers = filepaths.filepath_lr_schedulers_current_hydra_output()
+    path_current_grad_scaler = filepaths.filepath_grad_scaler_current_hydra_output()
     optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx)
     early_stopping = EarlyStopping(
         patience=train_cfg.early_stopping_patience,
@@ -1301,7 +1317,7 @@ def train_one_phase(
         batches_per_epoch,
         job_idx,
         pre_train,
-        test,
+        False,
     )
     phase_state.lr_schedulers = lr_schedulers
 
@@ -1314,9 +1330,35 @@ def train_one_phase(
             raise FileNotFoundError(
                 f"Expected current optimizer checkpoint at {path_current_optimizer} for resume."
             )
+        if not path_current_lr_schedulers.exists():
+            raise FileNotFoundError(
+                f"Expected scheduler checkpoint at {path_current_lr_schedulers} for resume."
+            )
+        if not path_current_grad_scaler.exists():
+            raise FileNotFoundError(
+                f"Expected GradScaler checkpoint at {path_current_grad_scaler} for resume."
+            )
         model.load(path=path_current_model, device=device)
         optimizer.load_state_dict(
             torch.load(path_current_optimizer, map_location='cpu', weights_only=False)
+        )
+        scheduler_states = torch.load(
+            path_current_lr_schedulers,
+            map_location='cpu',
+            weights_only=False,
+        )
+        scheduler_keys = set(scheduler_states.keys())
+        current_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
+        if scheduler_keys != current_scheduler_keys:
+            raise ValueError(
+                "Saved scheduler keys do not match current schedulers: "
+                f"saved={sorted(scheduler_keys)}, current={sorted(current_scheduler_keys)}"
+            )
+        if lr_schedulers is not None:
+            for name, scheduler in lr_schedulers.items():
+                scheduler.load_state_dict(scheduler_states[name])
+        scaler.load_state_dict(
+            torch.load(path_current_grad_scaler, map_location='cpu', weights_only=False)
         )
         if inner_restart_state_path is None:
             raise ValueError("Missing inner restart path while resuming train_one_phase().")
@@ -1612,18 +1654,20 @@ def train_one_phase(
                 if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                     mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
 
-            _save_phase_restart_checkpoint(
-                cfg=cfg,
-                job_idx=job_idx,
-                epoch=epoch,
-                phase_epoch_0=phase_epoch_0,
-                train_all_phases_state=(
-                    train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
-                ),
-                train_one_phase_state=phase_state,
-                outer_restart_state_path=outer_restart_state_path,
-                inner_restart_state_path=inner_restart_state_path,
-            )
+                _save_phase_restart_checkpoint(
+                    cfg=cfg,
+                    job_idx=job_idx,
+                    epoch=epoch,
+                    phase_epoch_0=phase_epoch_0,
+                    lr_schedulers=lr_schedulers,
+                    scaler=scaler,
+                    train_all_phases_state=(
+                        train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
+                    ),
+                    train_one_phase_state=phase_state,
+                    outer_restart_state_path=outer_restart_state_path,
+                    inner_restart_state_path=inner_restart_state_path,
+                )
     except KeyboardInterrupt:
         logging.info('Interrupted by user')
         mlflow_proxy.set_tag_if_active('ended by', 'keyboard interrupt')

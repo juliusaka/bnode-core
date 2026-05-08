@@ -35,3 +35,11 @@ def test_training_restart_paths_use_restart_filenames(monkeypatch, tmp_path):
         filepaths.filepath_training_inner_restart_state_current_hydra_output()
         == hydra_output_dir / "training_inner_restart.pt"
     )
+    assert (
+        filepaths.filepath_lr_schedulers_current_hydra_output()
+        == hydra_output_dir / "lr_schedulers.pt"
+    )
+    assert (
+        filepaths.filepath_grad_scaler_current_hydra_output()
+        == hydra_output_dir / "grad_scaler.pt"
+    )

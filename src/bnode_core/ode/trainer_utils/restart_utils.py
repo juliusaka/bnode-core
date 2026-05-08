@@ -96,7 +96,12 @@ def load_restart_state_pair(
 
 
 def _clear_restart_state(outer_path: Path, inner_path: Path) -> None:
-    for path in (outer_path, inner_path):
+    for path in (
+        outer_path,
+        inner_path,
+        filepaths.filepath_lr_schedulers_current_hydra_output(),
+        filepaths.filepath_grad_scaler_current_hydra_output(),
+    ):
         if path.exists():
             path.unlink()
             logging.info("Removed trainer restart state at %s", path)
