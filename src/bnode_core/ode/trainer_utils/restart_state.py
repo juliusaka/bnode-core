@@ -338,13 +338,5 @@ def load_train_all_phases_state_metadata(path: Path) -> dict[str, Any]:
     }
 
 
-def save_train_all_phases_state(path: Path, state: TrainAllPhasesState) -> None:
-    state.save(path)
-
-
 def load_train_one_phase_state(path: Path) -> TrainOnePhaseState:
     return TrainOnePhaseState().load(path)
-
-
-def save_train_one_phase_state(path: Path, state: TrainOnePhaseState) -> None:
-    state.save(path)

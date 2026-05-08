@@ -1230,6 +1230,7 @@ def _save_phase_restart_checkpoint(
     job_idx: int,
     epoch: int,
     phase_epoch_0: int,
+    seq_len_increase_in_batches: int | None,
     lr_schedulers,
     scaler,
     train_all_phases_state: TrainAllPhasesState,
@@ -1252,6 +1253,7 @@ def _save_phase_restart_checkpoint(
         filepaths.filepath_grad_scaler_current_hydra_output(),
     )
     train_one_phase_state.phase_epoch = epoch + 1 - phase_epoch_0
+    train_one_phase_state.seq_len_increase_in_batches = seq_len_increase_in_batches
     train_one_phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
     train_one_phase_state.save(inner_restart_state_path)
     train_all_phases_state.job_idx = job_idx
@@ -1278,7 +1280,6 @@ def train_one_phase(
     logging.info('Start next training phase....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
     logging.info('Using device: {}'.format(device))
-
     path_best_model, path_optimizer_best_model, path_current_model, path_current_optimizer = _build_phase_checkpoint_paths(
         pre_train,
         job_idx,
@@ -1303,8 +1304,11 @@ def train_one_phase(
     phase_state.scaler = scaler
     phase_state.early_stopping = early_stopping
 
-    if phase_state.seq_len_increase_in_batches is not None: 
-        # TODO: correct???
+    if (
+        train_one_phase_state is not None
+        and hasattr(train_cfg, 'seq_len_increase_in_batches')
+        and phase_state.seq_len_increase_in_batches is not None
+    ):
         train_cfg.seq_len_increase_in_batches = phase_state.seq_len_increase_in_batches
     batches_per_epoch, _epochs_for_seq_len_increase, max_epochs = _compute_phase_epoch_settings(
         dataloaders,
@@ -1422,6 +1426,7 @@ def train_one_phase(
                 logging.info('loaded best model from {}'.format(path_best_model))
 
             if pre_train is False:
+                # check if we are still in the sequence length increase phase and update settings accordingly
                 if (
                     phase_state.stable_epochs
                     > train_cfg.seq_len_increase_abort_after_n_stable_epochs
@@ -1659,6 +1664,11 @@ def train_one_phase(
                     job_idx=job_idx,
                     epoch=epoch,
                     phase_epoch_0=phase_epoch_0,
+                    seq_len_increase_in_batches=getattr(
+                        train_cfg,
+                        'seq_len_increase_in_batches',
+                        None,
+                    ),
                     lr_schedulers=lr_schedulers,
                     scaler=scaler,
                     train_all_phases_state=(
