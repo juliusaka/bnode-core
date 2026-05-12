@@ -1216,7 +1216,6 @@ class train_test_config_class:
         mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
         mlflow_run_name (str): Optional MLflow run name. If None, MLflow assigns a default name.
-        mlflow_run_id (str): Optional MLflow run ID to resume instead of creating a new run.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
         use_cuda (bool): Use CUDA if available.
         raise_exception (bool): If True, re-raise exceptions for debugging. Otherwise, log and continue.
@@ -1237,7 +1236,6 @@ class train_test_config_class:
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'
     mlflow_run_name: Optional[str] = None
-    mlflow_run_id: Optional[str] = None
     
     use_amp: bool = False
     use_cuda: bool = True

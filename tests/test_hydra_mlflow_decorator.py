@@ -75,7 +75,6 @@ def test_resolve_resume_run_context_requires_restart_run_id(tmp_path):
 
     with pytest.raises(ValueError, match="missing mlflow_run_id"):
         hydra_mlflow_decorator._resolve_resume_run_context(
-            cfg_run_id=None,
             restart_metadata={
                 "hydra_output_dir": str(hydra_output_dir),
                 "mlflow_run_id": None,
@@ -94,7 +93,6 @@ def test_resolve_resume_run_context_rejects_tracking_uri_mismatch(tmp_path):
 
     with pytest.raises(ValueError, match="tracking URI"):
         hydra_mlflow_decorator._resolve_resume_run_context(
-            cfg_run_id=None,
             restart_metadata={
                 "hydra_output_dir": str(hydra_output_dir),
                 "mlflow_run_id": "run-123",
@@ -115,7 +113,6 @@ def test_resolve_resume_run_context_rejects_hydra_output_dir_mismatch(tmp_path):
 
     with pytest.raises(ValueError, match="Resume runs must reuse the same hydra.run.dir"):
         hydra_mlflow_decorator._resolve_resume_run_context(
-            cfg_run_id=None,
             restart_metadata={
                 "hydra_output_dir": str(source_output_dir),
                 "mlflow_run_id": "run-123",

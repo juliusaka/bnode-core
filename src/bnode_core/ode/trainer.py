@@ -339,6 +339,11 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
 
 def _build_job_list(cfg: train_test_config_class) -> list[dict]:
     """Build the ordered outer training workflow."""
+    if cfg.nn_model.training.pre_train and cfg.nn_model.model_type == 'bnode':
+        raise ValueError(
+            "Pre-training (nn_model.training.pre_train=True) is not supported for BNODE models "
+            "(nn_model.model_type='bnode'). Disable pre_train or switch to a NODE model."
+        )
     job_list = []
     job_list.append({
         'skip': not cfg.nn_model.training.pre_train
@@ -489,7 +494,13 @@ def _create_datasets_and_dataloaders_for_job(
     return datasets, dataloaders, batch_size_valid_test
 
 
-#TODO: Can't we reuse/differentyl split this function to use it also when resuming training?
+# Design note: this function handles cold-start model initialization only.
+# Resume initialization (loading from path_current_model after a restart) is
+# handled separately inside train_one_phase(), because resume must load the
+# rolling checkpoint rather than path_pretrained_model / path_trained_model.
+# Merging both paths into one function would require passing a `resume` flag
+# and duplicating the checkpoint-path resolution logic already in
+# _build_phase_checkpoint_paths(). Keep the two paths explicit and in sync.
 def _initialize_or_reload_model_for_job(
     cfg: train_test_config_class,
     job: dict,
@@ -986,7 +997,7 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
             _time = pyTime.time()
         _flag_break_cuda_memory = False
         if use_cuda:
-            mlflow_proxy.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024^3), step=epoch)
+            mlflow_proxy.log_metric('CUDA_memory_reserved_GB', torch.cuda.memory_reserved()/(1024**3), step=epoch)
             if epoch_this_phase == 0:
                 if torch.cuda.memory_reserved() > 0.6 * torch.cuda.get_device_properties(0).total_memory:
                     _flag_break_cuda_memory = True
@@ -1376,7 +1387,7 @@ def train_one_phase(
                     mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), 'break after loss')
                 elif flag_nan_counter:
                     logging.info('Break phase after 50 NaNs in loss')
-                    mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), '4 NaNs in loss')
+                    mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), '50 NaNs in loss')
                 else:
                     raise ValueError('This should not happen')
                 flag_break_after_epoch = True
@@ -1628,9 +1639,8 @@ def train_one_phase(
             )
             train_all_state.job_idx = job_idx
             train_all_state.next_epoch_anchor = epoch + 1
-            train_all_state.mlflow_run_id = (
-                mlflow.active_run().info.run_id if mlflow.active_run() is not None else None
-            )
+            _active_run = mlflow.active_run()
+            train_all_state.mlflow_run_id = _active_run.info.run_id if _active_run is not None else None
             checkpoint_store.save_epoch_checkpoint(
                 train_all_phases_state=train_all_state,
                 train_one_phase_state=phase_state,

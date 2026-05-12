@@ -7,7 +7,6 @@ import mlflow
 import numpy as np
 import pytest
 import torch
-from omegaconf import OmegaConf
 
 from bnode_core.ode import trainer
 from bnode_core.config import get_config_store
@@ -103,10 +102,6 @@ def _fixed_seq_len_phase_overrides(phase_idx: int, seq_len_train: int = 3) -> li
     ]
 
 
-def _load_validated_cfg(output_dir: Path):
-    return OmegaConf.load(output_dir / '.hydra' / 'config_validated.yaml')
-
-
 def _get_mlflow_run(tracking_uri: str, run_id: str):
     return mlflow.tracking.MlflowClient(tracking_uri=tracking_uri).get_run(run_id)
 
@@ -164,8 +159,6 @@ def _assert_resumed_mlflow_run(
     outer_restart_state,
     expected_final_job_idx: int,
 ):
-    validated_cfg = _load_validated_cfg(output_dir)
-    assert validated_cfg.mlflow_run_id == outer_restart_state.mlflow_run_id
     resumed_run = _get_mlflow_run(
         _resume_mlflow_tracking_uri(mlflow_scope),
         outer_restart_state.mlflow_run_id,

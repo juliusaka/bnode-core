@@ -27,15 +27,13 @@ def _normalize_tracking_uri(uri: str | None) -> str | None:
 
 def _resolve_resume_run_context(
   *,
-  cfg_run_id: str | None,
   restart_metadata: dict[str, Any] | None,
   hydra_output_dir: Path,
   current_tracking_uri: str | None,
   current_experiment_name: str,
 ) -> str | None:
-  resolved_run_id = cfg_run_id
   if restart_metadata is None:
-    return resolved_run_id
+    return None
 
   stored_output_dir = Path(restart_metadata['hydra_output_dir']).resolve()
   current_output_dir = hydra_output_dir.resolve()
@@ -75,10 +73,6 @@ def _resolve_resume_run_context(
       f'Expected {restart_experiment_name}, got {current_experiment_name}.'
     )
 
-  if resolved_run_id is not None and resolved_run_id != restart_run_id:
-    raise ValueError(
-      f'mlflow_run_id {resolved_run_id} does not match restart-state run id {restart_run_id}'
-    )
   return restart_run_id
 
 def _resolve_git_hash() -> str:
@@ -141,7 +135,6 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
     system_info = os.uname()
     restart_metadata = _resolve_restart_metadata()
     resolved_run_id = _resolve_resume_run_context(
-      cfg_run_id=cfg.mlflow_run_id if 'mlflow_run_id' in cfg else None,
       restart_metadata=restart_metadata,
       hydra_output_dir=hydra_output_dir,
       current_tracking_uri=mlflow.get_tracking_uri(),
@@ -204,8 +197,6 @@ def log_hydra_to_mlflow(func: Callable) -> Callable:
 
     # make dataclass from config
     cfg = convert_cfg_to_dataclass(cfg)
-    if cfg.mlflow_run_id is None:
-      cfg.mlflow_run_id = active_run_id
 
     # save validated yaml in hydra folder
     OmegaConf.save(config=OmegaConf.structured(cfg), f=hydra_output_dir / '.hydra/config_validated.yaml')
