@@ -5,12 +5,10 @@ from pathlib import Path
 
 import mlflow
 
-import bnode_core.filepaths as filepaths
+from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_state import (
     TrainAllPhasesState,
     TrainOnePhaseState,
-    load_train_all_phases_state,
-    load_train_one_phase_state,
 )
 
 
@@ -29,24 +27,23 @@ def _load_restart_states_if_available(
     Path,
     Path,
 ]:
-    outer_restart_state_path = filepaths.filepath_training_outer_restart_state_current_hydra_output()
-    inner_restart_state_path = filepaths.filepath_training_inner_restart_state_current_hydra_output()
-    if not outer_restart_state_path.exists() and not inner_restart_state_path.exists():
-        return None, None, outer_restart_state_path, inner_restart_state_path
-    if outer_restart_state_path.exists() != inner_restart_state_path.exists():
-        raise ValueError(
-            "Trainer restart requires both outer and inner restart checkpoints in the Hydra output directory."
+    checkpoint_store = RestartCheckpointStore.from_current_hydra_output()
+    outer_restart_state, inner_restart_state = checkpoint_store.load_state_pair_if_available()
+    if outer_restart_state is None or inner_restart_state is None:
+        return (
+            None,
+            None,
+            checkpoint_store.outer_path,
+            checkpoint_store.inner_path,
         )
-    outer_restart_state = load_train_all_phases_state(outer_restart_state_path)
-    inner_restart_state = load_train_one_phase_state(inner_restart_state_path)
     _validate_restart_run_id(outer_restart_state.mlflow_run_id)
-    logging.info("Loaded train_all_phases_state from %s", outer_restart_state_path)
-    logging.info("Loaded train_one_phase_state from %s", inner_restart_state_path)
+    logging.info("Loaded train_all_phases_state from %s", checkpoint_store.outer_path)
+    logging.info("Loaded train_one_phase_state from %s", checkpoint_store.inner_path)
     return (
         outer_restart_state,
         inner_restart_state,
-        outer_restart_state_path,
-        inner_restart_state_path,
+        checkpoint_store.outer_path,
+        checkpoint_store.inner_path,
     )
 
 
@@ -96,12 +93,8 @@ def load_restart_state_pair(
 
 
 def _clear_restart_state(outer_path: Path, inner_path: Path) -> None:
-    for path in (
-        outer_path,
-        inner_path,
-        filepaths.filepath_lr_schedulers_current_hydra_output(),
-        filepaths.filepath_grad_scaler_current_hydra_output(),
-    ):
-        if path.exists():
-            path.unlink()
-            logging.info("Removed trainer restart state at %s", path)
+    checkpoint_store = RestartCheckpointStore.from_paths(
+        outer_path=outer_path,
+        inner_path=inner_path,
+    )
+    checkpoint_store.clear_restart_artifacts()

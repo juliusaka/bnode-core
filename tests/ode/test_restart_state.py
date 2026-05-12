@@ -1,13 +1,12 @@
 import random
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 
-import bnode_core.filepaths as filepaths
 from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
-from bnode_core.ode.trainer import _save_phase_restart_checkpoint
+from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_state import (
     INNER_RESTART_STATE_FILENAME,
     OUTER_RESTART_STATE_FILENAME,
@@ -32,6 +31,7 @@ def test_train_all_phases_state_roundtrip(tmp_path):
         job_idx=3,
         next_epoch_anchor=17,
         mlflow_run_id="run-outer",
+        checkpoint_uuid="checkpoint-uuid-1",
     )
 
     state.save(restart_path)
@@ -40,6 +40,7 @@ def test_train_all_phases_state_roundtrip(tmp_path):
     assert loaded_state.job_idx == 3
     assert loaded_state.next_epoch_anchor == 17
     assert loaded_state.mlflow_run_id == "run-outer"
+    assert loaded_state.checkpoint_uuid == "checkpoint-uuid-1"
 
 
 def test_train_one_phase_state_roundtrip_with_rng_and_early_stopping(tmp_path):
@@ -74,6 +75,7 @@ def test_train_one_phase_state_roundtrip_with_rng_and_early_stopping(tmp_path):
         deterministic_mode_active=True,
         seq_len_increase_in_batches=91,
         rng_state=capture_rng_state(use_cuda=False),
+        checkpoint_uuid="checkpoint-uuid-2",
     )
     state.early_stopping = source_early_stopping
     state.save(restart_path)
@@ -100,6 +102,7 @@ def test_train_one_phase_state_roundtrip_with_rng_and_early_stopping(tmp_path):
     assert loaded_state.stable_epochs == 5
     assert loaded_state.deterministic_mode_active is True
     assert loaded_state.seq_len_increase_in_batches == 91
+    assert loaded_state.checkpoint_uuid == "checkpoint-uuid-2"
 
     assert restored_early_stopping.patience == 9
     assert restored_early_stopping.threshold == 0.25
@@ -117,44 +120,36 @@ def test_train_one_phase_state_roundtrip_with_rng_and_early_stopping(tmp_path):
     assert restored_python == expected_python
 
 
-def test_save_phase_restart_checkpoint_syncs_effective_seq_len(tmp_path, monkeypatch):
+def test_checkpoint_store_saves_epoch_checkpoint_syncs_effective_seq_len(tmp_path):
     outer_restart_path = tmp_path / OUTER_RESTART_STATE_FILENAME
     inner_restart_path = tmp_path / INNER_RESTART_STATE_FILENAME
     scheduler_restart_path = tmp_path / "lr_schedulers.pt"
     scaler_restart_path = tmp_path / "grad_scaler.pt"
-    train_all_phases_state = TrainAllPhasesState(job_idx=1, next_epoch_anchor=4)
+    train_all_phases_state = TrainAllPhasesState(
+        job_idx=2,
+        next_epoch_anchor=6,
+    )
     train_one_phase_state = TrainOnePhaseState(
-        phase_epoch=1,
-        seq_len_increase_in_batches=3,
+        phase_epoch=4,
+        seq_len_increase_in_batches=12,
         rng_state=capture_rng_state(use_cuda=False),
     )
-    monkeypatch.setattr(
-        filepaths,
-        "filepath_lr_schedulers_current_hydra_output",
-        lambda: scheduler_restart_path,
-    )
-    monkeypatch.setattr(
-        filepaths,
-        "filepath_grad_scaler_current_hydra_output",
-        lambda: scaler_restart_path,
+    checkpoint_store = RestartCheckpointStore.from_paths(
+        outer_path=outer_restart_path,
+        inner_path=inner_restart_path,
+        scheduler_path=scheduler_restart_path,
+        scaler_path=scaler_restart_path,
     )
 
     class DummyScaler:
         def state_dict(self):
             return {"scale": 1.0}
 
-    _save_phase_restart_checkpoint(
-        cfg=SimpleNamespace(use_cuda=False),
-        job_idx=2,
-        epoch=5,
-        phase_epoch_0=2,
-        seq_len_increase_in_batches=12,
-        lr_schedulers=None,
-        scaler=DummyScaler(),
+    checkpoint_store.save_epoch_checkpoint(
         train_all_phases_state=train_all_phases_state,
         train_one_phase_state=train_one_phase_state,
-        outer_restart_state_path=outer_restart_path,
-        inner_restart_state_path=inner_restart_path,
+        lr_schedulers=None,
+        scaler=DummyScaler(),
     )
 
     loaded_outer_state = TrainAllPhasesState().load(outer_restart_path)
@@ -164,5 +159,41 @@ def test_save_phase_restart_checkpoint_syncs_effective_seq_len(tmp_path, monkeyp
     assert loaded_outer_state.next_epoch_anchor == 6
     assert loaded_inner_state.phase_epoch == 4
     assert loaded_inner_state.seq_len_increase_in_batches == 12
+    assert loaded_outer_state.checkpoint_uuid is not None
+    assert loaded_inner_state.checkpoint_uuid == loaded_outer_state.checkpoint_uuid
     assert torch.load(scheduler_restart_path, weights_only=False) == {}
     assert torch.load(scaler_restart_path, weights_only=False) == {"scale": 1.0}
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+
+def test_checkpoint_store_rejects_mismatched_uuid_pair_on_load(tmp_path):
+    outer_restart_path = tmp_path / OUTER_RESTART_STATE_FILENAME
+    inner_restart_path = tmp_path / INNER_RESTART_STATE_FILENAME
+    TrainAllPhasesState(checkpoint_uuid="uuid-outer").save(outer_restart_path)
+    TrainOnePhaseState(checkpoint_uuid="uuid-inner").save(inner_restart_path)
+    checkpoint_store = RestartCheckpointStore.from_paths(
+        outer_path=outer_restart_path,
+        inner_path=inner_restart_path,
+        scheduler_path=tmp_path / "lr_schedulers.pt",
+        scaler_path=tmp_path / "grad_scaler.pt",
+    )
+
+    with pytest.raises(ValueError, match="UUID mismatch"):
+        checkpoint_store.load_state_pair_if_available()
+
+
+def test_train_one_phase_state_raises_for_missing_serializer(tmp_path, monkeypatch):
+    restart_path = tmp_path / INNER_RESTART_STATE_FILENAME
+    monkeypatch.setattr(
+        TrainOnePhaseState,
+        "SPECIAL_SERIALIZERS",
+        {
+            **TrainOnePhaseState.SPECIAL_SERIALIZERS,
+            "synthetic_field": "_missing_serializer",
+        },
+    )
+    state = TrainOnePhaseState()
+    state.synthetic_field = 1
+
+    with pytest.raises(ValueError, match="_missing_serializer"):
+        state.save(restart_path)
