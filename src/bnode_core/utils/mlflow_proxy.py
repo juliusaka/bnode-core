@@ -56,6 +56,12 @@ class mlflow_proxy:
             mlflow.set_tag(key, value)
 
     @classmethod
+    def log_params(cls, values: dict) -> None:
+        """Log multiple MLflow parameters, each absent-or-same-guarded."""
+        for key, value in values.items():
+            cls.log_param(key, value)
+
+    @classmethod
     def reset_cache(cls) -> None:
         cls._cached_run_id = None
         cls._cached_params = {}
