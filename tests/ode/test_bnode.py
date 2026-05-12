@@ -191,11 +191,29 @@ def _assert_resumed_mlflow_run(
 
 
 def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int) -> None:
-    """Interrupt training after n epoch checkpoints by raising CheckpointRequestedExit."""
+    """Interrupt training after *n_saves* epoch checkpoints have been written.
+
+    Mechanism:
+    1. ``monkeypatch.setattr`` replaces ``RestartCheckpointStore.save_epoch_checkpoint``
+       with a counting wrapper, scoped to the enclosing ``monkeypatch.context()`` block
+       so the real method is restored automatically when that block exits.
+    2. The wrapper calls the *real* ``save_epoch_checkpoint`` first, so the restart-
+       checkpoint files (outer state, inner state, LR schedulers, GradScaler) are fully
+       written to disk before the exception is raised.
+    3. On the Nth call the wrapper raises ``CheckpointRequestedExit``, a custom
+       ``RuntimeError`` subclass.
+    4. ``train_one_phase`` catches ``CheckpointRequestedExit`` explicitly, tags the
+       MLflow run as ``"ended by checkpoint request"``, and returns cleanly — no
+       exception escapes to the test.
+
+    The checkpoint files being on disk before the exception is the key property that
+    the resumed leg of the test relies on.
+    """
     original_save = trainer.RestartCheckpointStore.save_epoch_checkpoint
     call_count = [0]
 
     def _patched_save(self, *args, **kwargs):
+        # Real save runs first — files are on disk before we raise.
         result = original_save(self, *args, **kwargs)
         call_count[0] += 1
         if call_count[0] >= n_saves:
