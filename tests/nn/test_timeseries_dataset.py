@@ -457,5 +457,86 @@ def test_timeseries_dataset_dataloader_overhead():
     # Diagnostic-only test
     assert n_items > 0
 
+def _make_ts_tensors(N: int, T: int):
+    """Return minimal time/states tensors for stride-clamping tests."""
+    torch.manual_seed(42)
+    time = torch.arange(T, dtype=torch.float32).unsqueeze(0).expand(N, -1).unsqueeze(1)
+    states = torch.randn(N, 2, T)
+    return time, states
+
+
+def test_stride_clamped_when_exceeds_available_windows_modern():
+    """TimeSeriesDataset: stride larger than T-seq_len+1 is clamped so the dataset is non-empty.
+
+    Reproduces the trainer error:
+      T=91, seq_len=200 (clamped to 91), stride=200
+    => full_windows = 1, stride must be clamped to 1.
+    """
+    N, T = 3, 91
+    seq_len = 200   # exceeds T, gets clamped to 91
+    stride = 200    # exceeds full_windows=1, must be clamped
+
+    time, states = _make_ts_tensors(N, T)
+
+    ds = TimeSeriesDataset(seq_len, stride, time=time, states=states)
+
+    # After clamping seq_len -> 91, full_windows = 91 - 90 = 1, stride clamped to 1
+    assert ds.seq_len == T
+    assert ds.stride <= (T - ds.seq_len + 1), "stride was not clamped to available windows"
+    assert len(ds) > 0, "dataset must be non-empty after stride clamping"
+
+    # Verify the single sample has the correct shape
+    sample = ds[0]
+    assert sample['time'].shape[-1] == ds.seq_len
+    assert sample['states'].shape[-1] == ds.seq_len
+
+
+def test_stride_clamped_when_exceeds_available_windows_legacy():
+    """LegacyTimeSeriesDataset: same stride-clamping behaviour as the modern dataset."""
+    N, T = 3, 91
+    seq_len = 200   # gets clamped to 91
+    stride = 200    # gets clamped to 1
+
+    time, states = _make_ts_tensors(N, T)
+
+    ds = LegacyTimeSeriesDataset(seq_len, stride, time=time, states=states)
+
+    assert ds.seq_len == T
+    assert ds.stride <= (T - ds.seq_len + 1), "stride was not clamped to available windows"
+    assert len(ds) > 0, "dataset must be non-empty after stride clamping"
+
+    sample = ds[0]
+    assert sample['time'].shape[-1] == ds.seq_len
+    assert sample['states'].shape[-1] == ds.seq_len
+
+
+def test_stride_clamped_partial_overflow_modern():
+    """TimeSeriesDataset: stride > full_windows but seq_len < T (partial overflow).
+
+    T=10, seq_len=8 => full_windows = 3. A stride of 5 exceeds full_windows and
+    must be clamped to 3, yielding exactly 1 window per sample.
+    """
+    N, T, seq_len, stride = 4, 10, 8, 5
+
+    time, states = _make_ts_tensors(N, T)
+    ds = TimeSeriesDataset(seq_len, stride, time=time, states=states)
+
+    full_windows = T - (seq_len) + 1  # 3
+    assert ds.stride <= full_windows
+    assert len(ds) == N * (full_windows // ds.stride)
+
+
+def test_stride_clamped_partial_overflow_legacy():
+    """LegacyTimeSeriesDataset: same partial-overflow clamping as the modern dataset."""
+    N, T, seq_len, stride = 4, 10, 8, 5
+
+    time, states = _make_ts_tensors(N, T)
+    ds = LegacyTimeSeriesDataset(seq_len, stride, time=time, states=states)
+
+    full_windows = T - (seq_len) + 1  # 3
+    assert ds.stride <= full_windows
+    assert len(ds) == N * (full_windows // ds.stride)
+
+
 if __name__ == "__main__":
     test_timeseries_dataset_dataloader_overhead()

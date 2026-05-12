@@ -211,6 +211,12 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
             Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
             seq_len = self.datasets['time'].shape[2]
         self.seq_len = seq_len
+        # clamp stride so there is at least 1 window per sample
+        _full_windows = self.datasets['time'].shape[2] - seq_len + 1
+        # the max stride that still allows at least 1 window per sample is _full_windows
+        if stride > _full_windows:
+            logging.warning(f'stride {stride} exceeds available windows {_full_windows} for seq_len {seq_len}, clamping stride to {_full_windows}')
+            stride = _full_windows
         self.max_samples = max_samples
         # calculate effective stride to be at or below max_samples if needed
         if max_samples is not None:
@@ -476,11 +482,17 @@ class LegacyTimeSeriesDataset(torch.utils.data.StackDataset):
         assert isinstance(self.datasets, dict), "can only handle dict style stacked datasets with one key-value pair time"
         assert 'time' in self.datasets.keys(), "need one dataset with key time to define the map" 
         self._length_old = self._length
-        self.stride = stride
         if seq_len > self.datasets['time'].shape[2]:
             Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
             seq_len = self.datasets['time'].shape[2]
         self.seq_len = seq_len
+        # clamp stride so there is at least 1 window per sample
+        _full_windows = self.datasets['time'].shape[2] - seq_len + 1
+        # the max stride that still allows at least 1 window per sample is _full_windows
+        if stride > _full_windows:
+            logging.warning(f'stride {stride} exceeds available windows {_full_windows} for seq_len {seq_len}, clamping stride to {_full_windows}')
+            stride = _full_windows
+        self.stride = stride
         self.initialize_map(seq_len, stride)
 
     def set_seq_len(self, seq_len: int, stride: int = 1):
