@@ -197,6 +197,7 @@ from bnode_core.ode.trainer_utils.restart_state import (
     capture_rng_state,
     restore_rng_state,
 )
+from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_utils import (
     _clear_restart_state,
     load_restart_state_pair,
@@ -1224,46 +1225,6 @@ def _create_phase_lr_schedulers(
     return lr_schedulers
 
 
-def _save_phase_restart_checkpoint(
-    *,
-    cfg: train_test_config_class,
-    job_idx: int,
-    epoch: int,
-    phase_epoch_0: int,
-    seq_len_increase_in_batches: int | None,
-    lr_schedulers,
-    scaler,
-    train_all_phases_state: TrainAllPhasesState,
-    train_one_phase_state: TrainOnePhaseState,
-    outer_restart_state_path: Path | None,
-    inner_restart_state_path: Path | None,
-) -> None:
-    if outer_restart_state_path is None or inner_restart_state_path is None:
-        return
-    torch.save(
-        (
-            {name: scheduler.state_dict() for name, scheduler in lr_schedulers.items()}
-            if lr_schedulers is not None
-            else {}
-        ),
-        filepaths.filepath_lr_schedulers_current_hydra_output(),
-    )
-    torch.save(
-        scaler.state_dict(),
-        filepaths.filepath_grad_scaler_current_hydra_output(),
-    )
-    train_one_phase_state.phase_epoch = epoch + 1 - phase_epoch_0
-    train_one_phase_state.seq_len_increase_in_batches = seq_len_increase_in_batches
-    train_one_phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
-    train_one_phase_state.save(inner_restart_state_path)
-    train_all_phases_state.job_idx = job_idx
-    train_all_phases_state.next_epoch_anchor = epoch + 1
-    train_all_phases_state.mlflow_run_id = (
-        mlflow.active_run().info.run_id if mlflow.active_run() is not None else None
-    )
-    train_all_phases_state.save(outer_restart_state_path)
-
-
 def train_one_phase(
     cfg: train_test_config_class,
     model: torch.nn.Module,
@@ -1298,10 +1259,9 @@ def train_one_phase(
     )
     scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
     logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
+    checkpoint_store = RestartCheckpointStore.from_current_hydra_output()
 
     phase_state = train_one_phase_state if train_one_phase_state is not None else TrainOnePhaseState()
-    phase_state.optimizer = optimizer
-    phase_state.scaler = scaler
     phase_state.early_stopping = early_stopping
 
     if (
@@ -1323,8 +1283,6 @@ def train_one_phase(
         pre_train,
         False,
     )
-    phase_state.lr_schedulers = lr_schedulers
-
     if train_one_phase_state is not None:
         if not path_current_model.exists():
             raise FileNotFoundError(
@@ -1658,26 +1616,27 @@ def train_one_phase(
                 mlflow_proxy.log_metric('EarlyStopping_best_loss', early_stopping.best_score, step=epoch)
                 if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                     mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
-
-                _save_phase_restart_checkpoint(
-                    cfg=cfg,
-                    job_idx=job_idx,
-                    epoch=epoch,
-                    phase_epoch_0=phase_epoch_0,
-                    seq_len_increase_in_batches=getattr(
-                        train_cfg,
-                        'seq_len_increase_in_batches',
-                        None,
-                    ),
-                    lr_schedulers=lr_schedulers,
-                    scaler=scaler,
-                    train_all_phases_state=(
-                        train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
-                    ),
-                    train_one_phase_state=phase_state,
-                    outer_restart_state_path=outer_restart_state_path,
-                    inner_restart_state_path=inner_restart_state_path,
-                )
+            phase_state.phase_epoch = epoch + 1 - phase_epoch_0
+            phase_state.seq_len_increase_in_batches = getattr(
+                train_cfg,
+                'seq_len_increase_in_batches',
+                None,
+            )
+            phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
+            train_all_state = (
+                train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
+            )
+            train_all_state.job_idx = job_idx
+            train_all_state.next_epoch_anchor = epoch + 1
+            train_all_state.mlflow_run_id = (
+                mlflow.active_run().info.run_id if mlflow.active_run() is not None else None
+            )
+            checkpoint_store.save_epoch_checkpoint(
+                train_all_phases_state=train_all_state,
+                train_one_phase_state=phase_state,
+                lr_schedulers=lr_schedulers,
+                scaler=scaler,
+            )
     except KeyboardInterrupt:
         logging.info('Interrupted by user')
         mlflow_proxy.set_tag_if_active('ended by', 'keyboard interrupt')

@@ -177,11 +177,11 @@ def _assert_resumed_mlflow_run(
 
 def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int) -> None:
     """Interrupt training after n epoch checkpoints by raising CheckpointRequestedExit."""
-    original_save = trainer._save_phase_restart_checkpoint
+    original_save = trainer.RestartCheckpointStore.save_epoch_checkpoint
     call_count = [0]
 
-    def _patched_save(*args, **kwargs):
-        result = original_save(*args, **kwargs)
+    def _patched_save(self, *args, **kwargs):
+        result = original_save(self, *args, **kwargs)
         call_count[0] += 1
         if call_count[0] >= n_saves:
             raise CheckpointRequestedExit(
@@ -189,7 +189,11 @@ def _interrupt_after_n_epoch_saves(monkeypatch: pytest.MonkeyPatch, n_saves: int
             )
         return result
 
-    monkeypatch.setattr(trainer, '_save_phase_restart_checkpoint', _patched_save)
+    monkeypatch.setattr(
+        trainer.RestartCheckpointStore,
+        'save_epoch_checkpoint',
+        _patched_save,
+    )
 
 
 @pytest.fixture(scope='module')
@@ -389,10 +393,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
     with monkeypatch.context() as ctx:
         _set_training_seeds()
-        # Interrupt after the last saved restart checkpoint of phase 2 (save #2).
-        # Resume will only run phase 2's max-epoch (no training), so model.pt
-        # is already final and matches the reference exactly.
-        _interrupt_after_n_epoch_saves(ctx, n_saves=2)
+        # Interrupt after two epoch-end checkpoint saves in the scheduler phase.
+        _interrupt_after_n_epoch_saves(ctx, n_saves=4)
         interrupted_dir = ode_training(
             interrupted_case,
             overrides=_resume_training_overrides(
@@ -460,9 +462,8 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
     with monkeypatch.context() as ctx:
         _set_training_seeds()
-        # Interrupt at the last saved restart checkpoint of phase 2 (save #2), before
-        # deterministic mode is activated.  Activation happens at phase 2's
-        # max-epoch (epoch 5), which the resumed run will still execute.
+        # Interrupt after two epoch-end checkpoint saves in the first train phase, before
+        # deterministic mode is activated in later phases.
         # We cannot interrupt after det-mode is active because the model
         # state-dict then contains zero-sized masked tensors that cannot be
         # loaded into a freshly-initialised model.
@@ -486,7 +487,7 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     _assert_restart_state(
         outer_restart_state,
         inner_restart_state,
-        expected_job_idx=2,
+        expected_job_idx=1,
         deterministic_mode_active=False,
     )
 
