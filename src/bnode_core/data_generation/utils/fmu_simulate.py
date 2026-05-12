@@ -224,6 +224,8 @@ def fmu_simulate(fmu_path,
     # final length of outputs is i+1
     # record the final output
     if sim_succesful:
+        if control_values is not None:
+            fmu.setReal(vr=control_refs, value=control_values[:,i])
         record_data(i+1)
     
     try:
