@@ -1,7 +1,7 @@
 ---
 name: bnode-core trainer restart states
-description: Restart-state architecture guidance for trainer resume logic, docs, and tests
-applyTo: "src/bnode_core/ode/trainer.py,src/bnode_core/ode/trainer_utils/restart_state.py,src/bnode_core/ode/trainer_utils/restart_utils.py,tests/ode/test_restart_state.py,docs/bnode_core/ode/restart_*.md"
+description: Restart-state architecture guidance for trainer resume logic, checkpoint store, docs, and tests
+applyTo: "src/bnode_core/ode/trainer.py,src/bnode_core/ode/trainer_utils/restart_state.py,src/bnode_core/ode/trainer_utils/restart_utils.py,src/bnode_core/ode/trainer_utils/restart_checkpoint_store.py,tests/ode/test_restart_state.py,docs/bnode_core/ode/restart_*.md"
 ---
 # bnode-core trainer restart states
 
@@ -24,6 +24,8 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - `job_idx`
   - `next_epoch_anchor`
   - `mlflow_run_id`
+  - `checkpoint_uuid`
+  - `state_version`
 - `TrainOnePhaseState` owns only the persisted inner runtime/control state:
   - `phase_epoch`
   - `nan_counter`
@@ -32,6 +34,8 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - RNG state
   - `deterministic_mode_active`
   - effective `seq_len_increase_in_batches`
+  - `checkpoint_uuid`
+  - `state_version`
   - attached `EarlyStopping` module state when the trainer attaches it before `load()`
 - Keep these as explicit locals in `trainer.py`, not persisted restart fields:
   - `job_list`
@@ -48,6 +52,10 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 ## Construction and restore order
 
 - `train_all_phases()` may load the two restart-state files early only to choose the resumed job and epoch anchor.
+- `RestartCheckpointStore` owns:
+  - atomic writes for restart/runtime artifacts
+  - outer/inner checkpoint UUID pairing
+  - restart-runtime cleanup (`training_outer_restart.pt`, `training_inner_restart.pt`, `lr_schedulers.pt`, `grad_scaler.pt`)
 - `train_one_phase()` must construct:
   - optimizer
   - schedulers
@@ -61,7 +69,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - `lr_schedulers.pt`
   - `grad_scaler.pt`
   whenever `training_inner_restart.pt` exists in the current Hydra output directory.
-- Do not add validation helpers, payload-shape checkers, or wrapper restore methods to the state classes; keep them to `__init__`, `save()`, and `load()`.
+- Keep state-class special serialization explicit via class-level serializer mapping for non-trivial fields and raise clear errors when a declared serializer method is missing.
 
 ## Documentation contract
 
@@ -76,8 +84,10 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 - `tests/ode/test_restart_state.py` should cover:
   - roundtrips for `TrainAllPhasesState`
   - roundtrips for `TrainOnePhaseState`
-  - syncing effective `seq_len_increase_in_batches` at the restart-checkpoint save boundary
+  - syncing effective `seq_len_increase_in_batches` at epoch-end checkpoint save boundary
   - restoring early-stopping and RNG state from `TrainOnePhaseState`
+  - UUID validation/synchronization and atomic save behavior in `RestartCheckpointStore`
+  - explicit serializer-missing failure behavior for declared special fields
 - `tests/ode/test_bnode.py` resume tests should assert the two-file layout explicitly:
   - interrupted runs leave both restart files behind
   - interrupted runs also leave `lr_schedulers.pt` and `grad_scaler.pt` behind

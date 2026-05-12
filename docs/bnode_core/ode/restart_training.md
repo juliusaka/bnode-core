@@ -7,14 +7,14 @@
 
 ## What gets written
 
-At the end of every completed training epoch, the trainer updates the current Hydra output directory with:
+At the end of every completed training epoch, `RestartCheckpointStore` updates the current Hydra output directory with atomic writes:
 
-- `training_outer_restart.pt`: minimal outer resume state with the resumed job index, the next global epoch anchor, and the MLflow run id
-- `training_inner_restart.pt`: minimal inner resume state with phase counters, deterministic-mode status, seq-len state, RNG state, and attached `EarlyStopping` state
+- `training_outer_restart.pt`: minimal outer resume state with the resumed job index, the next global epoch anchor, MLflow run id, and checkpoint UUID metadata
+- `training_inner_restart.pt`: minimal inner resume state with phase counters, deterministic-mode status, seq-len state, RNG state, attached `EarlyStopping` state, and matching checkpoint UUID metadata
 - `model.pt`: latest in-progress model checkpoint
 - `optimizer.pt`: latest in-progress optimizer checkpoint
-- `lr_schedulers.pt`: latest in-progress LR scheduler checkpoint dict
-- `grad_scaler.pt`: latest in-progress AMP scaler checkpoint dict
+- `lr_schedulers.pt`: latest in-progress LR scheduler checkpoint dict (saved atomically)
+- `grad_scaler.pt`: latest in-progress AMP scaler checkpoint dict (saved atomically)
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
 
 Finished runs remove both restart-state files and both runtime checkpoint files.
@@ -51,6 +51,8 @@ Important runtime values are **not** wrapped in a long-lived live-state object a
 - `job_idx`
 - `next_epoch_anchor`
 - `mlflow_run_id`
+- `checkpoint_uuid`
+- `state_version`
 
 It does **not** store:
 
@@ -73,6 +75,8 @@ It does **not** store:
 - RNG state
 - `deterministic_mode_active`
 - effective `seq_len_increase_in_batches`
+- `checkpoint_uuid`
+- `state_version`
 - attached `EarlyStopping` module state when the trainer has attached that runtime object before saving
 
 It does **not** store:
@@ -98,7 +102,7 @@ Resume now happens in this order:
 1. `train_all_phases()` loads `training_outer_restart.pt` and `training_inner_restart.pt`.
 2. It recreates outer-loop locals and uses `train_all_phases_state.job_idx` plus `next_epoch_anchor` to choose the resumed main-training job.
 3. `train_one_phase()` recreates local path and epoch-bound variables.
-4. `train_one_phase()` constructs the optimizer, schedulers, scaler, and early-stopping helper, then attaches the live objects to `train_one_phase_state`.
+4. `train_one_phase()` constructs the optimizer, schedulers, scaler, and early-stopping helper, then attaches the `EarlyStopping` module to `train_one_phase_state`.
 5. It explicitly loads `model.pt`.
 6. It explicitly loads `optimizer.pt`.
 7. It explicitly loads `lr_schedulers.pt` and `grad_scaler.pt`.
@@ -109,7 +113,9 @@ That keeps the restore boundary visible:
 
 - model checkpoint load is explicit
 - scheduler and scaler checkpoint loads are explicit
-- runtime-object attachment happens before `train_one_phase_state.load(...)`
+- only `EarlyStopping` attachment happens before `train_one_phase_state.load(...)`
+- restart-state pair UUIDs are validated on load and synchronized on save
+- restart files and runtime scheduler/scaler payloads are written atomically
 - non-persisted loop control remains local in the trainer
 
 ## Manual resume entry point
