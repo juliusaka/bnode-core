@@ -120,8 +120,9 @@ def _assert_model_states_equal(
     state_b = _load_model_state(path_b)
     assert state_a.keys() == state_b.keys()
     if not_equal:
-        any_differ = any(not torch.equal(state_a[k], state_b[k]) for k in state_a)
-        assert any_differ, "Expected model states to differ but they were identical."
+        with pytest.raises(AssertionError):
+            for key in state_a:
+                torch.testing.assert_close(state_a[key], state_b[key])
         return
     for key in state_a:
         assert_close_kwargs = {}
