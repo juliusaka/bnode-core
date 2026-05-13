@@ -309,6 +309,97 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     )
 
 
+def test_resume_with_zeroed_model_weights_diverges_from_reference(
+    resume_main_reference_dir, monkeypatch
+):
+    """Zeroing model weights in the restart checkpoint causes final weights to diverge.
+
+    The model checkpoint (``model.pt``) saved alongside the restart-state files is
+    the actual starting point for the resumed training leg.  This test corrupts it by
+    setting every weight tensor to zero, then resumes.  The final model must differ
+    from the clean reference run because the remaining epochs are trained from a
+    zero-initialised model rather than from the properly trained epoch-2 weights.
+    """
+    interrupted_case = 'resume_corrupt_model_weights_interrupted'
+    mlflow_overrides = _resume_mlflow_overrides('resume_corrupt_model_weights')
+
+    with monkeypatch.context() as ctx:
+        _set_training_seeds()
+        _interrupt_after_n_epoch_saves(ctx, n_saves=2)
+        interrupted_dir = ode_training(
+            interrupted_case,
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest',
+                max_epochs=(3, 3),
+            )
+            + mlflow_overrides,
+        )
+
+    # Zero every weight tensor in the current-model checkpoint.
+    model_path = interrupted_dir / 'model.pt'
+    state_dict = torch.load(model_path, map_location='cpu', weights_only=False)
+    zeroed = {k: torch.zeros_like(v) for k, v in state_dict.items()}
+    torch.save(zeroed, model_path)
+
+    # Resume: restart-checkpoint files are still on disk, so the trainer picks
+    # them up automatically and resumes — but now from zeroed model weights.
+    _set_training_seeds()
+    resumed_dir = ode_training(
+        interrupted_case,
+        overrides=_resume_training_overrides(
+            nn_model='bnode_pytest',
+            max_epochs=(3, 3),
+        )
+        + mlflow_overrides,
+        clear_output_before_start=False,
+    )
+    assert resumed_dir == interrupted_dir
+
+    # Final weights must differ from the clean reference because the remaining
+    # training epochs started from zero instead of from epoch-2 weights.
+    reference_state = _load_model_state(resume_main_reference_dir / 'model.pt')
+    corrupted_state = _load_model_state(resumed_dir / 'model.pt')
+    assert reference_state.keys() == corrupted_state.keys()
+    any_differ = any(
+        not torch.equal(reference_state[k], corrupted_state[k])
+        for k in reference_state
+    )
+    assert any_differ, (
+        "Expected model weights to diverge after resuming from zeroed checkpoint, "
+        "but they were identical to the reference run."
+    )
+
+
+def test_resume_fails_when_rng_bytes_are_corrupted(monkeypatch):
+    """A restart checkpoint with corrupt _rng_state_bytes cannot be loaded.
+
+    This is a negative test: it verifies that _unpickle_rng_state propagates a
+    clear error when the on-disk bytes are not valid pickle, rather than silently
+    restoring garbage state into the running RNG.
+    """
+    with monkeypatch.context() as ctx:
+        _set_training_seeds()
+        _interrupt_after_n_epoch_saves(ctx, n_saves=2)
+        interrupted_dir = ode_training(
+            'resume_corrupt_rng_bytes_interrupted',
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest',
+                max_epochs=(3, 3),
+            )
+            + _resume_mlflow_overrides('resume_corrupt_rng_bytes'),
+        )
+
+    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+
+    # Overwrite _rng_state_bytes with random garbage that is not valid pickle.
+    state_dict = torch.load(inner_restart_path, map_location='cpu', weights_only=False)
+    state_dict['_rng_state_bytes'] = torch.randint(0, 256, (64,), dtype=torch.uint8)
+    torch.save(state_dict, inner_restart_path)
+
+    with pytest.raises(Exception):
+        load_train_one_phase_state(inner_restart_path)
+
+
 def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     monkeypatch,
 ):
