@@ -199,7 +199,6 @@ from bnode_core.ode.trainer_utils.restart_state import (
 )
 from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_utils import (
-    _clear_restart_state,
     load_restart_state_pair,
 )
 
@@ -812,7 +811,7 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Created job list: {}'.format(job_list))
 
     # load restart state if exists, to continue training from checkpoint if needed
-    train_all_phases_state, train_one_phase_state, outer_restart_state_path, inner_restart_state_path = load_restart_state_pair(
+    train_all_phases_state, train_one_phase_state, checkpoint_store = load_restart_state_pair(
         job_list=job_list
     )
     train_all_phases_state = (
@@ -872,8 +871,7 @@ def train_all_phases(cfg: train_test_config_class):
                             next_epoch_anchor,
                             train_one_phase_state=phase_restart_state,
                             train_all_phases_state=train_all_phases_state,
-                            outer_restart_state_path=outer_restart_state_path,
-                            inner_restart_state_path=inner_restart_state_path,
+                            checkpoint_store=checkpoint_store,
                         )
                         train_one_phase_state = None
                         # set seq_len_epoch_start for next job
@@ -885,10 +883,7 @@ def train_all_phases(cfg: train_test_config_class):
                             logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx + 1]['train_cfg'].seq_len_epoch_start))
                     else:
                         train_all_phases_state.job_idx = idx
-                        RestartCheckpointStore.from_paths(
-                            outer_path=outer_restart_state_path,
-                            inner_path=inner_restart_state_path,
-                        ).save_outer_for_test_job(train_all_phases_state)
+                        checkpoint_store.save_outer_for_test_job(train_all_phases_state)
                         _run_test_job(
                             cfg,
                             model,
@@ -928,10 +923,7 @@ def train_all_phases(cfg: train_test_config_class):
                         torch.cuda.empty_cache()
                 else:
                     raise e
-    _clear_restart_state(
-        outer_restart_state_path,
-        inner_restart_state_path,
-    )
+    checkpoint_store.clear_restart_artifacts()
 
 
 def _next_batch(data_loader, iterator):
@@ -1291,8 +1283,7 @@ def train_one_phase(
     epoch_0: int = 0,
     train_one_phase_state: TrainOnePhaseState | None = None,
     train_all_phases_state: TrainAllPhasesState | None = None,
-    outer_restart_state_path: Path | None = None,
-    inner_restart_state_path: Path | None = None,
+    checkpoint_store: RestartCheckpointStore | None = None,
 ):
     logging.info('Start next training phase....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
@@ -1315,7 +1306,7 @@ def train_one_phase(
     )
     scaler = torch.amp.GradScaler('cuda', enabled=cfg.use_cuda and cfg.use_amp)
     logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
-    checkpoint_store = RestartCheckpointStore.from_current_hydra_output()
+    checkpoint_store = checkpoint_store or RestartCheckpointStore.from_current_hydra_output()
 
     phase_state = train_one_phase_state if train_one_phase_state is not None else TrainOnePhaseState()
     phase_state.early_stopping = early_stopping
@@ -1378,9 +1369,7 @@ def train_one_phase(
         scaler.load_state_dict(
             torch.load(path_current_grad_scaler, map_location='cpu', weights_only=False)
         )
-        if inner_restart_state_path is None:
-            raise ValueError("Missing inner restart path while resuming train_one_phase().")
-        phase_state.load(inner_restart_state_path)
+        phase_state.load(checkpoint_store.inner_path)
         restore_rng_state(phase_state.rng_state, use_cuda=cfg.use_cuda)
         logging.info(
             "Restored train_one_phase_state at global epoch %s (phase epoch %s)",
