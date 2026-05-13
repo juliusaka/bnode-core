@@ -408,8 +408,16 @@ def _create_datasets_and_dataloaders_for_job(
     hdf5_dataset: hdf5_dataset_class,
     hdf5_dataset_norm: hdf5_dataset_class | None,
     hdf5_dataset_ref: hdf5_dataset_class | None,
-    batch_size_test_override: int | None = None,
-) -> tuple[dict, dict, int]:
+    batch_size_reduction_factor: float | None = None,
+) -> tuple[dict, dict]:
+    """Create datasets and dataloaders for a training or test job.
+
+    Args:
+        batch_size_reduction_factor: When not None, all batch sizes (train and
+            test/validation) are multiplied by this factor before constructing
+            dataloaders.  A factor < 1.0 is used after CUDA OOM to retry with
+            a smaller memory footprint.  Minimum effective batch size is 1.
+    """
     _log_job_start(job_idx, job)
     load_seq_len, seq_len_batches, stride_valid_test, max_samples_valid = _job_dataset_loading_settings(job)
     datasets = {}
@@ -442,9 +450,18 @@ def _create_datasets_and_dataloaders_for_job(
     drop_last = job['test'] is False
     shuffle = job['test'] is False
     dataloaders = {}
-    batch_size_test = batch_size_test_override if batch_size_test_override is not None else cfg.nn_model.training.batch_size_test
-    batch_size_train = job['train_cfg'].batch_size if job['test'] is False else batch_size_test
-    batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else batch_size_test
+    base_batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+    base_batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+    if batch_size_reduction_factor is not None:
+        batch_size_train = max(1, int(base_batch_size_train * batch_size_reduction_factor))
+        batch_size_valid_test = max(1, int(base_batch_size_valid_test * batch_size_reduction_factor))
+        if batch_size_train == 1:
+            logging.warning(
+                'Training batch size has been reduced to the minimum (1) after repeated OOM retries.'
+            )
+    else:
+        batch_size_train = base_batch_size_train
+        batch_size_valid_test = base_batch_size_valid_test
     for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
         batch_size = batch_size_valid_test if context in ['validation', 'test', 'testnorm'] else batch_size_train
         if context == 'testnorm' and datasets[context] is None:
@@ -493,7 +510,7 @@ def _create_datasets_and_dataloaders_for_job(
         job['train_cfg'].seq_len_train = datasets['train'].seq_len
     else:
         job['train_cfg'].seq_len_train = datasets['train'].datasets['time'].shape[-1]
-    return datasets, dataloaders, batch_size_valid_test
+    return datasets, dataloaders
 
 
 # Design note: this function handles cold-start model initialization only.
@@ -797,19 +814,21 @@ def train_all_phases(cfg: train_test_config_class):
     next_epoch_anchor = train_all_phases_state.next_epoch_anchor
     model = None
     for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
-        retry_batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-        batch_size_test_override = None  # set on OOM retry for test jobs to avoid mutating cfg
+        # batch_size_reduction_factor: compounding OOM reduction multiplier for this phase.
+        # None means use config batch sizes as-is; reset to None at the start of every phase.
+        batch_size_reduction_factor: float | None = None
+        oom_reduction_count = 0
         while True: # loop to catch memory errors
             try:
                 if job['skip'] is False: 
-                    datasets, dataloaders, retry_batch_size = _create_datasets_and_dataloaders_for_job(
+                    datasets, dataloaders = _create_datasets_and_dataloaders_for_job(
                         cfg,
                         job,
                         idx,
                         hdf5_dataset,
                         hdf5_dataset_norm,
                         hdf5_dataset_ref,
-                        batch_size_test_override=batch_size_test_override,
+                        batch_size_reduction_factor=batch_size_reduction_factor,
                     )
                     if model is None or cfg.nn_model.training.load_trained_model_for_test is True:
                         model = _initialize_or_reload_model_for_job(
@@ -876,14 +895,21 @@ def train_all_phases(cfg: train_test_config_class):
                 return
             except RuntimeError as e:
                 if 'CUDA out of memory' in str(e) or 'CUDA memory is almost full' in str(e):
-                    logging.warning('CUDA out of memory error. Trying again in 10 seconds')
+                    oom_reduction_count += 1
+                    batch_size_reduction_factor = (batch_size_reduction_factor or 1.0) * 0.7
+                    if oom_reduction_count >= 30:
+                        logging.warning(
+                            'CUDA out of memory has occurred %d times in this phase. '
+                            'Batch size is severely reduced (factor %.4f). '
+                            'Check GPU memory configuration.',
+                            oom_reduction_count,
+                            batch_size_reduction_factor,
+                        )
+                    logging.warning(
+                        'CUDA out of memory. Retrying in 10 s with batch-size factor %.3f.',
+                        batch_size_reduction_factor,
+                    )
                     pyTime.sleep(10)
-                    retry_batch_size = int(retry_batch_size * 0.7)
-                    logging.info('Setting batch size to {}'.format(retry_batch_size))
-                    if not job['test']:
-                        job['train_cfg'].batch_size = retry_batch_size
-                    else:
-                        batch_size_test_override = retry_batch_size
                     if cfg.use_cuda:
                         torch.cuda.empty_cache()
                 else:
