@@ -11,6 +11,7 @@ interrupted leg are detected automatically by ``load_restart_checkpoint()`` insi
 """
 
 import random
+import shutil
 from pathlib import Path
 
 import mlflow
@@ -522,3 +523,151 @@ def test_resume_when_killed_during_test_job(monkeypatch):
     assert 'partial_test_metric' in resumed_run.data.metrics, (
         "partial_test_metric from the interrupted run must still be present in MLflow."
     )
+
+
+# ---------------------------------------------------------------------------
+# NaN counter tests
+# ---------------------------------------------------------------------------
+
+def test_nan_counter_stops_training_after_50_consecutive_nan_epochs(monkeypatch):
+    """nan_counter breaks phase-0 training when 50 consecutive NaN-loss epochs occur.
+
+    Sequence (phase 0, max_epochs=100):
+    - Epoch 0 (evaluation-only, first_epoch_is_evaluation): bundle saved, nan_counter stays 0.
+    - Epochs 1-51: NaN injected → nan_counter reaches 51.
+    - Start of epoch 52's iteration: nan_counter=51 > 50 → flag_nan_counter=True
+      → train_one_epoch is NOT called → break.
+    Phase 1 then runs normally (NaN injection is limited to phase 0 only).
+
+    For bnode_pytest: pre-train is skipped (job_idx=0 skip=True), so phase 0 is job_idx=1.
+    NaN is only injected and calls only counted while job_idx==1 (phase 0).
+
+    Assertions:
+    - train_one_epoch called far fewer than 99 (max for phase 0 alone) times.
+    - MLflow tag 'job 1 ended by' == '50 NaNs in loss'.
+    """
+    mlflow_scope = 'nan_counter_terminates'
+    first_bundle_saved = [False]
+    # job_idx is set in _patched_save_epoch and read in _patched_train_one_epoch.
+    # save_epoch_checkpoint runs at the END of each epoch, so current_job_idx[0] at
+    # the start of epoch N reflects the job_idx from epoch N-1's save.  For epoch 0
+    # (eval-only): save sets current_job_idx=1; epoch 1 train reads 1 → NaN injected.
+    current_job_idx: list[int | None] = [None]
+    call_count = [0]
+
+    original_save_epoch = RestartCheckpointStore.save_epoch_checkpoint
+    original_train_one_epoch = trainer.train_one_epoch
+
+    def _patched_save_epoch(self, *, train_all_phases_state, train_one_phase_state,
+                            lr_schedulers, scaler, model, optimizer):
+        current_job_idx[0] = train_all_phases_state.job_idx
+        if not first_bundle_saved[0]:
+            first_bundle_saved[0] = True
+        original_save_epoch(self, train_all_phases_state=train_all_phases_state,
+                            train_one_phase_state=train_one_phase_state,
+                            lr_schedulers=lr_schedulers, scaler=scaler, model=model,
+                            optimizer=optimizer)
+
+    def _patched_train_one_epoch(model, *args, **kwargs):
+        in_phase_0 = current_job_idx[0] == 1
+        if in_phase_0:
+            call_count[0] += 1
+        ret_vals, data_iter = original_train_one_epoch(model, *args, **kwargs)
+        if first_bundle_saved[0] and in_phase_0:
+            ret_vals = {**ret_vals, 'loss': float('nan')}
+        return ret_vals, data_iter
+
+    _set_training_seeds()
+    shutil.rmtree(Path('./tests/_results/ode/mlruns') / mlflow_scope, ignore_errors=True)
+    with monkeypatch.context() as ctx:
+        ctx.setattr(RestartCheckpointStore, 'save_epoch_checkpoint', _patched_save_epoch)
+        ctx.setattr(trainer, 'train_one_epoch', _patched_train_one_epoch)
+        ode_training(
+            'nan_counter_terminates',
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest',
+                max_epochs=(100, 1),
+            ) + _resume_mlflow_overrides(mlflow_scope),
+        )
+
+    # Phase 0 without nan_counter: 98 training epochs (epoch 0 is evaluation-only).
+    # With nan_counter: 51 NaN epochs → flag fires → total ≈ 51 training calls.
+    assert call_count[0] < 60, (
+        f"Expected nan_counter to stop phase-0 training well before max_epochs=100, "
+        f"but train_one_epoch was called {call_count[0]} times."
+    )
+
+    tracking_uri = _resume_mlflow_tracking_uri(mlflow_scope)
+    client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name(mlflow_scope)
+    all_runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    assert len(all_runs) == 1
+    assert all_runs[0].data.tags.get('job 1 ended by') == '50 NaNs in loss', (
+        f"Expected MLflow tag 'job 1 ended by'='50 NaNs in loss', "
+        f"got tags: {all_runs[0].data.tags}"
+    )
+
+
+def test_nan_epoch_reloads_model_weights_from_bundle(monkeypatch):
+    """After a NaN-loss epoch the model weights are restored to those in the bundle.
+
+    Sequence (phase 0, max_epochs=4):
+    - Epoch 0 (evaluation-only, first_epoch_is_evaluation): bundle saved with initial weights W0.
+    - Epoch 1 (first training epoch): NaN injected → trainer reloads model to W0 from bundle;
+      bundle re-saved with reloaded W0.
+    - Epoch 2 (second training epoch): model weights captured at entry must equal W0.
+
+    This proves that reload_model_if_loss_nan correctly restores model state
+    from the bundle rather than leaving the model in the NaN-corrupted state.
+    """
+    first_bundle_model: list[dict | None] = [None]
+    model_state_after_reload: list[dict | None] = [None]
+    nan_injected = [False]
+
+    original_save_epoch = RestartCheckpointStore.save_epoch_checkpoint
+    original_train_one_epoch = trainer.train_one_epoch
+
+    def _patched_save_epoch(self, *, train_all_phases_state, train_one_phase_state,
+                            lr_schedulers, scaler, model, optimizer):
+        if first_bundle_model[0] is None:
+            # First save is the evaluation-only epoch 0 with initial weights W0.
+            first_bundle_model[0] = {k: v.clone() for k, v in model.state_dict().items()}
+        original_save_epoch(self, train_all_phases_state=train_all_phases_state,
+                            train_one_phase_state=train_one_phase_state,
+                            lr_schedulers=lr_schedulers, scaler=scaler, model=model,
+                            optimizer=optimizer)
+
+    def _patched_train_one_epoch(model, *args, **kwargs):
+        if nan_injected[0] and model_state_after_reload[0] is None:
+            # First call after NaN injection: capture model weights before training alters them.
+            model_state_after_reload[0] = {k: v.clone() for k, v in model.state_dict().items()}
+
+        ret_vals, data_iter = original_train_one_epoch(model, *args, **kwargs)
+
+        if first_bundle_model[0] is not None and not nan_injected[0]:
+            # First training call (epoch 1): inject one NaN to trigger reload.
+            nan_injected[0] = True
+            ret_vals = {**ret_vals, 'loss': float('nan')}
+        return ret_vals, data_iter
+
+    _set_training_seeds()
+    with monkeypatch.context() as ctx:
+        ctx.setattr(RestartCheckpointStore, 'save_epoch_checkpoint', _patched_save_epoch)
+        ctx.setattr(trainer, 'train_one_epoch', _patched_train_one_epoch)
+        ode_training(
+            'nan_reload_from_bundle',
+            overrides=_resume_training_overrides(
+                nn_model='bnode_pytest',
+                max_epochs=(4, 1),
+            ) + _resume_mlflow_overrides('nan_reload_from_bundle'),
+        )
+
+    assert first_bundle_model[0] is not None, "Bundle model state was never captured after epoch 0."
+    assert model_state_after_reload[0] is not None, "No training epoch ran after the NaN reload."
+
+    for key in first_bundle_model[0]:
+        torch.testing.assert_close(
+            model_state_after_reload[0][key],
+            first_bundle_model[0][key],
+            msg=f"Model parameter '{key}' was not correctly reloaded from the bundle after a NaN epoch.",
+        )
