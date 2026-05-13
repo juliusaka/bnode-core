@@ -20,19 +20,15 @@ class CheckpointRequestedExit(RuntimeError):
     """
 
 
-def _encode_optional_string(value: str | None) -> tuple[torch.Tensor, torch.Tensor]:
-    if value is None:
-        return torch.zeros(0, dtype=torch.uint8), torch.tensor(True, dtype=torch.bool)
-    return (
-        torch.tensor(list(value.encode("utf-8")), dtype=torch.uint8),
-        torch.tensor(False, dtype=torch.bool),
-    )
+def _pickle_value(value: Any) -> torch.Tensor:
+    """Pickle any value into a single uint8 tensor."""
+    data = bytearray(pickle.dumps(value))
+    return torch.frombuffer(data, dtype=torch.uint8).clone()
 
 
-def _decode_optional_string(value_bytes: torch.Tensor, is_none: torch.Tensor) -> str | None:
-    if bool(is_none.item()):
-        return None
-    return bytes(int(x) for x in value_bytes.tolist()).decode("utf-8")
+def _unpickle_value(encoded: torch.Tensor) -> Any:
+    """Reconstruct a value from a pickled uint8 tensor."""
+    return pickle.loads(bytes(encoded.cpu().tolist()))  # noqa: S301
 
 
 def _resolve_serializer(instance, field_name: str, serializer_name: str):
@@ -84,7 +80,7 @@ def _unpickle_rng_state(encoded: torch.Tensor) -> dict[str, Any]:
 class TrainAllPhasesState(torch.nn.Module):
     """Minimal persisted state for ``train_all_phases()``."""
 
-    STATE_VERSION = 1
+    STATE_VERSION = 2
     SPECIAL_SERIALIZERS = {
         "mlflow_run_id": "_serialize_mlflow_run_id",
         "checkpoint_uuid": "_serialize_checkpoint_uuid",
@@ -113,12 +109,8 @@ class TrainAllPhasesState(torch.nn.Module):
             "_next_epoch_anchor",
             torch.tensor(next_epoch_anchor, dtype=torch.int64),
         )
-        mlflow_run_id_bytes, mlflow_run_id_is_none = _encode_optional_string(mlflow_run_id)
-        self.register_buffer("_mlflow_run_id_bytes", mlflow_run_id_bytes)
-        self.register_buffer("_mlflow_run_id_is_none", mlflow_run_id_is_none)
-        checkpoint_uuid_bytes, checkpoint_uuid_is_none = _encode_optional_string(checkpoint_uuid)
-        self.register_buffer("_checkpoint_uuid_bytes", checkpoint_uuid_bytes)
-        self.register_buffer("_checkpoint_uuid_is_none", checkpoint_uuid_is_none)
+        self.register_buffer("_mlflow_run_id_bytes", _pickle_value(mlflow_run_id))
+        self.register_buffer("_checkpoint_uuid_bytes", _pickle_value(checkpoint_uuid))
 
     def save(self, path: Path) -> None:
         self._state_version = torch.tensor(self.STATE_VERSION, dtype=torch.int64)
@@ -150,26 +142,16 @@ class TrainAllPhasesState(torch.nn.Module):
             serializer()
 
     def _serialize_mlflow_run_id(self) -> None:
-        self._mlflow_run_id_bytes, self._mlflow_run_id_is_none = _encode_optional_string(
-            self.mlflow_run_id
-        )
+        self._mlflow_run_id_bytes = _pickle_value(self.mlflow_run_id)
 
     def _serialize_checkpoint_uuid(self) -> None:
-        self._checkpoint_uuid_bytes, self._checkpoint_uuid_is_none = _encode_optional_string(
-            self.checkpoint_uuid
-        )
+        self._checkpoint_uuid_bytes = _pickle_value(self.checkpoint_uuid)
 
     def _deserialize_mlflow_run_id(self) -> None:
-        self.mlflow_run_id = _decode_optional_string(
-            self._mlflow_run_id_bytes,
-            self._mlflow_run_id_is_none,
-        )
+        self.mlflow_run_id = _unpickle_value(self._mlflow_run_id_bytes)
 
     def _deserialize_checkpoint_uuid(self) -> None:
-        self.checkpoint_uuid = _decode_optional_string(
-            self._checkpoint_uuid_bytes,
-            self._checkpoint_uuid_is_none,
-        )
+        self.checkpoint_uuid = _unpickle_value(self._checkpoint_uuid_bytes)
 
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
         self._mlflow_run_id_bytes = state_dict["_mlflow_run_id_bytes"]
@@ -191,7 +173,7 @@ class TrainAllPhasesState(torch.nn.Module):
 class TrainOnePhaseState(torch.nn.Module):
     """Minimal persisted state for ``train_one_phase()``."""
 
-    STATE_VERSION = 2
+    STATE_VERSION = 3
     SPECIAL_SERIALIZERS = {
         "rng_state": "_serialize_rng_state",
         "checkpoint_uuid": "_serialize_checkpoint_uuid",
@@ -242,9 +224,7 @@ class TrainOnePhaseState(torch.nn.Module):
             ),
         )
         self.register_buffer("_rng_state_bytes", torch.zeros(0, dtype=torch.uint8))
-        checkpoint_uuid_bytes, checkpoint_uuid_is_none = _encode_optional_string(checkpoint_uuid)
-        self.register_buffer("_checkpoint_uuid_bytes", checkpoint_uuid_bytes)
-        self.register_buffer("_checkpoint_uuid_is_none", checkpoint_uuid_is_none)
+        self.register_buffer("_checkpoint_uuid_bytes", _pickle_value(checkpoint_uuid))
 
     def save(self, path: Path) -> None:
         self._state_version = torch.tensor(self.STATE_VERSION, dtype=torch.int64)
@@ -302,18 +282,13 @@ class TrainOnePhaseState(torch.nn.Module):
         self._rng_state_bytes = _pickle_rng_state(self.rng_state)
 
     def _serialize_checkpoint_uuid(self) -> None:
-        self._checkpoint_uuid_bytes, self._checkpoint_uuid_is_none = _encode_optional_string(
-            self.checkpoint_uuid
-        )
+        self._checkpoint_uuid_bytes = _pickle_value(self.checkpoint_uuid)
 
     def _deserialize_rng_state(self) -> None:
         self.rng_state = _unpickle_rng_state(self._rng_state_bytes)
 
     def _deserialize_checkpoint_uuid(self) -> None:
-        self.checkpoint_uuid = _decode_optional_string(
-            self._checkpoint_uuid_bytes,
-            self._checkpoint_uuid_is_none,
-        )
+        self.checkpoint_uuid = _unpickle_value(self._checkpoint_uuid_bytes)
 
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
         self._rng_state_bytes = state_dict["_rng_state_bytes"]
