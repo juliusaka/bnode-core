@@ -75,6 +75,14 @@ class RestartCheckpointStore:
 
     def save_outer_for_test_job(self, train_all_phases_state: TrainAllPhasesState) -> None:
         """Re-save the bundle with an updated outer state when advancing to a test job."""
+        if not self.checkpoint_path.exists():
+            # No checkpoint exists (e.g. load_trained_model_for_test=True skipped all training).
+            # The test job will simply re-run from the start on any subsequent restart.
+            logging.info(
+                "No restart checkpoint found at %s; skipping outer state update for test job.",
+                self.checkpoint_path,
+            )
+            return
         bundle = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
         bundle["outer"] = train_all_phases_state.to_state_dict()
         self._atomic_save(bundle)

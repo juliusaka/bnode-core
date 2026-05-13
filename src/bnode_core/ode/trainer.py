@@ -228,8 +228,6 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
         hdf5_dataset (hdf5_dataset_class): HDF5 dataset handle for statistics.
         initialize_normalization (bool, optional): Whether to initialize normalization
             layers from dataset statistics. Defaults to True.
-        model_type (str, optional): Force specific model type ('node' or 'bnode').
-            If None, auto-detects from config. Defaults to None.
     
     Returns:
         model (torch.nn.Module): Initialized model (NeuralODE or BalancedNeuralODE) moved

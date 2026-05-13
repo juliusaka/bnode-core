@@ -169,9 +169,6 @@ class TrainAllPhasesState(torch.nn.Module):
         state_dict = torch.load(path, map_location="cpu", weights_only=False)
         return self.load_from_state_dict(state_dict)
 
-    def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        _registry_preload_variable_buffers(self, self.FIELD_REGISTRY, state_dict)
-
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
         if "_state_version" not in state_dict:
             raise ValueError(
@@ -246,9 +243,6 @@ class TrainOnePhaseState(torch.nn.Module):
     def load(self, path: Path) -> "TrainOnePhaseState":
         state_dict = torch.load(path, map_location="cpu", weights_only=False)
         return self.load_from_state_dict(state_dict)
-
-    def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        _registry_preload_variable_buffers(self, self.FIELD_REGISTRY, state_dict)
 
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
         if "_state_version" not in state_dict:
