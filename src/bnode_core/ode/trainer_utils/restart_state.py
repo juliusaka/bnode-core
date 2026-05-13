@@ -19,6 +19,7 @@ class CheckpointRequestedExit(RuntimeError):
     This class is used inside testing the restart.
     """
 
+"""Save functions here, that can be used in classes below and elsewhere"""
 
 def _pickle_value(value: Any) -> torch.Tensor:
     """Pickle any value into a single uint8 tensor."""
@@ -75,6 +76,51 @@ def _decode_nullable_int(value: int) -> int | None:
     return None if value < 0 else value
 
 
+# ---------------------------------------------------------------------------
+# FIELD_REGISTRY helpers — used by both state classes
+# ---------------------------------------------------------------------------
+
+_FieldRegistry = list[tuple[str, str, torch.dtype | None, Any, Any]]
+
+
+def _registry_register_buffers(module: torch.nn.Module, registry: _FieldRegistry) -> None:
+    """Call register_buffer for every entry in a FIELD_REGISTRY."""
+    for attr, buf, dtype, encode, _ in registry:
+        value = getattr(module, attr)
+        if dtype is not None:
+            module.register_buffer(buf, torch.tensor(encode(value), dtype=dtype))
+        else:
+            module.register_buffer(buf, encode(value))
+
+
+def _registry_encode_to_buffers(module: torch.nn.Module, registry: _FieldRegistry) -> None:
+    """Encode all Python attributes to their buffers before torch.save."""
+    for attr, buf, dtype, encode, _ in registry:
+        value = getattr(module, attr)
+        if dtype is not None:
+            setattr(module, buf, torch.tensor(encode(value), dtype=dtype))
+        else:
+            setattr(module, buf, encode(value))
+
+
+def _registry_decode_from_buffers(module: torch.nn.Module, registry: _FieldRegistry) -> None:
+    """Restore Python attributes from their buffers after load_state_dict."""
+    for attr, buf, dtype, _, decode in registry:
+        buffer = getattr(module, buf)
+        setattr(module, attr, decode(buffer.item()) if dtype is not None else decode(buffer))
+
+
+def _registry_preload_variable_buffers(
+    module: torch.nn.Module,
+    registry: _FieldRegistry,
+    state_dict: dict[str, Any],
+) -> None:
+    """Pre-size variable-length pickle buffers before load_state_dict(strict=True)."""
+    for _, buf, dtype, _, _ in registry:
+        if dtype is None:
+            setattr(module, buf, state_dict[buf])
+
+
 class TrainAllPhasesState(torch.nn.Module):
     """Minimal persisted state for ``train_all_phases()``."""
 
@@ -103,21 +149,11 @@ class TrainAllPhasesState(torch.nn.Module):
         self.mlflow_run_id = mlflow_run_id
         self.checkpoint_uuid = checkpoint_uuid
         self.register_buffer("_state_version", torch.tensor(self.STATE_VERSION, dtype=torch.int64))
-        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
-            value = getattr(self, attr)
-            if dtype is not None:
-                self.register_buffer(buf, torch.tensor(encode(value), dtype=dtype))
-            else:
-                self.register_buffer(buf, encode(value))
+        _registry_register_buffers(self, self.FIELD_REGISTRY)
 
     def save(self, path: Path) -> None:
         self._state_version = torch.tensor(self.STATE_VERSION, dtype=torch.int64)
-        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
-            value = getattr(self, attr)
-            if dtype is not None:
-                setattr(self, buf, torch.tensor(encode(value), dtype=dtype))
-            else:
-                setattr(self, buf, encode(value))
+        _registry_encode_to_buffers(self, self.FIELD_REGISTRY)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.state_dict(), path)
         logging.info("Saved train_all_phases_state to %s", path)
@@ -125,17 +161,13 @@ class TrainAllPhasesState(torch.nn.Module):
     def load(self, path: Path) -> "TrainAllPhasesState":
         state_dict = torch.load(path, map_location="cpu", weights_only=False)
         self._validate_state_version(state_dict)
-        self._preload_variable_buffers_from_state_dict(state_dict)
+        _registry_preload_variable_buffers(self, self.FIELD_REGISTRY, state_dict)
         self.load_state_dict(state_dict, strict=True)
-        for attr, buf, dtype, _, decode in self.FIELD_REGISTRY:
-            buffer = getattr(self, buf)
-            setattr(self, attr, decode(buffer.item()) if dtype is not None else decode(buffer))
+        _registry_decode_from_buffers(self, self.FIELD_REGISTRY)
         return self
 
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        for _, buf, dtype, _, _ in self.FIELD_REGISTRY:
-            if dtype is None:
-                setattr(self, buf, state_dict[buf])
+        _registry_preload_variable_buffers(self, self.FIELD_REGISTRY, state_dict)
 
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
         if "_state_version" not in state_dict:
@@ -190,21 +222,11 @@ class TrainOnePhaseState(torch.nn.Module):
         self.rng_state = rng_state or {}
         self.checkpoint_uuid = checkpoint_uuid
         self.register_buffer("_state_version", torch.tensor(self.STATE_VERSION, dtype=torch.int64))
-        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
-            value = getattr(self, attr)
-            if dtype is not None:
-                self.register_buffer(buf, torch.tensor(encode(value), dtype=dtype))
-            else:
-                self.register_buffer(buf, encode(value))
+        _registry_register_buffers(self, self.FIELD_REGISTRY)
 
     def save(self, path: Path) -> None:
         self._state_version = torch.tensor(self.STATE_VERSION, dtype=torch.int64)
-        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
-            value = getattr(self, attr)
-            if dtype is not None:
-                setattr(self, buf, torch.tensor(encode(value), dtype=dtype))
-            else:
-                setattr(self, buf, encode(value))
+        _registry_encode_to_buffers(self, self.FIELD_REGISTRY)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.state_dict(), path)
         logging.info("Saved train_one_phase_state to %s", path)
@@ -213,17 +235,13 @@ class TrainOnePhaseState(torch.nn.Module):
         state_dict = torch.load(path, map_location="cpu", weights_only=False)
         state_dict = self._filter_state_dict_for_registered_modules(state_dict)
         self._validate_state_version(state_dict)
-        self._preload_variable_buffers_from_state_dict(state_dict)
+        _registry_preload_variable_buffers(self, self.FIELD_REGISTRY, state_dict)
         self.load_state_dict(state_dict, strict=True)
-        for attr, buf, dtype, _, decode in self.FIELD_REGISTRY:
-            buffer = getattr(self, buf)
-            setattr(self, attr, decode(buffer.item()) if dtype is not None else decode(buffer))
+        _registry_decode_from_buffers(self, self.FIELD_REGISTRY)
         return self
 
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        for _, buf, dtype, _, _ in self.FIELD_REGISTRY:
-            if dtype is None:
-                setattr(self, buf, state_dict[buf])
+        _registry_preload_variable_buffers(self, self.FIELD_REGISTRY, state_dict)
 
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
         if "_state_version" not in state_dict:
