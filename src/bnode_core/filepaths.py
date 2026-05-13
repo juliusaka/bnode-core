@@ -24,8 +24,7 @@ import logging
 from pathlib import Path
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
 from bnode_core.ode.trainer_utils.restart_state import (
-    INNER_RESTART_STATE_FILENAME,
-    OUTER_RESTART_STATE_FILENAME,
+    RESTART_CHECKPOINT_FILENAME,
 )
 
 
@@ -428,24 +427,9 @@ def filepath_optimizer_current_hydra_output(phase: int | None = None) -> Path:
         return dir_current_hydra_output() / 'optimizer.pt'
 
 
-def filepath_lr_schedulers_current_hydra_output() -> Path:
-    """Return the LR scheduler checkpoint path in the current Hydra output dir."""
-    return dir_current_hydra_output() / 'lr_schedulers.pt'
-
-
-def filepath_grad_scaler_current_hydra_output() -> Path:
-    """Return the GradScaler checkpoint path in the current Hydra output dir."""
-    return dir_current_hydra_output() / 'grad_scaler.pt'
-
-
-def filepath_training_outer_restart_state_current_hydra_output() -> Path:
-    """Return the outer trainer restart-state file path in the current Hydra output dir."""
-    return dir_current_hydra_output() / OUTER_RESTART_STATE_FILENAME
-
-
-def filepath_training_inner_restart_state_current_hydra_output() -> Path:
-    """Return the inner trainer restart-state file path in the current Hydra output dir."""
-    return dir_current_hydra_output() / INNER_RESTART_STATE_FILENAME
+def filepath_restart_checkpoint_current_hydra_output() -> Path:
+    """Return the restart checkpoint bundle path in the current Hydra output dir."""
+    return dir_current_hydra_output() / RESTART_CHECKPOINT_FILENAME
 
 
 def filepath_from_ml_artifacts_uri(mlflow_uri: str) -> Path:

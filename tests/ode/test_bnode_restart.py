@@ -19,10 +19,10 @@ import pytest
 import torch
 
 from bnode_core.ode import trainer
+from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
-    INNER_RESTART_STATE_FILENAME,
-    OUTER_RESTART_STATE_FILENAME,
+    RESTART_CHECKPOINT_FILENAME,
     TrainAllPhasesState,
     TrainOnePhaseState,
 )
@@ -96,10 +96,6 @@ def _get_mlflow_run(tracking_uri: str, run_id: str):
 
 
 def _load_model_state(path: Path) -> dict:
-    return torch.load(path, map_location='cpu', weights_only=False)
-
-
-def _load_runtime_state(path: Path) -> dict:
     return torch.load(path, map_location='cpu', weights_only=False)
 
 
@@ -263,24 +259,18 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
             + mlflow_overrides,
         )
 
-    outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
-    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
-    scheduler_restart_path = interrupted_dir / 'lr_schedulers.pt'
-    scaler_restart_path = interrupted_dir / 'grad_scaler.pt'
-    outer_restart_state = TrainAllPhasesState().load(outer_restart_path)
-    inner_restart_state = TrainOnePhaseState().load(inner_restart_path)
+    checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
+    assert checkpoint_path.exists()
+    outer_restart_state, inner_restart_state, scheduler_states, scaler_state = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
     _assert_restart_state(
         outer_restart_state,
         inner_restart_state,
         expected_job_idx=2,
         deterministic_mode_active=False,
     )
-    assert scheduler_restart_path.exists()
-    assert scaler_restart_path.exists()
-    scheduler_state = _load_runtime_state(scheduler_restart_path)
-    assert 'cosine' in scheduler_state
-    assert scheduler_state['cosine']['last_epoch'] > 0
-    assert isinstance(_load_runtime_state(scaler_restart_path), dict)
+    assert 'cosine' in scheduler_states
+    assert scheduler_states['cosine']['last_epoch'] > 0
+    assert isinstance(scaler_state, dict)
 
     # Resume: keep the output directory so the restart-checkpoint files written
     # by the interrupted run remain on disk.  load_restart_state_pair() inside
@@ -299,11 +289,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
         clear_output_before_start=False,
     )
     assert resumed_dir == interrupted_dir
-    # Restart-checkpoint files are removed after a successful run.
-    assert not outer_restart_path.exists()
-    assert not inner_restart_path.exists()
-    assert not scheduler_restart_path.exists()
-    assert not scaler_restart_path.exists()
+    # Restart-checkpoint file is removed after a successful run.
+    assert not checkpoint_path.exists()
     _assert_resumed_mlflow_run(
         resumed_dir,
         mlflow_scope=mlflow_scope,
@@ -390,15 +377,15 @@ def test_resume_fails_when_rng_bytes_are_corrupted(monkeypatch):
             + _resume_mlflow_overrides('resume_corrupt_rng_bytes'),
         )
 
-    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+    checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
 
-    # Overwrite _rng_state_bytes with random garbage that is not valid pickle.
-    state_dict = torch.load(inner_restart_path, map_location='cpu', weights_only=False)
-    state_dict['_rng_state_bytes'] = torch.randint(0, 256, (64,), dtype=torch.uint8)
-    torch.save(state_dict, inner_restart_path)
+    # Overwrite _rng_state_bytes in the bundle's inner state with random garbage.
+    bundle = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    bundle['inner']['_rng_state_bytes'] = torch.randint(0, 256, (64,), dtype=torch.uint8)
+    torch.save(bundle, checkpoint_path)
 
     with pytest.raises(Exception):
-        TrainOnePhaseState().load(inner_restart_path)
+        TrainOnePhaseState().load_from_state_dict(bundle['inner'])
 
 
 def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
@@ -426,10 +413,8 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
             + mlflow_overrides,
         )
 
-    outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
-    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
-    outer_restart_state = TrainAllPhasesState().load(outer_restart_path)
-    inner_restart_state = TrainOnePhaseState().load(inner_restart_path)
+    checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
+    outer_restart_state, inner_restart_state, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
     # Interrupted during phase 2 training before det-mode was applied.
     _assert_restart_state(
         outer_restart_state,
@@ -457,8 +442,7 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
 
     assert resumed_dir == interrupted_dir
     # Restart state is removed after successful completion.
-    assert not outer_restart_path.exists()
-    assert not inner_restart_path.exists()
+    assert not checkpoint_path.exists()
     # MLflow run ID is preserved and phase-3 metrics were logged.
     _assert_resumed_mlflow_run(
         resumed_dir,
@@ -508,17 +492,15 @@ def test_resume_when_killed_during_test_job(monkeypatch):
         ctx.setattr(trainer, '_run_test_job', _patched_run_test_job)
         interrupted_dir = ode_training(interrupted_case, overrides=common_overrides)
 
-    outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
-    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+    checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
 
-    # Outer state must point at the test job; inner state must survive from
-    # the last epoch checkpoint.
-    outer_restart_state = TrainAllPhasesState().load(outer_restart_path)
+    # Bundle must survive; outer state must point at the test job.
+    outer_restart_state, _, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
     # bnode_pytest job list: pre_train(skip)=0, phase0=1, phase1=2, test=3
     assert outer_restart_state.job_idx == 3, (
         f"Expected job_idx=3 (test job) after kill, got {outer_restart_state.job_idx}"
     )
-    assert inner_restart_path.exists(), "Inner restart state must remain on disk after kill during test job."
+    assert checkpoint_path.exists(), "Restart checkpoint must remain on disk after kill during test job."
 
     # Resume: outer state points at the test job, so only the test job re-runs.
     _set_training_seeds()
@@ -529,9 +511,8 @@ def test_resume_when_killed_during_test_job(monkeypatch):
     )
     assert resumed_dir == interrupted_dir
 
-    # Restart-checkpoint files are cleaned up after successful completion.
-    assert not outer_restart_path.exists()
-    assert not inner_restart_path.exists()
+    # Restart-checkpoint file is cleaned up after successful completion.
+    assert not checkpoint_path.exists()
 
     # MLflow: double-logging the same step is safe — both runs' metrics are
     # present and no exception was raised during resume.

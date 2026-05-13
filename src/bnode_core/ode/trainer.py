@@ -811,7 +811,7 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Created job list: {}'.format(job_list))
 
     # load restart state if exists, to continue training from checkpoint if needed
-    train_all_phases_state, train_one_phase_state, checkpoint_store = load_restart_state_pair(
+    train_all_phases_state, train_one_phase_state, restart_scheduler_states, restart_scaler_state, checkpoint_store = load_restart_state_pair(
         job_list=job_list
     )
     train_all_phases_state = (
@@ -872,8 +872,12 @@ def train_all_phases(cfg: train_test_config_class):
                             train_one_phase_state=phase_restart_state,
                             train_all_phases_state=train_all_phases_state,
                             checkpoint_store=checkpoint_store,
+                            restart_scheduler_states=restart_scheduler_states if idx == job_start_idx else None,
+                            restart_scaler_state=restart_scaler_state if idx == job_start_idx else None,
                         )
                         train_one_phase_state = None
+                        restart_scheduler_states = None
+                        restart_scaler_state = None
                         # set seq_len_epoch_start for next job
                         if len(job_list) > idx + 1:
                             # consequently, seq_len_epoch_start should be seq_len_train
@@ -1284,6 +1288,8 @@ def train_one_phase(
     train_one_phase_state: TrainOnePhaseState | None = None,
     train_all_phases_state: TrainAllPhasesState | None = None,
     checkpoint_store: RestartCheckpointStore | None = None,
+    restart_scheduler_states: dict | None = None,
+    restart_scaler_state: dict | None = None,
 ):
     logging.info('Start next training phase....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
@@ -1292,8 +1298,6 @@ def train_one_phase(
         pre_train,
         job_idx,
     )
-    path_current_lr_schedulers = filepaths.filepath_lr_schedulers_current_hydra_output()
-    path_current_grad_scaler = filepaths.filepath_grad_scaler_current_hydra_output()
     optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx)
     early_stopping = EarlyStopping(
         patience=train_cfg.early_stopping_patience,
@@ -1339,37 +1343,25 @@ def train_one_phase(
             raise FileNotFoundError(
                 f"Expected current optimizer checkpoint at {path_current_optimizer} for resume."
             )
-        if not path_current_lr_schedulers.exists():
-            raise FileNotFoundError(
-                f"Expected scheduler checkpoint at {path_current_lr_schedulers} for resume."
-            )
-        if not path_current_grad_scaler.exists():
-            raise FileNotFoundError(
-                f"Expected GradScaler checkpoint at {path_current_grad_scaler} for resume."
-            )
         model.load(path=path_current_model, device=device)
         optimizer.load_state_dict(
             torch.load(path_current_optimizer, map_location='cpu', weights_only=False)
         )
-        scheduler_states = torch.load(
-            path_current_lr_schedulers,
-            map_location='cpu',
-            weights_only=False,
-        )
-        scheduler_keys = set(scheduler_states.keys())
+        scheduler_states = restart_scheduler_states  # already a dict from the bundle
+        scheduler_keys = set(scheduler_states.keys()) if scheduler_states is not None else set()
         current_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
         if scheduler_keys != current_scheduler_keys:
             raise ValueError(
                 "Saved scheduler keys do not match current schedulers: "
                 f"saved={sorted(scheduler_keys)}, current={sorted(current_scheduler_keys)}"
             )
-        if lr_schedulers is not None:
+        if lr_schedulers is not None and scheduler_states is not None:
             for name, scheduler in lr_schedulers.items():
                 scheduler.load_state_dict(scheduler_states[name])
-        scaler.load_state_dict(
-            torch.load(path_current_grad_scaler, map_location='cpu', weights_only=False)
-        )
-        phase_state.load(checkpoint_store.inner_path)
+        if restart_scaler_state is not None:
+            scaler.load_state_dict(restart_scaler_state)
+        _bundle = torch.load(checkpoint_store.checkpoint_path, map_location='cpu', weights_only=False)
+        phase_state.load_from_state_dict(_bundle["inner"])
         restore_rng_state(phase_state.rng_state, use_cuda=cfg.use_cuda)
         logging.info(
             "Restored train_one_phase_state at global epoch %s (phase epoch %s)",

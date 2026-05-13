@@ -23,16 +23,17 @@ def _load_restart_states_if_available(
 ) -> tuple[
     TrainAllPhasesState | None,
     TrainOnePhaseState | None,
+    dict | None,
+    dict | None,
     RestartCheckpointStore,
 ]:
     checkpoint_store = RestartCheckpointStore.from_current_hydra_output()
-    outer_restart_state, inner_restart_state = checkpoint_store.load_state_pair_if_available()
-    if outer_restart_state is None or inner_restart_state is None:
-        return None, None, checkpoint_store
+    outer_restart_state, inner_restart_state, scheduler_states, scaler_state = checkpoint_store.load_checkpoint_if_available()
+    if outer_restart_state is None:
+        return None, None, None, None, checkpoint_store
     _validate_restart_run_id(outer_restart_state.mlflow_run_id)
-    logging.info("Loaded train_all_phases_state from %s", checkpoint_store.outer_path)
-    logging.info("Loaded train_one_phase_state from %s", checkpoint_store.inner_path)
-    return outer_restart_state, inner_restart_state, checkpoint_store
+    logging.info("Loaded restart checkpoint from %s", checkpoint_store.checkpoint_path)
+    return outer_restart_state, inner_restart_state, scheduler_states, scaler_state, checkpoint_store
 
 
 def _validate_restart_target(
@@ -60,11 +61,11 @@ def _validate_restart_target(
 def load_restart_state_pair(
     *,
     job_list: list[dict],
-) -> tuple[TrainAllPhasesState | None, TrainOnePhaseState | None, RestartCheckpointStore]:
-    train_all_phases_state, train_one_phase_state, checkpoint_store = _load_restart_states_if_available()
+) -> tuple[TrainAllPhasesState | None, TrainOnePhaseState | None, dict | None, dict | None, RestartCheckpointStore]:
+    train_all_phases_state, train_one_phase_state, scheduler_states, scaler_state, checkpoint_store = _load_restart_states_if_available()
     _validate_restart_target(
         job_list=job_list,
         train_all_phases_state=train_all_phases_state,
         train_one_phase_state=train_one_phase_state,
     )
-    return train_all_phases_state, train_one_phase_state, checkpoint_store
+    return train_all_phases_state, train_one_phase_state, scheduler_states, scaler_state, checkpoint_store

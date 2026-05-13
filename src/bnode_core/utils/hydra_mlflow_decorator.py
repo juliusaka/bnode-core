@@ -14,7 +14,7 @@ import traceback
 import subprocess
 
 from bnode_core.ode.trainer_utils.restart_state import (
-  OUTER_RESTART_STATE_FILENAME,
+  RESTART_CHECKPOINT_FILENAME,
   load_train_all_phases_state_metadata,
 )
 from bnode_core.utils.mlflow_proxy import mlflow_proxy
@@ -133,7 +133,7 @@ def _start_mlflow_run(
         restart-checkpoint file was found.
   """
   def _load_restart_metadata() -> dict | None:
-    restart_state_path = hydra_output_dir / OUTER_RESTART_STATE_FILENAME
+    restart_state_path = hydra_output_dir / RESTART_CHECKPOINT_FILENAME
     if not restart_state_path.exists():
       return None
     return load_train_all_phases_state_metadata(restart_state_path)
