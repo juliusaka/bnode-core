@@ -23,8 +23,8 @@ from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     INNER_RESTART_STATE_FILENAME,
     OUTER_RESTART_STATE_FILENAME,
-    load_train_all_phases_state,
-    load_train_one_phase_state,
+    TrainAllPhasesState,
+    TrainOnePhaseState,
 )
 
 from bnode_test_helpers import ode_training
@@ -266,8 +266,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
     scheduler_restart_path = interrupted_dir / 'lr_schedulers.pt'
     scaler_restart_path = interrupted_dir / 'grad_scaler.pt'
-    outer_restart_state = load_train_all_phases_state(outer_restart_path)
-    inner_restart_state = load_train_one_phase_state(inner_restart_path)
+    outer_restart_state = TrainAllPhasesState().load(outer_restart_path)
+    inner_restart_state = TrainOnePhaseState().load(inner_restart_path)
     _assert_restart_state(
         outer_restart_state,
         inner_restart_state,
@@ -397,7 +397,7 @@ def test_resume_fails_when_rng_bytes_are_corrupted(monkeypatch):
     torch.save(state_dict, inner_restart_path)
 
     with pytest.raises(Exception):
-        load_train_one_phase_state(inner_restart_path)
+        TrainOnePhaseState().load(inner_restart_path)
 
 
 def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
@@ -427,8 +427,8 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
 
     outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
     inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
-    outer_restart_state = load_train_all_phases_state(outer_restart_path)
-    inner_restart_state = load_train_one_phase_state(inner_restart_path)
+    outer_restart_state = TrainAllPhasesState().load(outer_restart_path)
+    inner_restart_state = TrainOnePhaseState().load(inner_restart_path)
     # Interrupted during phase 2 training before det-mode was applied.
     _assert_restart_state(
         outer_restart_state,

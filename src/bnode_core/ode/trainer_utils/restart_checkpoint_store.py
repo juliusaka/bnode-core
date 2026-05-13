@@ -11,8 +11,6 @@ import bnode_core.filepaths as filepaths
 from bnode_core.ode.trainer_utils.restart_state import (
     TrainAllPhasesState,
     TrainOnePhaseState,
-    load_train_all_phases_state,
-    load_train_one_phase_state,
 )
 
 
@@ -76,8 +74,8 @@ class RestartCheckpointStore:
             raise ValueError(
                 "Trainer restart requires both outer and inner restart checkpoints in the Hydra output directory."
             )
-        outer_state = load_train_all_phases_state(self.outer_path)
-        inner_state = load_train_one_phase_state(self.inner_path)
+        outer_state = TrainAllPhasesState().load(self.outer_path)
+        inner_state = TrainOnePhaseState().load(self.inner_path)
         self._validate_checkpoint_uuid_pair(outer_state, inner_state)
         return outer_state, inner_state
 

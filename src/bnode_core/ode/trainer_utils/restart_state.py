@@ -272,12 +272,8 @@ class TrainOnePhaseState(torch.nn.Module):
         return state_dict
 
 
-def load_train_all_phases_state(path: Path) -> TrainAllPhasesState:
-    return TrainAllPhasesState().load(path)
-
-
 def load_train_all_phases_state_metadata(path: Path) -> dict[str, Any]:
-    state = load_train_all_phases_state(path)
+    state = TrainAllPhasesState().load(path)
     return {
         "job_idx": state.job_idx,
         "next_epoch_anchor": state.next_epoch_anchor,
@@ -286,7 +282,3 @@ def load_train_all_phases_state_metadata(path: Path) -> dict[str, Any]:
         "restart_state_path": str(path.resolve()),
         "hydra_output_dir": str(path.resolve().parent.resolve()),
     }
-
-
-def load_train_one_phase_state(path: Path) -> TrainOnePhaseState:
-    return TrainOnePhaseState().load(path)
