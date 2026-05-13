@@ -1,6 +1,6 @@
-# Training Flow Reference: `trainer.py` (HEAD of `modelica_export_copilot`)
+# Training Flow Reference: `trainer.py` (HEAD of `modelica_export_copilot`, commit 2ab3859)
 
-> **Source file:** `/tmp/trainer_new.py` — 1685 lines.  
+> **Source file:** `bnode/bnode-core/src/bnode_core/ode/trainer.py` — 1734 lines.  
 > This document is a complete, stand-alone reference for anyone who has not read the code.  
 > It covers all ten requested aspects in order.
 
@@ -23,7 +23,7 @@
 
 ## 1. Top-Level Entry Point
 
-### `main()` (line ~1637)
+### `main()` (line ~1708)
 
 ```
 trainer [config_overrides]          # via uv run / installed console-script
@@ -87,9 +87,11 @@ For each training/test job, `_create_datasets_and_dataloaders_for_job()` is call
 | `'ref'` | Full test split from `hdf5_dataset_ref` (or `None`) |
 
 Batch sizes:
-- Training: `train_cfg.batch_size`  
-- Validation/test: `4 × train_cfg.batch_size` (because no backprop)
+- Training: `train_cfg.batch_size` (or `batch_size_test` for test jobs)
+- Validation/test: `4 × train_cfg.batch_size` (no backprop)
 - Final test job: `cfg.nn_model.training.batch_size_test` for all contexts
+
+After a CUDA OOM, `batch_size_reduction_factor` (a compounding factor starting at 1.0, multiplied by 0.7 each retry) is passed to `_create_datasets_and_dataloaders_for_job`, which reduces both training and validation batch sizes by that factor (minimum 1). The config is **not** mutated.
 
 `torch.utils.data.DataLoader` is created for each context with:
 - `shuffle=True`, `drop_last=True` for training jobs
@@ -97,7 +99,7 @@ Batch sizes:
 - `pin_memory=True`, `persistent_workers=True` (when workers > 0)
 - `collate_fn=timeseries_collate_fn` — custom collation for variable-length time-series batches
 
-**Sequence length** is read back from the constructed dataset and stored in `job['train_cfg'].seq_len_train`.
+**Sequence length** is read back from the constructed dataset and stored in `job['train_cfg'].seq_len_train` (uses `datasets['train'].seq_len` if present, otherwise `datasets['train'].datasets['time'].shape[-1]`).
 
 ### 2.2 Model Construction — `initialize_model()`
 
@@ -148,6 +150,8 @@ The model is placed on `device` with `model.to(device)`. The number of trainable
 | `load_trained_model_for_test=True` | Load from `path_trained_model`, skip all training |
 | `load_pretrained_model=True` | Load from `path_pretrained_model`, adjust `seq_len_epoch_start` |
 
+When resuming at a test job (i.e., a restart bundle exists and `job_idx` points to a test job), and no explicit load path is configured, the model weights are loaded directly from the `restart_model_state` dict in the bundle.
+
 ### 2.3 Optimizer — `_create_phase_optimizer()`
 
 Determined by `train_cfg.optimizer` (case-insensitive):
@@ -157,7 +161,7 @@ Determined by `train_cfg.optimizer` (case-insensitive):
 | `'adam'` | `torch.optim.Adam` | `lr_start`, `weight_decay`, `beta1_adam`, `beta2_adam` |
 | `'lbfgs'` | `torch.optim.LBFGS` | `lr_start`, `lbfgs_max_iter`, `lbfgs_history_size`, `lbfgs_tolerance_grad`, `lbfgs_tolerance_change`, `lbfgs_line_search_fn` |
 
-If `pre_train=False` and `train_cfg.reload_optimizer=True`, the optimizer state from the previous phase's checkpoint (`filepath_optimizer_current_hydra_output(job_idx-1)`) is loaded and the learning rate is reset to `train_cfg.lr_start`.
+If `pre_train=False` and `train_cfg.reload_optimizer=True`, the optimizer state from the previous phase's checkpoint (`filepath_optimizer_current_hydra_output(job_idx-1)`) is loaded and the learning rate is reset to `train_cfg.lr_start`. Failure is caught and logged as a warning (does not abort).
 
 ### 2.4 Learning Rate Schedulers — `_create_phase_lr_schedulers()`
 
@@ -170,6 +174,8 @@ Schedulers are only created for main-training phases (`pre_train=False`, `test=F
 
 **Cosine scheduler**: `T_max` is either `train_cfg.cosine_T_max × batches_per_epoch` or `(max_epochs // 10) × batches_per_epoch`.  
 **Plateau scheduler**: patience is either `train_cfg.plateau_patience` (if set) or auto-computed from `lr_on_plateau_iterations_to_min_lr()` capped at `early_stopping_patience/5`.
+
+If no schedulers are configured, `lr_schedulers` is set to `None`.
 
 ### 2.5 AMP Scaler
 
@@ -196,6 +202,8 @@ Returns an ordered list of dicts, each describing one "job":
 ]
 ```
 
+**BNODE + pre-train guard**: if `cfg.nn_model.training.pre_train=True` and `cfg.nn_model.model_type='bnode'`, a `ValueError` is raised immediately at job-list construction — no silent failure.
+
 Skip conditions:
 - Pre-train job is skipped if `cfg.nn_model.training.pre_train=False`, or `load_pretrained_model=True`, or `load_trained_model_for_test=True`.
 - Main-training jobs are skipped if `load_trained_model_for_test=True`.
@@ -203,37 +211,51 @@ Skip conditions:
 ### 3.2 `train_all_phases()` Main Loop
 
 ```
+load_restart_checkpoint(job_list)  →  (outer_state, inner_state, scheduler_states,
+                                        scaler_state, model_state, optimizer_state,
+                                        checkpoint_store)
+train_all_phases_state = outer_state or TrainAllPhasesState()   # always non-None
+
 for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
-    while True:   # inner retry loop for CUDA OOM errors
-        _create_datasets_and_dataloaders_for_job(...)
-        _initialize_or_reload_model_for_job(...)
-        if job['skip']: continue
+    batch_size_reduction_factor = None
+    while True:   # retry loop for CUDA OOM
+        _create_datasets_and_dataloaders_for_job(... batch_size_reduction_factor=...)
+        _initialize_or_reload_model_for_job(... restart_model_state=...)
+        if job['skip']: log; continue
         if job['test'] is False:
+            checkpoint_store.save_outer_for_test_job(...)   # NOT called for training jobs
             next_epoch_anchor = train_one_phase(...)
         else:
+            train_all_phases_state.job_idx = idx
+            checkpoint_store.save_outer_for_test_job(train_all_phases_state)
             _run_test_job(...)
-        break  # exit retry loop on success
-    except CheckpointRequestedExit:  return
-    except RuntimeError (CUDA OOM):  reduce batch_size by 30%, retry
+        break
+    except CheckpointRequestedExit: mlflow_proxy.set_tag; return
+    except RuntimeError (CUDA OOM):
+        oom_reduction_count += 1
+        batch_size_reduction_factor = (batch_size_reduction_factor or 1.0) * 0.7
+        warn if oom_reduction_count >= 30; sleep 10 s; retry
+
+checkpoint_store.clear_restart_artifacts()
 ```
 
-**CUDA OOM recovery**: on `RuntimeError` containing `'CUDA out of memory'` or `'CUDA memory is almost full'`, the batch size is reduced to 70% of its current value, caches are cleared, and the job is retried after 10 seconds.
+**CUDA OOM recovery**: on `RuntimeError` containing `'CUDA out of memory'` or `'CUDA memory is almost full'`, `batch_size_reduction_factor` is compounded by ×0.7. After 30+ retries, an additional warning is emitted. This factor is reset to `None` at the start of each new phase.
 
-**`CheckpointRequestedExit`**: raised by `RestartCheckpointStore` to gracefully stop after writing a checkpoint. Caught here; training terminates cleanly.
+**`CheckpointRequestedExit`**: a `RuntimeError` subclass raised to trigger a graceful stop after checkpoint write. Caught here; an MLflow tag `'ended by' = 'checkpoint request'` is set and training returns.
 
-**Phase sequencing**: at the end of each training job, `seq_len_epoch_start` for the next job is set to the current job's `seq_len_train` (so the next phase starts with the same sequence length). For pre-training, this is set to `1`.
+**Phase sequencing**: after each training job completes, `seq_len_epoch_start` for the next job is set to the current job's `seq_len_train` (or `1` for the pre-train→first-phase transition).
 
-**Cleanup**: after all jobs complete, `_clear_restart_state()` removes the outer and inner restart checkpoint files.
+**Cleanup**: after all jobs complete, `checkpoint_store.clear_restart_artifacts()` deletes the single bundle file.
 
 ### 3.3 Per-Phase Epoch Budget — `_compute_phase_epoch_settings()`
 
 ```
 batches_per_epoch = len(train_loader)  if train_cfg.batches_per_epoch is None  else train_cfg.batches_per_epoch
-epochs_for_seq_len_increase = ceil(seq_len_increase_in_batches / batches_per_epoch)  [if seq_len_epoch_start < seq_len_train]
+epochs_for_seq_len_increase = int(seq_len_increase_in_batches / batches_per_epoch)   # floor
 max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
 ```
 
-The extra `epochs_for_seq_len_increase` epochs are added on top of `max_epochs` to accommodate the curriculum warm-up period. Early stopping is suppressed during this period (see §9).
+If `seq_len_epoch_start >= seq_len_train` (no ramp needed), `epochs_for_seq_len_increase = 0` and `train_cfg.seq_len_increase_in_batches` is zeroed.
 
 ---
 
@@ -243,36 +265,51 @@ The extra `epochs_for_seq_len_increase` epochs are added on top of `max_epochs` 
 
 ```python
 for epoch in range(epoch_0, phase_epoch_0 + max_epochs):
-    # --- termination checks (break conditions) ---
-    if flag_max_epoch or flag_early_stopping or flag_break_after_loss or flag_nan_counter:
+    if epoch == epoch_stop:
+        break
+    # --- termination checks ---
+    flag_max_epoch = epoch == epoch_stop - 1
+    flag_early_stopping = early_stopping.early_stop and flag_out_of_seq_len_increase
+    flag_break_after_loss = early_stopping.best_score < train_cfg.break_after_loss_of  # if configured
+    flag_nan_counter = phase_state.nan_counter > 50
+    flag_break_after_epoch = False
+
+    if any termination flag:
         model.load(path=path_best_model)
         flag_break_after_epoch = True
 
-    # --- first epoch of phase or end epoch: eval-only ---
-    if first_epoch_is_evaluation or flag_break_after_epoch:
-        ret_vals_train, ... = test_or_validate_one_epoch(...)   # no grad, single batch
+    # --- curriculum check ---
+    if stable_epochs > abort_threshold and not flag_out_of_seq_len_increase:
+        # collapse curriculum window and extend epoch_stop
+
+    # --- training or eval-only pass ---
+    if not flag_break_after_epoch and not first_epoch_is_evaluation:
+        ret_vals_train = train_one_epoch(...)
+        # NaN/Inf/AssertionError handling (see §9)
     else:
-        ret_vals_train, train_iter = train_one_epoch(...)
+        ret_vals_train = test_or_validate_one_epoch(...)  # eval-only
+        first_epoch_is_evaluation = False
 
-    # --- validation (all batches) ---
+    # --- validation, test, ref, testnorm ---
     ret_vals_validation = test_or_validate_one_epoch(..., all_batches=True)
+    # EarlyStopping update, plateau scheduler step
+    ret_vals_test = test_or_validate_one_epoch(..., all_batches=False)
+    # ref/testnorm periodic
 
-    # --- single-batch test ---
-    ret_vals_test, ... = test_or_validate_one_epoch(..., all_batches=False)
+    # --- MLflow logging ---
 
-    # --- optional ref / testnorm (periodic) ---
-    ...
+    if flag_break_after_epoch:
+        # log final metrics; break
 
-    # --- LR scheduling, early stopping, MLflow logging ---
-    ...
-
-    # --- per-epoch restart checkpoint ---
-    checkpoint_store.save_epoch_checkpoint(...)
-
-    if flag_break_after_epoch: break
+    # --- per-epoch restart checkpoint (not written on terminal epoch) ---
+    phase_state.phase_epoch = epoch + 1 - phase_epoch_0
+    phase_state.rng_state = capture_rng_state(...)
+    checkpoint_store.save_epoch_checkpoint(
+        train_all_phases_state, phase_state, lr_schedulers, scaler, model, optimizer
+    )
 ```
 
-The very first epoch of a phase (`first_epoch_is_evaluation=True`) is always an evaluation pass (no training) to establish a baseline. This flag is cleared after that first epoch.
+The very first epoch of a phase (`first_epoch_is_evaluation=True`) is always an evaluation pass (no training) to establish a baseline. On resume (`train_one_phase_state is not None`), this flag is `False` — the resumed run does NOT redo the baseline epoch.
 
 ### 4.2 `train_one_epoch()` — Batch Loop
 
@@ -316,13 +353,13 @@ This is a method on `NeuralODE` / `BalancedNeuralODE`. From `trainer.py`'s persp
 ### 4.4 Gradient Clipping
 
 For Adam/standard optimizers: `clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)` after `scaler.unscale_()`.  
-For LBFGS: clipping is applied inside `_closure()`.  
+For LBFGS: clipping is applied inside `_closure()`, and then again after the step purely to measure `_norm` for logging (no actual clipping effect on the already-stepped weights).  
 The actual gradient norm `_norm` is returned and stored in `ret_vals_train['grad_norm']`.
 
 ### 4.5 CUDA Memory Guard
 
 After every batch, if `use_cuda`:
-- Logs `torch.cuda.memory_reserved()` as `'CUDA_memory_reserved_GB'` to MLflow.
+- Logs `torch.cuda.memory_reserved() / (1024**3)` as `'CUDA_memory_reserved_GB'` to MLflow (correct GiB conversion).
 - If reserved memory exceeds 60% of total GPU memory (or projected memory at full sequence length would exceed 60%), raises `RuntimeError('CUDA memory is almost full')` which is caught in `train_all_phases()` to trigger batch-size reduction.
 - Hard limit: if reserved > 98% of total, immediately raises.
 
@@ -389,7 +426,8 @@ On the final break epoch, if `train_cfg.activate_deterministic_mode_after_this_p
 
 ### Early stopping metric selection — `_get_early_stopping_corresponding_metric()`
 
-Tries these keys in order and uses the first present: `'rmse_states_outputs'`, `'rmse_states'`, `'rmse_outputs'`. The corresponding RMSE value is tracked alongside the primary validation loss as `corresponding_score` in `EarlyStopping`.
+Tries these keys in order and uses the first present: `'rmse_states_outputs'`, `'rmse_states'`, `'rmse_outputs'`. Returns `(None, None)` if none are present.  
+The corresponding RMSE value is tracked alongside the primary validation loss as `corresponding_score` in `EarlyStopping`. The MLflow key `best_{metric_name}` is only logged when `early_stopping_metric_name is not None`.
 
 ---
 
@@ -403,55 +441,66 @@ Saved by `EarlyStopping.save_checkpoint()` calling `model.save(path)` when valid
 |---|---|---|
 | `model_phase_{i}.pt` | `filepath_model_current_hydra_output(job_idx)` | Every time validation loss improves during phase `i` |
 | `model_pretrained.pt` | `filepath_pretrained_model_current_hydra_output()` | Every time validation loss improves during pre-training |
-| `model_current.pt` | `filepath_model_current_hydra_output()` (no index) | After every epoch without NaN (used for NaN recovery) |
+| `model_current.pt` | `filepath_model_current_hydra_output()` (no index) | After every non-NaN epoch (rolling; also inside restart bundle) |
 
 ### 6.2 Optimizer Checkpoints
 
-Saved alongside model by `EarlyStopping.save_checkpoint()` via `torch.save(optimizer.state_dict(), optimizer_path)`.
+Saved alongside model by `EarlyStopping.save_checkpoint()`.
 
 | File | `filepaths` function | When written |
 |---|---|---|
 | `optimizer_phase_{i}.pt` | `filepath_optimizer_current_hydra_output(job_idx)` | On validation loss improvement |
 | `optimizer_pretrained.pt` | `filepath_optimizer_current_hydra_output()` (pre-train) | On validation loss improvement |
-| `optimizer_current.pt` | `filepath_optimizer_current_hydra_output()` (no index) | After every epoch without NaN |
+| `optimizer_current.pt` | `filepath_optimizer_current_hydra_output()` (no index) | After every non-NaN epoch (also inside restart bundle) |
 
-### 6.3 Restart Checkpoint Files (per-epoch, atomic)
+### 6.3 Restart Bundle — single atomic file
 
-Written by `RestartCheckpointStore.save_epoch_checkpoint()` at the end of every training epoch (not test, not pre-train):
+Written by `RestartCheckpointStore.save_epoch_checkpoint()` at the end of every non-terminal training epoch:
 
 | File | `filepaths` function | Content |
 |---|---|---|
-| `training_outer_restart.pt` | `filepath_training_outer_restart_state_current_hydra_output()` | `TrainAllPhasesState` state dict |
-| `training_inner_restart.pt` | `filepath_training_inner_restart_state_current_hydra_output()` | `TrainOnePhaseState` state dict |
-| `lr_schedulers.pt` | `filepath_lr_schedulers_current_hydra_output()` | Dict of scheduler `state_dict`s, keyed by name |
-| `grad_scaler.pt` | `filepath_grad_scaler_current_hydra_output()` | `GradScaler.state_dict()` |
+| `training_restart_checkpoint.pt` | `filepath_restart_checkpoint_current_hydra_output()` | Single bundle dict (version 2) |
 
-All four writes are atomic (write to a UUID-named temp file, `os.fsync`, `os.replace`), with directory fsynced after each replacement. A shared UUID (`checkpoint_uuid`) links the outer and inner state files to guard against loading a mismatched pair.
+**Bundle structure** (`bundle_version=2`):
 
-After all jobs complete successfully, `_clear_restart_state()` deletes all four files.
+```python
+{
+    "bundle_version": 2,
+    "outer": train_all_phases_state.to_state_dict(),   # TrainAllPhasesState
+    "inner": train_one_phase_state.to_state_dict(),    # TrainOnePhaseState
+    "scheduler": {name: scheduler.state_dict(), ...},  # or {}
+    "scaler": scaler.state_dict(),
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict(),
+}
+```
 
-### 6.4 What is stored in each file
+Atomicity: write to `.{name}.{uuid}.tmp`, `fsync`, `os.replace`, then `fsync` the directory.
 
-**`TrainAllPhasesState`** (outer):
+On successful completion, `checkpoint_store.clear_restart_artifacts()` deletes the bundle file.
+
+**`save_outer_for_test_job`**: before running a test job, the existing bundle is reloaded and the outer state is updated with the current `job_idx`. This ensures resume works even if interrupted during the test phase.
+
+### 6.4 What is stored in `TrainAllPhasesState`
+
+`torch.nn.Module` subclass (via `to_state_dict` / `load_from_state_dict`):
 - `job_idx` — which job to resume from
 - `next_epoch_anchor` — global epoch counter at phase start
-- `mlflow_run_id` — used to validate MLflow run continuity on resume
-- `checkpoint_uuid` — integrity cross-check with inner file
+- `mlflow_run_id` — used to validate MLflow run continuity on resume (via `mlflow.active_run()`)
 
-**`TrainOnePhaseState`** (inner):
+### 6.5 What is stored in `TrainOnePhaseState`
+
+`torch.nn.Module` subclass:
 - `phase_epoch` — epoch within the current phase
 - `nan_counter` — consecutive NaN loss count
 - `grad_norm_last_reduced_counter` — NaN recovery counter for clip_grad_norm reduction
 - `stable_epochs` — consecutive stable epochs for curriculum abort
 - `deterministic_mode_active` — flag for BNODE
-- `seq_len_increase_in_batches` — possibly-updated curriculum budget
-- `rng_state` — complete RNG state snapshot (PyTorch CPU, PyTorch CUDA, NumPy, Python `random`)
-- `checkpoint_uuid`
-- `early_stopping` — full `EarlyStopping` module state (via `get_extra_state` / `set_extra_state`)
+- `seq_len_increase_in_batches` — possibly-updated curriculum budget (captured after early abort)
+- `rng_state` — complete RNG state snapshot (PyTorch CPU, PyTorch CUDA, NumPy, Python `random`), stored as a pickled uint8 tensor
+- `early_stopping` — full `EarlyStopping` instance (via `phase_state.early_stopping` assignment)
 
-**Serialization**: `TrainAllPhasesState` and `TrainOnePhaseState` are `torch.nn.Module` subclasses. Fields are registered as buffers so `state_dict()` / `load_state_dict()` handles them. Optional strings (MLflow run ID, UUID) are UTF-8 encoded to `torch.uint8` tensors. The RNG state is encoded field-by-field into tensors.
-
-### 6.5 Final Test Outputs
+### 6.6 Final Test Outputs
 
 When `save_predictions_in_dataset=True`, predictions are written to an HDF5 file at `filepath_dataset_current_hydra_output()`. The file is created once and contexts are appended. Per-context datasets are created at the first batch, then filled with a write-offset loop.
 
@@ -464,66 +513,66 @@ When `save_predictions_in_dataset=True`, predictions are written to an HDF5 file
 At the beginning of `train_all_phases()`:
 
 ```python
-train_all_phases_state, train_one_phase_state, outer_path, inner_path = load_restart_state_pair(job_list=job_list)
+(train_all_phases_state, train_one_phase_state,
+ restart_scheduler_states, restart_scaler_state,
+ restart_model_state, restart_optimizer_state,
+ checkpoint_store) = load_restart_checkpoint(job_list=job_list)
+train_all_phases_state = train_all_phases_state or TrainAllPhasesState()
 ```
 
-Inside `load_restart_state_pair()` (from `restart_utils.py`):
-1. `RestartCheckpointStore.from_current_hydra_output()` instantiates paths.
-2. `load_state_pair_if_available()` checks if both `training_outer_restart.pt` and `training_inner_restart.pt` exist.  
-   - If neither exists → fresh start, returns `(None, None)`.
-   - If only one exists → raises `ValueError` (corrupt state).
-   - If both exist → loads both and validates UUID match.
+`load_restart_checkpoint` (from `restart_utils.py`):
+1. `RestartCheckpointStore.from_current_hydra_output()` creates the store pointing to `training_restart_checkpoint.pt`.
+2. `checkpoint_store.load_checkpoint_if_available()` checks if the bundle exists.
+   - If not → returns `(None, None, None, None, None, None)` → fresh start.
+   - If yes → loads bundle, validates version (must be 2), reconstructs `TrainAllPhasesState` and `TrainOnePhaseState`.
 3. `_validate_restart_run_id()` checks that the active MLflow run matches the run ID stored in the outer state.
-4. `_validate_restart_target()` checks that:
-   - `job_idx` is within the job list bounds.
-   - The target job is a main-training job (not pre-train, not test).
+4. `_validate_restart_target()` checks that `job_idx` is within the job list bounds and the target job is not a pre-train phase.
 
 ### 7.2 Outer Loop Resume
 
-If `train_all_phases_state is not None`:
+If `train_all_phases_state.job_idx > 0` (restored from bundle):
 ```python
 job_start_idx = train_all_phases_state.job_idx
 next_epoch_anchor = train_all_phases_state.next_epoch_anchor
 ```
 The outer `enumerate` starts from `job_start_idx`, skipping completed phases entirely.
 
-`train_one_phase_state` is passed to `train_one_phase()` only for the first resumed job (subsequently set to `None`).
+`train_one_phase_state` (from bundle) is passed to `train_one_phase()` only for the first resumed job (`idx == job_start_idx`). After that, it is set to `None`.
+
+Similarly, `restart_scheduler_states`, `restart_scaler_state`, `restart_model_state`, `restart_optimizer_state` are passed only for the first resumed job and then cleared.
 
 ### 7.3 Inner Loop Resume — inside `train_one_phase()`
 
 If `train_one_phase_state is not None`:
 
-1. The `seq_len_increase_in_batches` is restored from the phase state (overrides the config value, which may have been modified during the prior run).
-2. Model weights loaded from `path_current_model` (the per-epoch "current" checkpoint).
-3. Optimizer state loaded from `path_current_optimizer`.
-4. LR scheduler states loaded from `lr_schedulers.pt`; scheduler keys are validated to match.
-5. GradScaler state loaded from `grad_scaler.pt`.
-6. `phase_state.load(inner_restart_state_path)` restores `TrainOnePhaseState` fields (phase_epoch, counters, RNG state, early-stopping state).
+1. Validates that `restart_model_state` and `restart_optimizer_state` are not `None` (raises `ValueError` otherwise).
+2. `model.load_state_dict({k: v.to(device) for k, v in restart_model_state.items()})` — loads model weights from bundle.
+3. `optimizer.load_state_dict(restart_optimizer_state)` — loads optimizer state from bundle.
+4. Scheduler states validated (key-set must match) and loaded from `restart_scheduler_states`.
+5. `scaler.load_state_dict(restart_scaler_state)` if not `None`.
+6. `_bundle = torch.load(checkpoint_store.checkpoint_path, ..., weights_only=False)` reloads the full bundle; `phase_state.load_from_state_dict(_bundle["inner"])` restores `TrainOnePhaseState` fields.
 7. `restore_rng_state(phase_state.rng_state, use_cuda=cfg.use_cuda)` restores all RNG states.
 
 Epoch loop resumes at:
 ```python
-epoch_0 = train_all_phases_state.next_epoch_anchor     # global epoch counter
-phase_epoch_0 = epoch_0 - phase_state.phase_epoch      # phase-local epoch 0
+epoch_0 = train_all_phases_state.next_epoch_anchor   # global epoch counter
+phase_epoch_0 = epoch_0 - phase_state.phase_epoch    # phase-local start
 epoch range = [epoch_0, phase_epoch_0 + max_epochs)
+first_epoch_is_evaluation = False  # no baseline re-run on resume
 ```
 
-### 7.4 Validation that Restart Files Are Complete
+### 7.4 Test Job Resume
 
-```python
-if not path_current_model.exists(): raise FileNotFoundError(...)
-if not path_current_optimizer.exists(): raise FileNotFoundError(...)
-if not path_current_lr_schedulers.exists(): raise FileNotFoundError(...)
-if not path_current_grad_scaler.exists(): raise FileNotFoundError(...)
-```
-
-Explicit errors are raised if any required file is missing rather than silently reinitializing.
+When the bundle's `job_idx` points to a test job:
+- `_validate_restart_target()` allows this (only pre-train jobs are rejected).
+- `_initialize_or_reload_model_for_job()` receives `restart_model_state` and loads weights from it when `job.test=True` and no explicit `load_trained_model_for_test` path is configured.
 
 ### 7.5 Limitations / Design Notes
 
-- **TODO comment** (line ~599, `_initialize_or_reload_model_for_job`): `"Can't we reuse/differently split this function to use it also when resuming training?"` — the model initialization on resume is handled separately inside `train_one_phase()` rather than being unified with `_initialize_or_reload_model_for_job()`.
-- Restart only works for **main-training phases**. Pre-training and test jobs cannot be restarted mid-run.
+- Restart only works for **main-training and test phases**. Pre-training jobs cannot be restarted mid-run.
 - The `CheckpointRequestedExit` exception is a hook for external job-scheduler integration: raise it to cleanly stop training after persisting state.
+- LR scheduler type mismatch on resume is fatal (`ValueError`).
+- `nan_counter` and `stable_epochs` persist across restarts (intentional, not documented in inline comments).
 
 ---
 
@@ -568,12 +617,12 @@ else:
     _seq_len_now = seq_len_train
 ```
 
-Linear interpolation from `seq_len_epoch_start` to `seq_len_train` over `seq_len_increase_in_batches` batches. All 3-D tensors in the batch dict are truncated in-place along the time axis (axis 2).
+Linear interpolation from `seq_len_epoch_start` to `seq_len_train` over `seq_len_increase_in_batches` batches.
 
-### 8.5 Epoch Budget Inflation — `_compute_phase_epoch_settings()`
+### 8.5 Epoch Budget — `_compute_phase_epoch_settings()`
 
 ```python
-epochs_for_seq_len_increase = ceil(seq_len_increase_in_batches / batches_per_epoch)
+epochs_for_seq_len_increase = int(seq_len_increase_in_batches / batches_per_epoch)  # floor
 max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
 ```
 
@@ -592,9 +641,7 @@ if (phase_state.stable_epochs > train_cfg.seq_len_increase_abort_after_n_stable_
 
 `phase_state.stable_epochs` is incremented when `loss_validation < 2 * loss_train` (model generalises well) and reset to 0 otherwise.
 
-### 8.7 Post-Curriculum Flag
-
-Once `batches_this_phase > seq_len_increase_in_batches`, `flag_out_of_seq_len_increase = True`. Only then does early stopping actually trigger phase termination (early stopping is active but ignored while the flag is False).
+Once `batches_this_phase > seq_len_increase_in_batches`, `flag_out_of_seq_len_increase = True` and early stopping becomes active.
 
 ---
 
@@ -606,10 +653,12 @@ Instantiated at the start of each phase:
 ```python
 early_stopping = EarlyStopping(
     patience=train_cfg.early_stopping_patience,
+    verbose=True,
     threshold=train_cfg.early_stopping_threshold,
     threshold_mode=train_cfg.early_stopping_threshold_mode,   # 'abs' or 'rel'
     path=path_best_model,
     optimizer_path=path_optimizer_best_model,
+    trace_func=logging.info,
 )
 ```
 
@@ -627,10 +676,10 @@ When `counter >= patience`: sets `early_stop = True`.
 
 | Flag | Condition | MLflow tag |
 |---|---|---|
-| `flag_max_epoch` | `epoch == phase_epoch_0 + max_epochs - 1` | `'max epochs'` |
+| `flag_max_epoch` | `epoch == epoch_stop - 1` | `'max epochs'` |
 | `flag_early_stopping` | `early_stopping.early_stop and flag_out_of_seq_len_increase` | `'early stopping'` |
 | `flag_break_after_loss` | `early_stopping.best_score < train_cfg.break_after_loss_of` | `'break after loss'` |
-| `flag_nan_counter` | `phase_state.nan_counter > 50` | `'4 NaNs in loss'` (sic — actually 50)` |
+| `flag_nan_counter` | `phase_state.nan_counter > 50` | `'50 NaNs in loss'` |
 
 When any flag is set, `model.load(path_best_model)` is called before the final evaluation pass, then the loop breaks.
 
@@ -638,15 +687,17 @@ When any flag is set, `model.load(path_best_model)` is called before the final e
 
 If `ret_vals_train['loss']` is NaN or Inf (or `AssertionError` was caught):
 1. If `train_cfg.reload_model_if_loss_nan=True` and `nan_counter <= 49`:
-   - Reload `path_current_model` and `path_current_optimizer`.
+   - Reload model and optimizer from `checkpoint_store.checkpoint_path` bundle (`_bundle["model"]`, `_bundle["optimizer"]`).
    - Increment `grad_norm_last_reduced_counter`. If > 2, multiply `clip_grad_norm` by 0.7 and reset counter.
    - Log `loss_nan_reload=1` to MLflow.
+   - If bundle load itself fails (no checkpoint exists yet): raise `ValueError` (first epoch unstable).
 2. If `nan_counter > 49`:
-   - Reload the **best** model and optimizer (`path_best_model`).
+   - Reload the **best** model (`model.load(path_best_model)`) and optimizer (`torch.load(path_optimizer_best_model)`).
 3. If `nan_counter > 55`: raise `ValueError` and abort.
 4. If `reload_model_if_loss_nan=False`: log warning and continue with current model.
 
-On a clean (non-NaN) epoch: reset `nan_counter` and `grad_norm_last_reduced_counter` to 0, save model and optimizer to `path_current_model` / `path_current_optimizer`.
+On a clean (non-NaN) epoch: reset `nan_counter` and `grad_norm_last_reduced_counter` to 0.  
+**Note**: `model_current.pt` and `optimizer_current.pt` are no longer written separately on clean epochs — the rolling state is persisted only via the end-of-epoch restart bundle.
 
 ### `ReduceLROnPlateau` Integration
 
@@ -660,54 +711,68 @@ if lr_schedulers and 'plateau' in lr_schedulers:
 
 NaN/Inf validation loss skips the scheduler step.
 
+### `KeyboardInterrupt` Handling
+
+The entire epoch loop is wrapped in:
+```python
+try:
+    for epoch in range(...):
+        ...
+except KeyboardInterrupt:
+    mlflow_proxy.set_tag_if_active('ended by', 'keyboard interrupt')
+    model.load(path=path_best_model, device=device)  # fallback loop if file missing
+```
+
 ---
 
 ## 10. Notable Helper Classes, Dataclasses, and Utility Modules
 
 ### `TrainAllPhasesState` (`restart_state.py`)
 
-`torch.nn.Module` subclass. Persists the coarse state of `train_all_phases()`:  
-`job_idx`, `next_epoch_anchor`, `mlflow_run_id`, `checkpoint_uuid`.  
-All fields are serialized as typed PyTorch buffers. Optional strings use a UTF-8 → `uint8` tensor encoding. Version field `_state_version = 1` guards against loading stale files.
+Serializes the coarse state of `train_all_phases()` via `to_state_dict` / `load_from_state_dict`:
+- `job_idx`, `next_epoch_anchor`, `mlflow_run_id`.
 
 ### `TrainOnePhaseState` (`restart_state.py`)
 
-`torch.nn.Module` subclass. Persists the fine state of `train_one_phase()`:  
-`phase_epoch`, `nan_counter`, `grad_norm_last_reduced_counter`, `stable_epochs`, `deterministic_mode_active`, `seq_len_increase_in_batches`, `rng_state`, `checkpoint_uuid`, `early_stopping`.  
-The complete RNG state (PyTorch CPU + CUDA, NumPy, Python `random`) is encoded/decoded to/from tensors via `capture_rng_state()` / `restore_rng_state()`.
+Serializes the fine state of `train_one_phase()`:
+- `phase_epoch`, `nan_counter`, `grad_norm_last_reduced_counter`, `stable_epochs`, `deterministic_mode_active`, `seq_len_increase_in_batches`, `rng_state`.
+- `early_stopping` is assigned as a Python attribute (not serialized inside the state dict; held directly on the instance).
 
 ### `RestartCheckpointStore` (`restart_checkpoint_store.py`)
 
-Manages atomic persistence of all four restart artifacts. Key methods:
+Manages atomic persistence of the single restart bundle. Key methods:
 
 | Method | Action |
 |---|---|
 | `from_current_hydra_output()` | Factory using `filepaths` to locate Hydra output dir |
-| `load_state_pair_if_available()` | Load + UUID-validate outer+inner states |
-| `save_epoch_checkpoint(...)` | Atomic write of all four files in dependency order |
-| `clear_restart_artifacts()` | Delete all four files on clean completion |
+| `load_checkpoint_if_available()` | Load bundle if present; validate version 2; return all 6 components |
+| `save_epoch_checkpoint(...)` | Atomic write of complete bundle (outer + inner + scheduler + scaler + model + optimizer) |
+| `save_outer_for_test_job(...)` | Reload existing bundle, update outer state, re-save atomically |
+| `clear_restart_artifacts()` | Delete the bundle file on clean completion |
 
-Atomicity: write to `.{name}.{uuid}.tmp`, `fsync`, `os.replace`, then `fsync` the directory. The inner state is written before the outer state so a crash mid-write cannot produce a valid but stale outer state.
+Atomicity: write to `.{name}.{uuid}.tmp`, `fsync`, `os.replace`, then `fsync` the directory.
 
 ### `EarlyStopping` (`bnode_core.nn.nn_utils.early_stopping`)
 
-`torch.nn.Module` subclass. Monitors validation loss with configurable patience and threshold. Key attributes: `counter`, `best_score`, `corresponding_score`, `early_stop`, `score_last_save`. Serializable via `get_extra_state()` / `set_extra_state()` for inclusion in `TrainOnePhaseState`. `reset()` resets all state; `reset_counter()` resets only the patience counter (preserves `best_score`).
+`torch.nn.Module` subclass. Monitors validation loss with configurable patience and threshold. Key attributes: `counter`, `best_score`, `corresponding_score`, `early_stop`. Serializable via `get_extra_state()` / `set_extra_state()`. `reset()` resets all state; `reset_counter()` resets only the patience counter (preserves `best_score`).
 
 ### `CheckpointRequestedExit` (`restart_state.py`)
 
-Simple `RuntimeError` subclass. Raised (typically by external tooling interacting with `RestartCheckpointStore`) to request a graceful training stop after the epoch checkpoint is persisted. Caught in `train_all_phases()` which returns immediately.
+Simple `RuntimeError` subclass. Raised to request a graceful training stop after the epoch checkpoint is persisted. Caught in `train_all_phases()`.
 
 ### `mlflow_proxy` (`bnode_core.utils.mlflow_proxy`)
 
-A thin wrapper around the MLflow client that silently handles the case where no MLflow run is active. Used throughout trainer.py as a drop-in for `mlflow.*` calls. Exposes `log_param`, `log_metric`, `log_metrics`, `set_tag_if_active`.
+A thin wrapper around the MLflow client that silently handles the case where no MLflow run is active. Exposes `log_param`, `log_metric`, `log_metrics`, `set_tag_if_active`. Used throughout trainer.py as a drop-in for raw `mlflow.*` calls.
+
+One bare `mlflow.active_run()` call remains in `train_one_phase` (line ~1679) to read the run ID for `TrainAllPhasesState.mlflow_run_id`. It is guarded: `_active_run = mlflow.active_run(); train_all_state.mlflow_run_id = _active_run.info.run_id if _active_run is not None else None`.
 
 ### `@log_hydra_to_mlflow` (`bnode_core.utils.hydra_mlflow_decorator`)
 
-Function decorator applied to `train_all_phases`. Starts/resumes an MLflow experiment run and logs the full Hydra config (flat key-value pairs) as MLflow parameters. Ensures the run is ended on normal return or exception.
+Decorator applied to `train_all_phases`. Starts/resumes an MLflow experiment run and logs the full Hydra config as MLflow parameters. Ensures the run is ended on normal return or exception.
 
 ### `filepaths` module (`bnode_core.filepaths`)
 
-Central path-resolution module. Relevant functions used in trainer:
+Central path-resolution module. Relevant functions:
 
 | Function | Returns |
 |---|---|
@@ -715,58 +780,33 @@ Central path-resolution module. Relevant functions used in trainer:
 | `filepath_model_current_hydra_output(phase)` | `model_phase_{phase}.pt` or `model_current.pt` |
 | `filepath_pretrained_model_current_hydra_output()` | `model_pretrained.pt` |
 | `filepath_optimizer_current_hydra_output(phase)` | `optimizer_phase_{phase}.pt` or `optimizer_current.pt` |
-| `filepath_lr_schedulers_current_hydra_output()` | `lr_schedulers.pt` |
-| `filepath_grad_scaler_current_hydra_output()` | `grad_scaler.pt` |
-| `filepath_training_outer_restart_state_current_hydra_output()` | `training_outer_restart.pt` |
-| `filepath_training_inner_restart_state_current_hydra_output()` | `training_inner_restart.pt` |
+| `filepath_restart_checkpoint_current_hydra_output()` | `training_restart_checkpoint.pt` |
 | `filepath_dataset_current_hydra_output()` | HDF5 prediction output file |
 | `filepath_from_local_or_ml_artifacts(path)` | Resolves `mlflow://` URIs or local paths |
 
 ### `load_dataset_and_config`, `make_stacked_dataset`, `TimeSeriesDataset`, `timeseries_collate_fn` (`bnode_core.nn.nn_utils.load_data`)
 
 - `load_dataset_and_config(name, path)` → opens and returns an `h5py.File` handle.
-- `make_stacked_dataset(hdf5, context, load_seq_len, seq_len_batches, stride, max_samples)` → constructs a `TimeSeriesDataset` by slicing and stacking time-series trajectories.
-- `TimeSeriesDataset` → standard PyTorch `Dataset`; each item is a dict of tensors (`states`, `controls`, `parameters`, `outputs`, optionally `state_der`).
-- `timeseries_collate_fn` → collation function handling variable-length padding.
+- `make_stacked_dataset(hdf5, context, load_seq_len, seq_len_batches, stride, max_samples)` → constructs a `TimeSeriesDataset`.
+- `TimeSeriesDataset` → standard PyTorch `Dataset`; each item is a dict of tensors.
+- `timeseries_collate_fn` → collation function for variable-length padding.
 
 ### `NeuralODE` / `BalancedNeuralODE` (model classes)
 
-Both expose the same training interface contract:
-- `model_and_loss_evaluation(data_batch, train_cfg, pre_train, device, *, return_model_outputs, test, last_batch, activate_deterministic_mode)` → returns metrics dict (+ optional model-output dict).
+Both expose the same training interface:
+- `model_and_loss_evaluation(data_batch, train_cfg, pre_train, device, *, return_model_outputs, test, last_batch, activate_deterministic_mode)` → returns metrics dict.
 - `normalization_init(hdf5_dataset)` → initializes normalization buffers.
 - `model.save(path)` / `model.load(path, device)` → save/load model state.
 - `model.get_progress_string(ret_vals_train, ret_vals_validation, ret_vals_test, pre_train)` → compact string for per-epoch logging.
 - `model.ode_fun_count` (optional) → ODE evaluations during last backward pass.
 
-`build_feedthrough_mask(control_names, feedthrough_controls, controls_dim)` constructs a boolean mask for `BalancedNeuralODE` from human-readable control variable names.
-
-### `lr_on_plateau_iterations_to_min_lr` (`bnode_core.nn.nn_utils.lr_scheduler`)
-
-Helper that analytically computes how many plateau-patience steps are needed for the LR to decay from `lr_start` to `lr_min` given a multiplicative `factor`. Used to auto-compute plateau patience when `train_cfg.plateau_patience` is `None`.
-
 ---
 
 ## Notable TODOs and Design Gaps
 
-1. **TODO in `_create_datasets_and_dataloaders_for_job`** (line ~490):  
-   `# TODO: I believe this is never reached` — the guard for an empty dataset during test-only mode may be dead code.
-
-2. **TODO on model reload and resume** (line ~599):  
-   `"Can't we reuse/differently split this function to use it also when resuming training?"` — model initialization on resume is done inside `train_one_phase()` rather than through the shared `_initialize_or_reload_model_for_job()`.
-
-3. **MLflow tag typo** (line ~1430):  
-   `mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), '4 NaNs in loss')` — the message says "4 NaNs" but the threshold is 50.
-
-4. **Pre-train restart not supported** — `_validate_restart_target()` explicitly rejects restart if `target_job["pre_train"]` is True.
-
-5. **Test job restart not supported** — same restriction for test jobs.
-
-6. **LR scheduler type mismatch on resume is fatal** — if the config is changed between runs (different `lr_scheduler_type`), the scheduler key validation will raise `ValueError`, preventing resume. There is no migration path.
-
-7. **`batch_size_test` is a global field** — during CUDA OOM on test jobs, `cfg.nn_model.training.batch_size_test` is mutated in-place. This is a side effect on the global config.
-
-8. **`seq_len_increase_abort_after_n_stable_epochs` epoch_stop extension** — when the curriculum is aborted early, `epoch_stop` is extended by `(epoch - phase_epoch_0)` batches/epochs to compensate. This expansion is not reset if `stable_epochs` drops back to zero.
-
-9. **Cosine scheduler `T_max` defaults to `max_epochs // 10`** — this means a very short cosine period relative to total training. The comment in the code notes this but does not document the rationale.
-
-10. **`evaluate_at_control_times` deep copy** — the `train_cfg` deep copy in the first two epochs is intentional (to avoid permanently modifying the config), but adds overhead.
+1. **`batch_size_test` mutation removed** — OOM retry now uses `batch_size_reduction_factor` local variable; global config is no longer mutated.
+2. **TODO in `_create_datasets_and_dataloaders_for_job`** (line ~468): `# TODO: I believe this is never reached` — the guard for an empty dataset during test-only mode may be dead code.
+3. **LR scheduler type mismatch on resume is fatal** — if config is changed between an interrupted run and a resume attempt, the scheduler key validation raises `ValueError` with no migration path.
+4. **`seq_len_increase_abort_after_n_stable_epochs` epoch_stop extension** — when the curriculum is aborted early, `epoch_stop` is extended permanently. This extension is not reset if `stable_epochs` subsequently drops back to zero.
+5. **`nan_counter` and `stable_epochs` persist across restarts** — intentional but not documented inline. Resuming a run that had 30 NaN epochs will start with `nan_counter=30`.
+6. **`model_current.pt` / `optimizer_current.pt` no longer written separately** — rolling state is only in the restart bundle. If the bundle is deleted manually, NaN recovery cannot load a rolling checkpoint.
