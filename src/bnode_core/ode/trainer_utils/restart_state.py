@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import pickle
 import random
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,9 @@ INNER_RESTART_STATE_FILENAME = "training_inner_restart.pt"
 
 
 class CheckpointRequestedExit(RuntimeError):
-    """Raised when training should stop after persisting a restart checkpoint."""
+    """Raised when training should stop after persisting a restart checkpoint.
+    This class is used inside testing the restart.
+    """
 
 
 def _encode_optional_string(value: str | None) -> tuple[torch.Tensor, torch.Tensor]:
@@ -63,99 +66,19 @@ def restore_rng_state(state: dict[str, Any], use_cuda: bool) -> None:
         torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
-def _encode_rng_state(
-    state: dict[str, Any],
-) -> dict[str, torch.Tensor]:
+def _pickle_rng_state(state: dict[str, Any]) -> torch.Tensor:
+    """Pickle the heterogeneous RNG state into a single uint8 tensor."""
     if not state:
-        return {
-            "torch_cpu": torch.zeros(0, dtype=torch.uint8),
-            "torch_cuda_flat": torch.zeros(0, dtype=torch.uint8),
-            "torch_cuda_lengths": torch.zeros(0, dtype=torch.int64),
-            "numpy_alg": torch.zeros(0, dtype=torch.uint8),
-            "numpy_state": torch.zeros(0, dtype=torch.int64),
-            "numpy_pos": torch.tensor(0, dtype=torch.int64),
-            "numpy_has_gauss": torch.tensor(False, dtype=torch.bool),
-            "numpy_cached_gaussian": torch.tensor(0.0, dtype=torch.float64),
-            "python_version": torch.tensor(0, dtype=torch.int64),
-            "python_state": torch.zeros(0, dtype=torch.int64),
-            "python_has_gauss": torch.tensor(False, dtype=torch.bool),
-            "python_cached_gaussian": torch.tensor(0.0, dtype=torch.float64),
-        }
-
-    numpy_alg, numpy_state, numpy_pos, numpy_has_gauss, numpy_cached_gaussian = state["numpy"]
-    python_version, python_internal_state, python_cached_gaussian = state["python"]
-    torch_cuda_states = state.get("torch_cuda", [])
-    torch_cuda_lengths = torch.tensor(
-        [tensor.numel() for tensor in torch_cuda_states],
-        dtype=torch.int64,
-    )
-    torch_cuda_flat = (
-        torch.cat([tensor.cpu().to(torch.uint8).flatten() for tensor in torch_cuda_states])
-        if torch_cuda_states
-        else torch.zeros(0, dtype=torch.uint8)
-    )
-
-    return {
-        "torch_cpu": state["torch_cpu"].cpu().to(torch.uint8),
-        "torch_cuda_flat": torch_cuda_flat,
-        "torch_cuda_lengths": torch_cuda_lengths,
-        "numpy_alg": torch.tensor(list(numpy_alg.encode("utf-8")), dtype=torch.uint8),
-        "numpy_state": torch.as_tensor(numpy_state.astype(np.int64), dtype=torch.int64),
-        "numpy_pos": torch.tensor(int(numpy_pos), dtype=torch.int64),
-        "numpy_has_gauss": torch.tensor(bool(numpy_has_gauss), dtype=torch.bool),
-        "numpy_cached_gaussian": torch.tensor(float(numpy_cached_gaussian), dtype=torch.float64),
-        "python_version": torch.tensor(int(python_version), dtype=torch.int64),
-        "python_state": torch.tensor(list(python_internal_state), dtype=torch.int64),
-        "python_has_gauss": torch.tensor(python_cached_gaussian is not None, dtype=torch.bool),
-        "python_cached_gaussian": torch.tensor(
-            float(python_cached_gaussian) if python_cached_gaussian is not None else 0.0,
-            dtype=torch.float64,
-        ),
-    }
+        return torch.zeros(0, dtype=torch.uint8)
+    data = bytearray(pickle.dumps(state))
+    return torch.frombuffer(data, dtype=torch.uint8).clone()
 
 
-def _decode_rng_state(
-    *,
-    torch_cpu: torch.Tensor,
-    torch_cuda_flat: torch.Tensor,
-    torch_cuda_lengths: torch.Tensor,
-    numpy_alg: torch.Tensor,
-    numpy_state: torch.Tensor,
-    numpy_pos: torch.Tensor,
-    numpy_has_gauss: torch.Tensor,
-    numpy_cached_gaussian: torch.Tensor,
-    python_version: torch.Tensor,
-    python_state: torch.Tensor,
-    python_has_gauss: torch.Tensor,
-    python_cached_gaussian: torch.Tensor,
-) -> dict[str, Any]:
-    numpy_alg_str = bytes(int(x) for x in numpy_alg.tolist()).decode("utf-8")
-    numpy_tuple = (
-        numpy_alg_str,
-        np.asarray(numpy_state.tolist(), dtype=np.uint32),
-        int(numpy_pos.item()),
-        bool(numpy_has_gauss.item()),
-        float(numpy_cached_gaussian.item()),
-    )
-    python_tuple = (
-        int(python_version.item()),
-        tuple(int(x) for x in python_state.tolist()),
-        float(python_cached_gaussian.item()) if bool(python_has_gauss.item()) else None,
-    )
-    rng_state: dict[str, Any] = {
-        "torch_cpu": torch_cpu.cpu().to(torch.uint8),
-        "numpy": numpy_tuple,
-        "python": python_tuple,
-    }
-    if torch_cuda_lengths.numel() > 0:
-        torch_cuda_states = []
-        offset = 0
-        for length in torch_cuda_lengths.tolist():
-            next_offset = offset + int(length)
-            torch_cuda_states.append(torch_cuda_flat[offset:next_offset].clone())
-            offset = next_offset
-        rng_state["torch_cuda"] = torch_cuda_states
-    return rng_state
+def _unpickle_rng_state(encoded: torch.Tensor) -> dict[str, Any]:
+    """Reconstruct the RNG state from a pickled uint8 tensor."""
+    if encoded.numel() == 0:
+        return {}
+    return pickle.loads(bytes(encoded.cpu().tolist()))  # noqa: S301
 
 
 class TrainAllPhasesState(torch.nn.Module):
@@ -268,7 +191,7 @@ class TrainAllPhasesState(torch.nn.Module):
 class TrainOnePhaseState(torch.nn.Module):
     """Minimal persisted state for ``train_one_phase()``."""
 
-    STATE_VERSION = 1
+    STATE_VERSION = 2
     SPECIAL_SERIALIZERS = {
         "rng_state": "_serialize_rng_state",
         "checkpoint_uuid": "_serialize_checkpoint_uuid",
@@ -318,18 +241,7 @@ class TrainOnePhaseState(torch.nn.Module):
                 dtype=torch.int64,
             ),
         )
-        self.register_buffer("_torch_cpu_rng", torch.zeros(0, dtype=torch.uint8))
-        self.register_buffer("_torch_cuda_rng_flat", torch.zeros(0, dtype=torch.uint8))
-        self.register_buffer("_torch_cuda_rng_lengths", torch.zeros(0, dtype=torch.int64))
-        self.register_buffer("_numpy_alg", torch.zeros(0, dtype=torch.uint8))
-        self.register_buffer("_numpy_state", torch.zeros(0, dtype=torch.int64))
-        self.register_buffer("_numpy_pos", torch.tensor(0, dtype=torch.int64))
-        self.register_buffer("_numpy_has_gauss", torch.tensor(False, dtype=torch.bool))
-        self.register_buffer("_numpy_cached_gaussian", torch.tensor(0.0, dtype=torch.float64))
-        self.register_buffer("_python_version", torch.tensor(0, dtype=torch.int64))
-        self.register_buffer("_python_state", torch.zeros(0, dtype=torch.int64))
-        self.register_buffer("_python_has_gauss", torch.tensor(False, dtype=torch.bool))
-        self.register_buffer("_python_cached_gaussian", torch.tensor(0.0, dtype=torch.float64))
+        self.register_buffer("_rng_state_bytes", torch.zeros(0, dtype=torch.uint8))
         checkpoint_uuid_bytes, checkpoint_uuid_is_none = _encode_optional_string(checkpoint_uuid)
         self.register_buffer("_checkpoint_uuid_bytes", checkpoint_uuid_bytes)
         self.register_buffer("_checkpoint_uuid_is_none", checkpoint_uuid_is_none)
@@ -387,19 +299,7 @@ class TrainOnePhaseState(torch.nn.Module):
             serializer()
 
     def _serialize_rng_state(self) -> None:
-        encoded_rng_state = _encode_rng_state(self.rng_state)
-        self._torch_cpu_rng = encoded_rng_state["torch_cpu"]
-        self._torch_cuda_rng_flat = encoded_rng_state["torch_cuda_flat"]
-        self._torch_cuda_rng_lengths = encoded_rng_state["torch_cuda_lengths"]
-        self._numpy_alg = encoded_rng_state["numpy_alg"]
-        self._numpy_state = encoded_rng_state["numpy_state"]
-        self._numpy_pos = encoded_rng_state["numpy_pos"]
-        self._numpy_has_gauss = encoded_rng_state["numpy_has_gauss"]
-        self._numpy_cached_gaussian = encoded_rng_state["numpy_cached_gaussian"]
-        self._python_version = encoded_rng_state["python_version"]
-        self._python_state = encoded_rng_state["python_state"]
-        self._python_has_gauss = encoded_rng_state["python_has_gauss"]
-        self._python_cached_gaussian = encoded_rng_state["python_cached_gaussian"]
+        self._rng_state_bytes = _pickle_rng_state(self.rng_state)
 
     def _serialize_checkpoint_uuid(self) -> None:
         self._checkpoint_uuid_bytes, self._checkpoint_uuid_is_none = _encode_optional_string(
@@ -407,20 +307,7 @@ class TrainOnePhaseState(torch.nn.Module):
         )
 
     def _deserialize_rng_state(self) -> None:
-        self.rng_state = _decode_rng_state(
-            torch_cpu=self._torch_cpu_rng,
-            torch_cuda_flat=self._torch_cuda_rng_flat,
-            torch_cuda_lengths=self._torch_cuda_rng_lengths,
-            numpy_alg=self._numpy_alg,
-            numpy_state=self._numpy_state,
-            numpy_pos=self._numpy_pos,
-            numpy_has_gauss=self._numpy_has_gauss,
-            numpy_cached_gaussian=self._numpy_cached_gaussian,
-            python_version=self._python_version,
-            python_state=self._python_state,
-            python_has_gauss=self._python_has_gauss,
-            python_cached_gaussian=self._python_cached_gaussian,
-        )
+        self.rng_state = _unpickle_rng_state(self._rng_state_bytes)
 
     def _deserialize_checkpoint_uuid(self) -> None:
         self.checkpoint_uuid = _decode_optional_string(
@@ -429,12 +316,7 @@ class TrainOnePhaseState(torch.nn.Module):
         )
 
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        self._torch_cpu_rng = state_dict["_torch_cpu_rng"]
-        self._torch_cuda_rng_flat = state_dict["_torch_cuda_rng_flat"]
-        self._torch_cuda_rng_lengths = state_dict["_torch_cuda_rng_lengths"]
-        self._numpy_alg = state_dict["_numpy_alg"]
-        self._numpy_state = state_dict["_numpy_state"]
-        self._python_state = state_dict["_python_state"]
+        self._rng_state_bytes = state_dict["_rng_state_bytes"]
         self._checkpoint_uuid_bytes = state_dict["_checkpoint_uuid_bytes"]
 
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
