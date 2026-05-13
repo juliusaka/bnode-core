@@ -201,7 +201,6 @@ from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpo
 from bnode_core.ode.trainer_utils.restart_utils import (
     _clear_restart_state,
     load_restart_state_pair,
-    save_outer_restart_state_for_test_job,
 )
 
 
@@ -885,12 +884,13 @@ def train_all_phases(cfg: train_test_config_class):
                             )
                             logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx + 1]['train_cfg'].seq_len_epoch_start))
                     else:
-                        save_outer_restart_state_for_test_job(
-                            train_all_phases_state=train_all_phases_state,
+                        train_all_phases_state.job_idx = idx
+                        _active_run = mlflow.active_run()
+                        train_all_phases_state.mlflow_run_id = _active_run.info.run_id if _active_run is not None else None
+                        RestartCheckpointStore.from_paths(
                             outer_path=outer_restart_state_path,
                             inner_path=inner_restart_state_path,
-                            job_idx=idx,
-                        )
+                        ).save_outer_for_test_job(train_all_phases_state)
                         _run_test_job(
                             cfg,
                             model,

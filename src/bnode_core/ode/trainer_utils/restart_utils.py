@@ -92,26 +92,6 @@ def load_restart_state_pair(
     )
 
 
-def save_outer_restart_state_for_test_job(
-    *,
-    train_all_phases_state: TrainAllPhasesState,
-    outer_path: Path,
-    inner_path: Path,
-    job_idx: int,
-) -> None:
-    """Advance the outer restart state to point at the test job and persist it.
-
-    Called immediately before ``_run_test_job`` so that a kill during the test
-    job results in a resume that re-runs only the test job, not the last
-    training phase.
-    """
-    train_all_phases_state.job_idx = job_idx
-    active_run = mlflow.active_run()
-    train_all_phases_state.mlflow_run_id = active_run.info.run_id if active_run else None
-    store = RestartCheckpointStore.from_paths(outer_path=outer_path, inner_path=inner_path)
-    store.save_outer_for_test_job(train_all_phases_state)
-
-
 def _clear_restart_state(outer_path: Path, inner_path: Path) -> None:
     checkpoint_store = RestartCheckpointStore.from_paths(
         outer_path=outer_path,
