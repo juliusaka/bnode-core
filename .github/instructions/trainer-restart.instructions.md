@@ -28,9 +28,9 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - `state_version`
 - `TrainOnePhaseState` owns only the persisted inner runtime/control state:
   - `phase_epoch`
-  - `nan_counter`
+  - `nan_counter` — accumulates across restarts; reflects lifetime NaN-loss events for this phase, not just the current execution segment
   - `grad_norm_last_reduced_counter`
-  - `stable_epochs`
+  - `stable_epochs` — accumulates across restarts; reflects lifetime stable-gradient epochs
   - RNG state
   - `deterministic_mode_active`
   - effective `seq_len_increase_in_batches`
@@ -77,6 +77,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - the actual two-file resume workflow
   - the explicit-local-variable flow in `trainer.py`
   - the current persisted-field lists for `TrainAllPhasesState` and `TrainOnePhaseState`
+- The "Accumulating counters across restarts" section in `restart_training.md` must document that `nan_counter` and `stable_epochs` accumulate across restarts (they are lifetime counts for the phase, not per-segment). Keep this section when editing the doc.
 - When code comments or docstrings explain restart ownership, point readers to `docs/bnode_core/ode/restart_training.md`.
 
 ## Test expectations

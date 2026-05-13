@@ -408,6 +408,7 @@ def _create_datasets_and_dataloaders_for_job(
     hdf5_dataset: hdf5_dataset_class,
     hdf5_dataset_norm: hdf5_dataset_class | None,
     hdf5_dataset_ref: hdf5_dataset_class | None,
+    batch_size_test_override: int | None = None,
 ) -> tuple[dict, dict, int]:
     _log_job_start(job_idx, job)
     load_seq_len, seq_len_batches, stride_valid_test, max_samples_valid = _job_dataset_loading_settings(job)
@@ -441,8 +442,9 @@ def _create_datasets_and_dataloaders_for_job(
     drop_last = job['test'] is False
     shuffle = job['test'] is False
     dataloaders = {}
-    batch_size_train = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
-    batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+    batch_size_test = batch_size_test_override if batch_size_test_override is not None else cfg.nn_model.training.batch_size_test
+    batch_size_train = job['train_cfg'].batch_size if job['test'] is False else batch_size_test
+    batch_size_valid_test = 4 * job['train_cfg'].batch_size if job['test'] is False else batch_size_test
     for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
         batch_size = batch_size_valid_test if context in ['validation', 'test', 'testnorm'] else batch_size_train
         if context == 'testnorm' and datasets[context] is None:
@@ -796,6 +798,7 @@ def train_all_phases(cfg: train_test_config_class):
     model = None
     for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
         retry_batch_size = job['train_cfg'].batch_size if job['test'] is False else cfg.nn_model.training.batch_size_test
+        batch_size_test_override = None  # set on OOM retry for test jobs to avoid mutating cfg
         while True: # loop to catch memory errors
             try:
                 if job['skip'] is False: 
@@ -806,6 +809,7 @@ def train_all_phases(cfg: train_test_config_class):
                         hdf5_dataset,
                         hdf5_dataset_norm,
                         hdf5_dataset_ref,
+                        batch_size_test_override=batch_size_test_override,
                     )
                     if model is None or cfg.nn_model.training.load_trained_model_for_test is True:
                         model = _initialize_or_reload_model_for_job(
@@ -874,11 +878,12 @@ def train_all_phases(cfg: train_test_config_class):
                 if 'CUDA out of memory' in str(e) or 'CUDA memory is almost full' in str(e):
                     logging.warning('CUDA out of memory error. Trying again in 10 seconds')
                     pyTime.sleep(10)
-                    logging.info('Setting batch size to {}'.format(int(retry_batch_size * 0.7)))
+                    retry_batch_size = int(retry_batch_size * 0.7)
+                    logging.info('Setting batch size to {}'.format(retry_batch_size))
                     if not job['test']:
-                        job['train_cfg'].batch_size = int(retry_batch_size * 0.7)
+                        job['train_cfg'].batch_size = retry_batch_size
                     else:
-                        cfg.nn_model.training.batch_size_test = int(retry_batch_size * 0.7)
+                        batch_size_test_override = retry_batch_size
                     if cfg.use_cuda:
                         torch.cuda.empty_cache()
                 else:

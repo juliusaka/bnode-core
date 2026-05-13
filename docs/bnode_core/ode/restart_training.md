@@ -118,6 +118,15 @@ That keeps the restore boundary visible:
 - restart files and runtime scheduler/scaler payloads are written atomically
 - non-persisted loop control remains local in the trainer
 
+## Accumulating counters across restarts
+
+`nan_counter` and `stable_epochs` are stored in `TrainOnePhaseState` and therefore **accumulate across restarts**. They are not reset to zero when a run is resumed.
+
+- **`nan_counter`**: counts how many consecutive NaN-loss epochs have occurred. The trainer aborts after a config-defined threshold. If a job is interrupted and resumed, the counter picks up from its last saved value. An interrupted run that was already close to the NaN limit will exhaust the remaining NaN budget on the resumed run. When reasoning about NaN budget, always check the value that will be restored, not just the per-epoch behavior.
+- **`stable_epochs`**: counts epochs in which gradient-norm reduction was active. It likewise continues accumulating from the checkpoint value on resume.
+
+This is intentional — the counters reflect the *lifetime* behavior of the training phase, not just the current segment of execution. If you need to reset a counter after an interrupted run (for example, after an infrastructure failure that caused spurious NaNs), edit the saved checkpoint directly or start a fresh phase.
+
 ## Manual resume entry point
 
 ### Resume in the same Hydra output directory
