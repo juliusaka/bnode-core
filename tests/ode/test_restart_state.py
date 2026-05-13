@@ -182,18 +182,17 @@ def test_checkpoint_store_rejects_mismatched_uuid_pair_on_load(tmp_path):
         checkpoint_store.load_state_pair_if_available()
 
 
-def test_train_one_phase_state_raises_for_missing_serializer(tmp_path, monkeypatch):
+def test_train_one_phase_state_raises_for_missing_registry_attr(tmp_path, monkeypatch):
     restart_path = tmp_path / INNER_RESTART_STATE_FILENAME
+    state = TrainOnePhaseState()
     monkeypatch.setattr(
         TrainOnePhaseState,
-        "SPECIAL_SERIALIZERS",
-        {
-            **TrainOnePhaseState.SPECIAL_SERIALIZERS,
-            "synthetic_field": "_missing_serializer",
-        },
+        "FIELD_REGISTRY",
+        [
+            *TrainOnePhaseState.FIELD_REGISTRY,
+            ("nonexistent_field", "_some_buf", torch.int64, int, int),
+        ],
     )
-    state = TrainOnePhaseState()
-    state.synthetic_field = 1
 
-    with pytest.raises(ValueError, match="_missing_serializer"):
+    with pytest.raises(AttributeError):
         state.save(restart_path)

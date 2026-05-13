@@ -31,16 +31,6 @@ def _unpickle_value(encoded: torch.Tensor) -> Any:
     return pickle.loads(bytes(encoded.cpu().tolist()))  # noqa: S301
 
 
-def _resolve_serializer(instance, field_name: str, serializer_name: str):
-    serializer = getattr(instance, serializer_name, None)
-    if serializer is None or not callable(serializer):
-        raise ValueError(
-            f"{instance.__class__.__name__}.{field_name} requires serializer "
-            f"method '{serializer_name}', but it is missing."
-        )
-    return serializer
-
-
 def capture_rng_state(use_cuda: bool) -> dict[str, Any]:
     state: dict[str, Any] = {
         "torch_cpu": torch.random.get_rng_state(),
@@ -77,18 +67,27 @@ def _unpickle_rng_state(encoded: torch.Tensor) -> dict[str, Any]:
     return pickle.loads(bytes(encoded.cpu().tolist()))  # noqa: S301
 
 
+def _encode_nullable_int(value: int | None) -> int:
+    return -1 if value is None else int(value)
+
+
+def _decode_nullable_int(value: int) -> int | None:
+    return None if value < 0 else value
+
+
 class TrainAllPhasesState(torch.nn.Module):
     """Minimal persisted state for ``train_all_phases()``."""
 
     STATE_VERSION = 2
-    SPECIAL_SERIALIZERS = {
-        "mlflow_run_id": "_serialize_mlflow_run_id",
-        "checkpoint_uuid": "_serialize_checkpoint_uuid",
-    }
-    SPECIAL_DESERIALIZERS = {
-        "mlflow_run_id": "_deserialize_mlflow_run_id",
-        "checkpoint_uuid": "_deserialize_checkpoint_uuid",
-    }
+
+    # (attr_name, buffer_name, dtype_or_None, encode_fn, decode_fn)
+    # dtype=None means a variable-size pickle tensor; dtype set means a fixed torch.tensor.
+    FIELD_REGISTRY = [
+        ("job_idx",           "_job_idx",              torch.int64, int,           int),
+        ("next_epoch_anchor", "_next_epoch_anchor",    torch.int64, int,           int),
+        ("mlflow_run_id",     "_mlflow_run_id_bytes",  None,        _pickle_value, _unpickle_value),
+        ("checkpoint_uuid",   "_checkpoint_uuid_bytes",None,        _pickle_value, _unpickle_value),
+    ]
 
     def __init__(
         self,
@@ -104,19 +103,21 @@ class TrainAllPhasesState(torch.nn.Module):
         self.mlflow_run_id = mlflow_run_id
         self.checkpoint_uuid = checkpoint_uuid
         self.register_buffer("_state_version", torch.tensor(self.STATE_VERSION, dtype=torch.int64))
-        self.register_buffer("_job_idx", torch.tensor(job_idx, dtype=torch.int64))
-        self.register_buffer(
-            "_next_epoch_anchor",
-            torch.tensor(next_epoch_anchor, dtype=torch.int64),
-        )
-        self.register_buffer("_mlflow_run_id_bytes", _pickle_value(mlflow_run_id))
-        self.register_buffer("_checkpoint_uuid_bytes", _pickle_value(checkpoint_uuid))
+        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
+            value = getattr(self, attr)
+            if dtype is not None:
+                self.register_buffer(buf, torch.tensor(encode(value), dtype=dtype))
+            else:
+                self.register_buffer(buf, encode(value))
 
     def save(self, path: Path) -> None:
         self._state_version = torch.tensor(self.STATE_VERSION, dtype=torch.int64)
-        self._job_idx = torch.tensor(int(self.job_idx), dtype=torch.int64)
-        self._next_epoch_anchor = torch.tensor(int(self.next_epoch_anchor), dtype=torch.int64)
-        self._run_special_serializers()
+        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
+            value = getattr(self, attr)
+            if dtype is not None:
+                setattr(self, buf, torch.tensor(encode(value), dtype=dtype))
+            else:
+                setattr(self, buf, encode(value))
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.state_dict(), path)
         logging.info("Saved train_all_phases_state to %s", path)
@@ -126,36 +127,15 @@ class TrainAllPhasesState(torch.nn.Module):
         self._validate_state_version(state_dict)
         self._preload_variable_buffers_from_state_dict(state_dict)
         self.load_state_dict(state_dict, strict=True)
-        self.job_idx = int(self._job_idx.item())
-        self.next_epoch_anchor = int(self._next_epoch_anchor.item())
-        self._run_special_deserializers()
+        for attr, buf, dtype, _, decode in self.FIELD_REGISTRY:
+            buffer = getattr(self, buf)
+            setattr(self, attr, decode(buffer.item()) if dtype is not None else decode(buffer))
         return self
 
-    def _run_special_serializers(self) -> None:
-        for field_name, serializer_name in self.SPECIAL_SERIALIZERS.items():
-            serializer = _resolve_serializer(self, field_name, serializer_name)
-            serializer()
-
-    def _run_special_deserializers(self) -> None:
-        for field_name, serializer_name in self.SPECIAL_DESERIALIZERS.items():
-            serializer = _resolve_serializer(self, field_name, serializer_name)
-            serializer()
-
-    def _serialize_mlflow_run_id(self) -> None:
-        self._mlflow_run_id_bytes = _pickle_value(self.mlflow_run_id)
-
-    def _serialize_checkpoint_uuid(self) -> None:
-        self._checkpoint_uuid_bytes = _pickle_value(self.checkpoint_uuid)
-
-    def _deserialize_mlflow_run_id(self) -> None:
-        self.mlflow_run_id = _unpickle_value(self._mlflow_run_id_bytes)
-
-    def _deserialize_checkpoint_uuid(self) -> None:
-        self.checkpoint_uuid = _unpickle_value(self._checkpoint_uuid_bytes)
-
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        self._mlflow_run_id_bytes = state_dict["_mlflow_run_id_bytes"]
-        self._checkpoint_uuid_bytes = state_dict["_checkpoint_uuid_bytes"]
+        for _, buf, dtype, _, _ in self.FIELD_REGISTRY:
+            if dtype is None:
+                setattr(self, buf, state_dict[buf])
 
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
         if "_state_version" not in state_dict:
@@ -174,14 +154,19 @@ class TrainOnePhaseState(torch.nn.Module):
     """Minimal persisted state for ``train_one_phase()``."""
 
     STATE_VERSION = 3
-    SPECIAL_SERIALIZERS = {
-        "rng_state": "_serialize_rng_state",
-        "checkpoint_uuid": "_serialize_checkpoint_uuid",
-    }
-    SPECIAL_DESERIALIZERS = {
-        "rng_state": "_deserialize_rng_state",
-        "checkpoint_uuid": "_deserialize_checkpoint_uuid",
-    }
+
+    # (attr_name, buffer_name, dtype_or_None, encode_fn, decode_fn)
+    # dtype=None means a variable-size pickle tensor; dtype set means a fixed torch.tensor.
+    FIELD_REGISTRY = [
+        ("phase_epoch",                    "_phase_epoch",                    torch.int64, int,                  int),
+        ("nan_counter",                    "_nan_counter",                    torch.int64, int,                  int),
+        ("grad_norm_last_reduced_counter", "_grad_norm_last_reduced_counter", torch.int64, int,                  int),
+        ("stable_epochs",                  "_stable_epochs",                  torch.int64, int,                  int),
+        ("deterministic_mode_active",      "_deterministic_mode_active",      torch.bool,  bool,                 bool),
+        ("seq_len_increase_in_batches",    "_seq_len_increase_in_batches",    torch.int64, _encode_nullable_int, _decode_nullable_int),
+        ("rng_state",                      "_rng_state_bytes",                None,        _pickle_rng_state,    _unpickle_rng_state),
+        ("checkpoint_uuid",               "_checkpoint_uuid_bytes",           None,        _pickle_value,        _unpickle_value),
+    ]
 
     def __init__(
         self,
@@ -205,45 +190,21 @@ class TrainOnePhaseState(torch.nn.Module):
         self.rng_state = rng_state or {}
         self.checkpoint_uuid = checkpoint_uuid
         self.register_buffer("_state_version", torch.tensor(self.STATE_VERSION, dtype=torch.int64))
-        self.register_buffer("_phase_epoch", torch.tensor(phase_epoch, dtype=torch.int64))
-        self.register_buffer("_nan_counter", torch.tensor(nan_counter, dtype=torch.int64))
-        self.register_buffer(
-            "_grad_norm_last_reduced_counter",
-            torch.tensor(grad_norm_last_reduced_counter, dtype=torch.int64),
-        )
-        self.register_buffer("_stable_epochs", torch.tensor(stable_epochs, dtype=torch.int64))
-        self.register_buffer(
-            "_deterministic_mode_active",
-            torch.tensor(deterministic_mode_active, dtype=torch.bool),
-        )
-        self.register_buffer(
-            "_seq_len_increase_in_batches",
-            torch.tensor(
-                -1 if seq_len_increase_in_batches is None else seq_len_increase_in_batches,
-                dtype=torch.int64,
-            ),
-        )
-        self.register_buffer("_rng_state_bytes", torch.zeros(0, dtype=torch.uint8))
-        self.register_buffer("_checkpoint_uuid_bytes", _pickle_value(checkpoint_uuid))
+        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
+            value = getattr(self, attr)
+            if dtype is not None:
+                self.register_buffer(buf, torch.tensor(encode(value), dtype=dtype))
+            else:
+                self.register_buffer(buf, encode(value))
 
     def save(self, path: Path) -> None:
         self._state_version = torch.tensor(self.STATE_VERSION, dtype=torch.int64)
-        self._phase_epoch = torch.tensor(int(self.phase_epoch), dtype=torch.int64)
-        self._nan_counter = torch.tensor(int(self.nan_counter), dtype=torch.int64)
-        self._grad_norm_last_reduced_counter = torch.tensor(
-            int(self.grad_norm_last_reduced_counter),
-            dtype=torch.int64,
-        )
-        self._stable_epochs = torch.tensor(int(self.stable_epochs), dtype=torch.int64)
-        self._deterministic_mode_active = torch.tensor(
-            bool(self.deterministic_mode_active),
-            dtype=torch.bool,
-        )
-        self._seq_len_increase_in_batches = torch.tensor(
-            -1 if self.seq_len_increase_in_batches is None else int(self.seq_len_increase_in_batches),
-            dtype=torch.int64,
-        )
-        self._run_special_serializers()
+        for attr, buf, dtype, encode, _ in self.FIELD_REGISTRY:
+            value = getattr(self, attr)
+            if dtype is not None:
+                setattr(self, buf, torch.tensor(encode(value), dtype=dtype))
+            else:
+                setattr(self, buf, encode(value))
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(self.state_dict(), path)
         logging.info("Saved train_one_phase_state to %s", path)
@@ -254,45 +215,15 @@ class TrainOnePhaseState(torch.nn.Module):
         self._validate_state_version(state_dict)
         self._preload_variable_buffers_from_state_dict(state_dict)
         self.load_state_dict(state_dict, strict=True)
-        self.phase_epoch = int(self._phase_epoch.item())
-        self.nan_counter = int(self._nan_counter.item())
-        self.grad_norm_last_reduced_counter = int(
-            self._grad_norm_last_reduced_counter.item()
-        )
-        self.stable_epochs = int(self._stable_epochs.item())
-        self.deterministic_mode_active = bool(self._deterministic_mode_active.item())
-        seq_len_increase_in_batches = int(self._seq_len_increase_in_batches.item())
-        self.seq_len_increase_in_batches = (
-            None if seq_len_increase_in_batches < 0 else seq_len_increase_in_batches
-        )
-        self._run_special_deserializers()
+        for attr, buf, dtype, _, decode in self.FIELD_REGISTRY:
+            buffer = getattr(self, buf)
+            setattr(self, attr, decode(buffer.item()) if dtype is not None else decode(buffer))
         return self
 
-    def _run_special_serializers(self) -> None:
-        for field_name, serializer_name in self.SPECIAL_SERIALIZERS.items():
-            serializer = _resolve_serializer(self, field_name, serializer_name)
-            serializer()
-
-    def _run_special_deserializers(self) -> None:
-        for field_name, serializer_name in self.SPECIAL_DESERIALIZERS.items():
-            serializer = _resolve_serializer(self, field_name, serializer_name)
-            serializer()
-
-    def _serialize_rng_state(self) -> None:
-        self._rng_state_bytes = _pickle_rng_state(self.rng_state)
-
-    def _serialize_checkpoint_uuid(self) -> None:
-        self._checkpoint_uuid_bytes = _pickle_value(self.checkpoint_uuid)
-
-    def _deserialize_rng_state(self) -> None:
-        self.rng_state = _unpickle_rng_state(self._rng_state_bytes)
-
-    def _deserialize_checkpoint_uuid(self) -> None:
-        self.checkpoint_uuid = _unpickle_value(self._checkpoint_uuid_bytes)
-
     def _preload_variable_buffers_from_state_dict(self, state_dict: dict[str, Any]) -> None:
-        self._rng_state_bytes = state_dict["_rng_state_bytes"]
-        self._checkpoint_uuid_bytes = state_dict["_checkpoint_uuid_bytes"]
+        for _, buf, dtype, _, _ in self.FIELD_REGISTRY:
+            if dtype is None:
+                setattr(self, buf, state_dict[buf])
 
     def _validate_state_version(self, state_dict: dict[str, Any]) -> None:
         if "_state_version" not in state_dict:
