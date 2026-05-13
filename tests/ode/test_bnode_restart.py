@@ -114,10 +114,15 @@ def _assert_model_states_equal(
     *,
     rtol: float | None = None,
     atol: float | None = None,
+    not_equal: bool = False,
 ) -> None:
     state_a = _load_model_state(path_a)
     state_b = _load_model_state(path_b)
     assert state_a.keys() == state_b.keys()
+    if not_equal:
+        any_differ = any(not torch.equal(state_a[k], state_b[k]) for k in state_a)
+        assert any_differ, "Expected model states to differ but they were identical."
+        return
     for key in state_a:
         assert_close_kwargs = {}
         if rtol is not None:
@@ -357,16 +362,10 @@ def test_resume_with_zeroed_model_weights_diverges_from_reference(
 
     # Final weights must differ from the clean reference because the remaining
     # training epochs started from zero instead of from epoch-2 weights.
-    reference_state = _load_model_state(resume_main_reference_dir / 'model.pt')
-    corrupted_state = _load_model_state(resumed_dir / 'model.pt')
-    assert reference_state.keys() == corrupted_state.keys()
-    any_differ = any(
-        not torch.equal(reference_state[k], corrupted_state[k])
-        for k in reference_state
-    )
-    assert any_differ, (
-        "Expected model weights to diverge after resuming from zeroed checkpoint, "
-        "but they were identical to the reference run."
+    _assert_model_states_equal(
+        resumed_dir / 'model.pt',
+        resume_main_reference_dir / 'model.pt',
+        not_equal=True,
     )
 
 
