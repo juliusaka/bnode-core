@@ -199,7 +199,7 @@ from bnode_core.ode.trainer_utils.restart_state import (
 )
 from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_utils import (
-    load_restart_state_pair,
+    load_restart_checkpoint,
 )
 
 
@@ -820,7 +820,7 @@ def train_all_phases(cfg: train_test_config_class):
         restart_model_state,
         restart_optimizer_state,
         checkpoint_store,
-    ) = load_restart_state_pair(
+    ) = load_restart_checkpoint(
         job_list=job_list
     )
     train_all_phases_state = (

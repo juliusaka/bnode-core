@@ -30,7 +30,7 @@ def ode_training(
             is deleted before the run so each test starts from a clean state.
             Set to ``False`` for the *resumed* leg of a restart test: the
             restart-checkpoint files written by the interrupted run must remain
-            on disk so that ``load_restart_state_pair()`` inside
+            on disk so that ``load_restart_checkpoint()`` inside
             ``train_all_phases`` can detect them and restore the full training
             state (job index, epoch counter, LR scheduler, GradScaler, RNG
             state) automatically at the start of the next ``trainer.main()``

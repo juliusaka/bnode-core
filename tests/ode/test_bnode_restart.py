@@ -6,7 +6,7 @@ to a clean reference run.
 
 See ``bnode_test_helpers.ode_training`` for how ``clear_output_before_start=False``
 triggers the implicit reload: the restart-checkpoint files left on disk by the
-interrupted leg are detected automatically by ``load_restart_state_pair()`` inside
+interrupted leg are detected automatically by ``load_restart_checkpoint()`` inside
 ``train_all_phases`` at the start of the next ``trainer.main()`` call.
 """
 
@@ -273,7 +273,7 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
     assert isinstance(scaler_state, dict)
 
     # Resume: keep the output directory so the restart-checkpoint files written
-    # by the interrupted run remain on disk.  load_restart_state_pair() inside
+    # by the interrupted run remain on disk.  load_restart_checkpoint() inside
     # train_all_phases detects them automatically at startup and restores the
     # full training state without any explicit reload call in the test.
     _set_training_seeds()
@@ -425,7 +425,7 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     )
 
     # Resume: keep the output directory so the restart-checkpoint files written
-    # by the interrupted run remain on disk.  load_restart_state_pair() inside
+    # by the interrupted run remain on disk.  load_restart_checkpoint() inside
     # train_all_phases detects them automatically at startup and restores the
     # full training state without any explicit reload call in the test.
     _set_training_seeds()

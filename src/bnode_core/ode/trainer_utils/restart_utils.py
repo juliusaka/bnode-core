@@ -60,7 +60,7 @@ def _validate_restart_target(
         raise ValueError("Trainer restart does not support resuming at pre-training phases.")
 
 
-def load_restart_state_pair(
+def load_restart_checkpoint(
     *,
     job_list: list[dict],
 ) -> tuple[
