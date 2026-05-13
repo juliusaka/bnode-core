@@ -9,9 +9,7 @@
 
 At the end of every completed training epoch, `RestartCheckpointStore` updates the current Hydra output directory with a single atomic write:
 
-- `training_restart_checkpoint.pt`: a versioned bundle containing the outer state, inner state, LR scheduler state dict, and GradScaler state dict — written as one `torch.save` call and installed via `os.replace`, so the file is always either the previous complete bundle or the new complete bundle (never a partial mix)
-- `model.pt`: latest in-progress model checkpoint
-- `optimizer.pt`: latest in-progress optimizer checkpoint
+- `training_restart_checkpoint.pt`: a versioned bundle containing the outer state, inner state, LR scheduler state dict, GradScaler state dict, model state dict, and optimizer state dict — written as one `torch.save` call and installed via `os.replace`, so the file is always either the previous complete bundle or the new complete bundle (never a partial mix)
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
 
 Finished runs remove the restart checkpoint bundle file.
@@ -74,8 +72,6 @@ The inner state stored in `bundle["inner"]` contains only what the phase must re
 
 It does **not** store:
 
-- model state
-- optimizer state
 - checkpoint paths
 - `first_epoch_is_evaluation`
 - `flag_out_of_seq_len_increase`
@@ -84,21 +80,20 @@ It does **not** store:
 - `cfg`
 - datasets or dataloaders
 
-The model remains a separate explicit checkpoint file. Scheduler and scaler states are stored in `bundle["scheduler"]` and `bundle["scaler"]` respectively.
+The model state dict and optimizer state dict are stored directly in the bundle at `bundle["model"]` and `bundle["optimizer"]`. Scheduler and scaler states are stored in `bundle["scheduler"]` and `bundle["scaler"]` respectively.
 
 ## Resume flow
 
 Resume happens in this order:
 
-1. `train_all_phases()` loads `training_restart_checkpoint.pt` via `RestartCheckpointStore.load_checkpoint_if_available()`, which returns `(outer_state, inner_state, scheduler_states, scaler_state)`.
+1. `train_all_phases()` loads `training_restart_checkpoint.pt` via `RestartCheckpointStore.load_checkpoint_if_available()`, which returns `(outer_state, inner_state, scheduler_states, scaler_state, model_state_dict, optimizer_state_dict)`.
 2. It recreates outer-loop locals and uses `train_all_phases_state.job_idx` plus `next_epoch_anchor` to choose the resumed job (main-training phase or test job).
-3. **When resuming a main-training phase:** `train_one_phase()` receives the scheduler and scaler state dicts from the bundle, loads `model.pt` and `optimizer.pt`, restores the scheduler/scaler from the bundle dicts, then restores the inner-state counters and RNG from the bundle.
-4. **When resuming the test job:** the trainer skips all training phases, loads `model.pt` into a freshly-initialised model, and runs `_run_test_job` directly.
+3. **When resuming a main-training phase:** `train_one_phase()` receives the model and optimizer state dicts from the bundle as `restart_model_state` and `restart_optimizer_state`, plus scheduler and scaler state dicts as `restart_scheduler_states` and `restart_scaler_state`. It loads the model and optimizer from those state dicts, then restores the scheduler/scaler from the bundle dicts, then restores the inner-state counters and RNG from the bundle.
+4. **When resuming the test job:** the trainer skips all training phases, loads the model state from the bundle (`restart_model_state`) into a freshly-initialised model, and runs `_run_test_job` directly.
 
 That keeps the restore boundary visible:
 
-- model checkpoint load is explicit (`model.pt`)
-- optimizer checkpoint load is explicit (`optimizer.pt`)
+- model and optimizer checkpoint loads come directly from bundle state dicts
 - scheduler and scaler checkpoint loads come directly from the bundle dicts
 - only `EarlyStopping` attachment happens before `train_one_phase_state` reload
 - restart bundle is written atomically — one `os.replace`, no partial-save window
@@ -128,7 +123,7 @@ Use the same MLflow tracking URI and experiment as the original run. The outer r
 
 ## Operational expectations
 
-- A resumable run must have `training_restart_checkpoint.pt`. Main-training resume also requires `model.pt` and `optimizer.pt`. Test-job resume requires only `model.pt`.
+- A resumable run must have `training_restart_checkpoint.pt`. The bundle contains model, optimizer, scheduler, and scaler state — no separate `model.pt` or `optimizer.pt` restart files are required.
 - The trainer does not keep legacy restart schemas or multi-file restart layouts.
 
 ## Test-job resume

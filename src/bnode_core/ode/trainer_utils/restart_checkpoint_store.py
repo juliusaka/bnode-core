@@ -17,7 +17,7 @@ from bnode_core.ode.trainer_utils.restart_state import (
 class RestartCheckpointStore:
     """Atomic persistence for trainer restart artifacts."""
 
-    BUNDLE_VERSION = 1
+    BUNDLE_VERSION = 2
 
     def __init__(self, *, checkpoint_path: Path) -> None:
         self.checkpoint_path = checkpoint_path
@@ -28,15 +28,23 @@ class RestartCheckpointStore:
 
     def load_checkpoint_if_available(
         self,
-    ) -> tuple[TrainAllPhasesState | None, TrainOnePhaseState | None, dict | None, dict | None]:
-        """Returns (outer_state, inner_state, scheduler_states, scaler_state) or (None, None, None, None)."""
+    ) -> tuple[
+        TrainAllPhasesState | None,
+        TrainOnePhaseState | None,
+        dict | None,  # scheduler_states
+        dict | None,  # scaler_state
+        dict | None,  # model_state_dict
+        dict | None,  # optimizer_state_dict
+    ]:
+        """Returns (outer_state, inner_state, scheduler_states, scaler_state, model_state_dict, optimizer_state_dict)
+        or (None, None, None, None, None, None)."""
         if not self.checkpoint_path.exists():
-            return None, None, None, None
+            return None, None, None, None, None, None
         bundle = torch.load(self.checkpoint_path, map_location="cpu", weights_only=False)
         self._validate_bundle_version(bundle)
         outer_state = TrainAllPhasesState().load_from_state_dict(bundle["outer"])
         inner_state = TrainOnePhaseState().load_from_state_dict(bundle["inner"])
-        return outer_state, inner_state, bundle["scheduler"], bundle["scaler"]
+        return outer_state, inner_state, bundle["scheduler"], bundle["scaler"], bundle["model"], bundle["optimizer"]
 
     def save_epoch_checkpoint(
         self,
@@ -45,6 +53,8 @@ class RestartCheckpointStore:
         train_one_phase_state: TrainOnePhaseState,
         lr_schedulers,
         scaler,
+        model,
+        optimizer,
     ) -> None:
         scheduler_states = (
             {name: s.state_dict() for name, s in lr_schedulers.items()}
@@ -57,6 +67,8 @@ class RestartCheckpointStore:
             "inner": train_one_phase_state.to_state_dict(),
             "scheduler": scheduler_states,
             "scaler": scaler.state_dict(),
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
         }
         self._atomic_save(bundle)
         logging.info("Saved restart checkpoint to %s", self.checkpoint_path)

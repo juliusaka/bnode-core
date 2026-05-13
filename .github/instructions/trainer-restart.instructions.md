@@ -37,7 +37,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 - Keep these as explicit locals in `trainer.py`, not persisted restart fields:
   - `job_list`
   - dataset / dataloader objects
-  - optimizer / scheduler / scaler runtime objects
+  - optimizer / scheduler / scaler runtime objects (restored from `bundle["optimizer"]`, `bundle["scheduler"]`, `bundle["scaler"]` respectively)
   - retry batch-size locals
   - `first_epoch_is_evaluation`
   - `flag_out_of_seq_len_increase`
@@ -59,8 +59,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - early-stopping
   before restoring state from the bundle.
 - Keep `EarlyStopping` module-backed so it can be attached directly to `TrainOnePhaseState` before save/load instead of being converted into a separate restart dict.
-- The model checkpoint stays separate from `TrainOnePhaseState` and must be loaded explicitly in `train_one_phase()`.
-- Restore the runtime optimizer from `optimizer.pt` explicitly.
+- The model state dict and optimizer state dict are stored inside the bundle (`bundle["model"]` and `bundle["optimizer"]`). They are **not** written as separate files. Load them explicitly in `train_one_phase()` from the state dicts passed in via `restart_model_state` and `restart_optimizer_state`.
 - Restore schedulers and scaler from the bundle (passed as `restart_scheduler_states` and `restart_scaler_state` dicts to `train_one_phase()`).
 - Keep state-class special serialization explicit via class-level serializer mapping for non-trivial fields and raise clear errors when a declared serializer method is missing.
 
@@ -82,8 +81,10 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - restoring early-stopping and RNG state from `TrainOnePhaseState`
   - atomic save behavior and tmp-file cleanup in `RestartCheckpointStore`
   - explicit serializer-missing failure behavior for declared special fields
+  - saving/loading model and optimizer state dicts in the bundle
 - `tests/ode/test_bnode.py` resume tests should assert the single-file bundle layout explicitly:
-  - interrupted runs leave `training_restart_checkpoint.pt` behind
+  - interrupted runs leave `training_restart_checkpoint.pt` behind (no separate `model.pt` or `optimizer.pt`)
   - successful resumed runs remove the single restart checkpoint file
   - MLflow resume metadata comes from the outer state in the bundle
+  - `model_phase_{idx}.pt` / `optimizer_phase_{idx}.pt` (EarlyStopping best) remain as separate files
 - If persisted fields, restore ordering, or restart filenames change, update docs and all relevant restart tests in the same task.

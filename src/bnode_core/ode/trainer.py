@@ -527,6 +527,7 @@ def _initialize_or_reload_model_for_job(
     hdf5_dataset: hdf5_dataset_class,
     hdf5_dataset_norm: hdf5_dataset_class | None,
     device: torch.device,
+    restart_model_state: dict | None = None,
 ):
     created_model_this_job = False
     if model is None:
@@ -578,14 +579,14 @@ def _initialize_or_reload_model_for_job(
                     )
                 )
     elif job.get('test') is True and created_model_this_job:
-        # Resuming at a test job with no model in memory: load the latest model checkpoint
-        # so the test runs on the trained weights rather than a freshly-initialised model.
-        current_model_path = filepaths.filepath_model_current_hydra_output()
-        if current_model_path.exists():
-            model.load(path=current_model_path, device=device)
-            logging.info('Resuming at test job: loaded trained model from %s', current_model_path)
+        # Resuming at a test job with no model in memory: load the trained model
+        # from the restart bundle so the test runs on the trained weights rather
+        # than a freshly-initialised model.
+        if restart_model_state is not None:
+            model.load_state_dict({k: v.to(device) for k, v in restart_model_state.items()})
+            logging.info('Resuming at test job: loaded trained model from restart bundle')
         else:
-            logging.warning('Resuming at test job but no model checkpoint found at %s', current_model_path)
+            logging.warning('Resuming at test job but no model state in restart bundle')
     return model
 
 
@@ -811,7 +812,15 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Created job list: {}'.format(job_list))
 
     # load restart state if exists, to continue training from checkpoint if needed
-    train_all_phases_state, train_one_phase_state, restart_scheduler_states, restart_scaler_state, checkpoint_store = load_restart_state_pair(
+    (
+        train_all_phases_state,
+        train_one_phase_state,
+        restart_scheduler_states,
+        restart_scaler_state,
+        restart_model_state,
+        restart_optimizer_state,
+        checkpoint_store,
+    ) = load_restart_state_pair(
         job_list=job_list
     )
     train_all_phases_state = (
@@ -847,6 +856,7 @@ def train_all_phases(cfg: train_test_config_class):
                             hdf5_dataset,
                             hdf5_dataset_norm,
                             device,
+                            restart_model_state=restart_model_state if idx == job_start_idx else None,
                         )
 
                 if job['skip'] is True:
@@ -874,10 +884,14 @@ def train_all_phases(cfg: train_test_config_class):
                             checkpoint_store=checkpoint_store,
                             restart_scheduler_states=restart_scheduler_states if idx == job_start_idx else None,
                             restart_scaler_state=restart_scaler_state if idx == job_start_idx else None,
+                            restart_model_state=restart_model_state if idx == job_start_idx else None,
+                            restart_optimizer_state=restart_optimizer_state if idx == job_start_idx else None,
                         )
                         train_one_phase_state = None
                         restart_scheduler_states = None
                         restart_scaler_state = None
+                        restart_model_state = None
+                        restart_optimizer_state = None
                         # set seq_len_epoch_start for next job
                         if len(job_list) > idx + 1:
                             # consequently, seq_len_epoch_start should be seq_len_train
@@ -1290,6 +1304,8 @@ def train_one_phase(
     checkpoint_store: RestartCheckpointStore | None = None,
     restart_scheduler_states: dict | None = None,
     restart_scaler_state: dict | None = None,
+    restart_model_state: dict | None = None,
+    restart_optimizer_state: dict | None = None,
 ):
     logging.info('Start next training phase....')
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.use_cuda else 'cpu')
@@ -1335,18 +1351,16 @@ def train_one_phase(
         False,
     )
     if train_one_phase_state is not None:
-        if not path_current_model.exists():
-            raise FileNotFoundError(
-                f"Expected current model checkpoint at {path_current_model} for resume."
+        if restart_model_state is None:
+            raise ValueError(
+                "Expected model state in restart bundle for resume, but got None."
             )
-        if not path_current_optimizer.exists():
-            raise FileNotFoundError(
-                f"Expected current optimizer checkpoint at {path_current_optimizer} for resume."
+        if restart_optimizer_state is None:
+            raise ValueError(
+                "Expected optimizer state in restart bundle for resume, but got None."
             )
-        model.load(path=path_current_model, device=device)
-        optimizer.load_state_dict(
-            torch.load(path_current_optimizer, map_location='cpu', weights_only=False)
-        )
+        model.load_state_dict({k: v.to(device) for k, v in restart_model_state.items()})
+        optimizer.load_state_dict(restart_optimizer_state)
         scheduler_states = restart_scheduler_states  # already a dict from the bundle
         scheduler_keys = set(scheduler_states.keys()) if scheduler_states is not None else set()
         current_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
@@ -1462,13 +1476,14 @@ def train_one_phase(
                     if train_cfg.reload_model_if_loss_nan:
                         if not phase_state.nan_counter > 49:
                             try:
-                                model.load(path=path_current_model, device=device)
-                                optimizer.load_state_dict(torch.load(path_current_optimizer))
-                                logging.warning('Loss is NaN. Loaded last model and corresponding optimizer from {}'.format(path_current_model))
+                                _bundle = torch.load(checkpoint_store.checkpoint_path, map_location="cpu", weights_only=False)
+                                model.load_state_dict({k: v.to(device) for k, v in _bundle["model"].items()})
+                                optimizer.load_state_dict(_bundle["optimizer"])
+                                logging.warning('Loss is NaN. Loaded last model and corresponding optimizer from restart bundle')
                                 mlflow_proxy.log_metric('loss_nan_reload', 1, step=epoch)
                                 phase_state.grad_norm_last_reduced_counter += 1
                             except Exception:
-                                logging.error('Loss is NaN. Could not load last model and corresponding optimizer from {}'.format(path_current_model))
+                                logging.error('Loss is NaN. Could not load last model and corresponding optimizer from restart bundle')
                                 logging.error('The reason for this is that not even the first epoch had stable resuls. Aborting.')
                                 raise ValueError('Loss is NaN. First training epoch did not have stable results.')
                             if phase_state.grad_norm_last_reduced_counter > 2:
@@ -1490,8 +1505,6 @@ def train_one_phase(
                     mlflow_proxy.log_metric('loss_nan_reload', 0, step=epoch)
                     phase_state.nan_counter = 0
                     phase_state.grad_norm_last_reduced_counter = 0
-                    model.save(path=path_current_model)
-                    torch.save(optimizer.state_dict(), path_current_optimizer)
             else:
                 activate_deterministic_mode = (
                     pre_train is False
@@ -1672,6 +1685,8 @@ def train_one_phase(
                 train_one_phase_state=phase_state,
                 lr_schedulers=lr_schedulers,
                 scaler=scaler,
+                model=model,
+                optimizer=optimizer,
             )
     except KeyboardInterrupt:
         logging.info('Interrupted by user')

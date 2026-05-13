@@ -261,7 +261,7 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
 
     checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
     assert checkpoint_path.exists()
-    outer_restart_state, inner_restart_state, scheduler_states, scaler_state = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
+    outer_restart_state, inner_restart_state, scheduler_states, scaler_state, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
     _assert_restart_state(
         outer_restart_state,
         inner_restart_state,
@@ -298,8 +298,8 @@ def test_resume_from_same_hydra_output_dir_during_main_training(resume_main_refe
         expected_final_job_idx=2,
     )
     _assert_model_states_equal(
-        resumed_dir / 'model.pt',
-        resume_main_reference_dir / 'model.pt',
+        resumed_dir / 'model_phase_2.pt',
+        resume_main_reference_dir / 'model_phase_2.pt',
     )
 
 
@@ -329,11 +329,12 @@ def test_resume_with_zeroed_model_weights_diverges_from_reference(
             + mlflow_overrides,
         )
 
-    # Zero every weight tensor in the current-model checkpoint.
-    model_path = interrupted_dir / 'model.pt'
-    state_dict = torch.load(model_path, map_location='cpu', weights_only=False)
-    zeroed = {k: torch.zeros_like(v) for k, v in state_dict.items()}
-    torch.save(zeroed, model_path)
+    # Zero every weight tensor in the model state dict inside the restart bundle.
+    checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
+    bundle = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    zeroed = {k: torch.zeros_like(v) for k, v in bundle['model'].items()}
+    bundle['model'] = zeroed
+    torch.save(bundle, checkpoint_path)
 
     # Resume: restart-checkpoint files are still on disk, so the trainer picks
     # them up automatically and resumes — but now from zeroed model weights.
@@ -352,8 +353,8 @@ def test_resume_with_zeroed_model_weights_diverges_from_reference(
     # Final weights must differ from the clean reference because the remaining
     # training epochs started from zero instead of from epoch-2 weights.
     _assert_model_states_equal(
-        resumed_dir / 'model.pt',
-        resume_main_reference_dir / 'model.pt',
+        resumed_dir / 'model_phase_2.pt',
+        resume_main_reference_dir / 'model_phase_2.pt',
         not_equal=True,
     )
 
@@ -414,7 +415,7 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
         )
 
     checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
-    outer_restart_state, inner_restart_state, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
+    outer_restart_state, inner_restart_state, _, _, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
     # Interrupted during phase 2 training before det-mode was applied.
     _assert_restart_state(
         outer_restart_state,
@@ -450,11 +451,11 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
         outer_restart_state=outer_restart_state,
         expected_final_job_idx=3,
     )
-    # Verify deterministic mode was applied: the final model.pt has the
+    # Verify deterministic mode was applied: the final model_phase_3.pt has the
     # masked tensor shapes (zero-sized latent dims) expected after det-mode.
-    final_model_state = _load_model_state(resumed_dir / 'model.pt')
+    final_model_state = _load_model_state(resumed_dir / 'model_phase_3.pt')
     assert final_model_state['latent_ode_func.net.0.weight'].shape[1] == 0, (
-        "Expected det-mode masked weights in final model.pt"
+        "Expected det-mode masked weights in final model_phase_3.pt"
     )
 
 
@@ -495,7 +496,7 @@ def test_resume_when_killed_during_test_job(monkeypatch):
     checkpoint_path = interrupted_dir / RESTART_CHECKPOINT_FILENAME
 
     # Bundle must survive; outer state must point at the test job.
-    outer_restart_state, _, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
+    outer_restart_state, _, _, _, _, _ = RestartCheckpointStore(checkpoint_path=checkpoint_path).load_checkpoint_if_available()
     # bnode_pytest job list: pre_train(skip)=0, phase0=1, phase1=2, test=3
     assert outer_restart_state.job_idx == 3, (
         f"Expected job_idx=3 (test job) after kill, got {outer_restart_state.job_idx}"

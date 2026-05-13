@@ -133,14 +133,28 @@ def test_checkpoint_store_saves_epoch_checkpoint_syncs_effective_seq_len(tmp_pat
         def state_dict(self):
             return {"scale": 1.0}
 
+    class DummyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(2, 2)
+
+    class DummyOptimizer:
+        def state_dict(self):
+            return {"lr": 0.001}
+
+    dummy_model = DummyModel()
+    dummy_optimizer = DummyOptimizer()
+
     checkpoint_store.save_epoch_checkpoint(
         train_all_phases_state=train_all_phases_state,
         train_one_phase_state=train_one_phase_state,
         lr_schedulers=None,
         scaler=DummyScaler(),
+        model=dummy_model,
+        optimizer=dummy_optimizer,
     )
 
-    outer_state, inner_state, scheduler_states, scaler_state = checkpoint_store.load_checkpoint_if_available()
+    outer_state, inner_state, scheduler_states, scaler_state, model_state, optimizer_state = checkpoint_store.load_checkpoint_if_available()
 
     assert outer_state.job_idx == 2
     assert outer_state.next_epoch_anchor == 6
@@ -148,6 +162,9 @@ def test_checkpoint_store_saves_epoch_checkpoint_syncs_effective_seq_len(tmp_pat
     assert inner_state.seq_len_increase_in_batches == 12
     assert scheduler_states == {}
     assert scaler_state == {"scale": 1.0}
+    assert model_state is not None
+    assert "linear.weight" in model_state
+    assert optimizer_state == {"lr": 0.001}
     assert list(tmp_path.glob(".*.tmp")) == []
 
 
