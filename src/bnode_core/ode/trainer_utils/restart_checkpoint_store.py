@@ -39,30 +39,6 @@ class RestartCheckpointStore:
             scaler_path=filepaths.filepath_grad_scaler_current_hydra_output(),
         )
 
-    @classmethod
-    def from_paths(
-        cls,
-        *,
-        outer_path: Path,
-        inner_path: Path,
-        scheduler_path: Path | None = None,
-        scaler_path: Path | None = None,
-    ) -> "RestartCheckpointStore":
-        return cls(
-            outer_path=outer_path,
-            inner_path=inner_path,
-            scheduler_path=(
-                scheduler_path
-                if scheduler_path is not None
-                else filepaths.filepath_lr_schedulers_current_hydra_output()
-            ),
-            scaler_path=(
-                scaler_path
-                if scaler_path is not None
-                else filepaths.filepath_grad_scaler_current_hydra_output()
-            ),
-        )
-
     def load_state_pair_if_available(
         self,
     ) -> tuple[TrainAllPhasesState | None, TrainOnePhaseState | None]:
