@@ -1,6 +1,6 @@
 # Restart-enabled training workflow
 
-`bnode_core.ode.trainer` now resumes interrupted **main-training** phases with exactly two persisted restart-state objects:
+`bnode_core.ode.trainer` resumes interrupted **main-training phases and the test job** with exactly two persisted restart-state objects:
 
 - `train_all_phases_state` in `training_outer_restart.pt`
 - `train_one_phase_state` in `training_inner_restart.pt`
@@ -100,14 +100,9 @@ The model remains a separate explicit checkpoint file.
 Resume now happens in this order:
 
 1. `train_all_phases()` loads `training_outer_restart.pt` and `training_inner_restart.pt`.
-2. It recreates outer-loop locals and uses `train_all_phases_state.job_idx` plus `next_epoch_anchor` to choose the resumed main-training job.
-3. `train_one_phase()` recreates local path and epoch-bound variables.
-4. `train_one_phase()` constructs the optimizer, schedulers, scaler, and early-stopping helper, then attaches the `EarlyStopping` module to `train_one_phase_state`.
-5. It explicitly loads `model.pt`.
-6. It explicitly loads `optimizer.pt`.
-7. It explicitly loads `lr_schedulers.pt` and `grad_scaler.pt`.
-8. It loads `train_one_phase_state` into the live state object, restoring its counters, RNG state, attached `EarlyStopping` module state, and the effective `seq_len_increase_in_batches`.
-9. Local-only flags such as `first_epoch_is_evaluation`, `flag_out_of_seq_len_increase`, and `epoch_stop` are recomputed from config plus the persisted minimal state.
+2. It recreates outer-loop locals and uses `train_all_phases_state.job_idx` plus `next_epoch_anchor` to choose the resumed job (main-training phase or test job).
+3. **When resuming a main-training phase:** `train_one_phase()` recreates local path and epoch-bound variables, loads `model.pt`, `optimizer.pt`, `lr_schedulers.pt` and `grad_scaler.pt`, then restores the inner-state counters and RNG.
+4. **When resuming the test job:** the trainer skips all training phases, loads `model.pt` into a freshly-initialised model, and runs `_run_test_job` directly.
 
 That keeps the restore boundary visible:
 
@@ -142,6 +137,11 @@ Use the same MLflow tracking URI and experiment as the original run. The outer r
 
 ## Operational expectations
 
-- Restart support currently targets interrupted **main-training phases**.
-- A resumable run must have both restart-state files plus the current runtime checkpoints: `model.pt`, `optimizer.pt`, `lr_schedulers.pt`, and `grad_scaler.pt`.
+- A resumable run must have both restart-state files.  Main-training resume also requires the runtime checkpoints: `model.pt`, `optimizer.pt`, `lr_schedulers.pt`, and `grad_scaler.pt`.  Test-job resume requires only `model.pt`.
 - The trainer does not keep legacy restart schemas or legacy single-file restart bundles.
+
+## Test-job resume
+
+Before calling `_run_test_job`, the trainer calls `save_outer_restart_state_for_test_job` to advance `job_idx` to the test-job index and persist the outer restart state.  This means a kill during the test job leaves the outer state pointing at the test job, so the next resume re-runs only the test job — no training epochs are repeated.
+
+MLflow double-logging is safe: if some test metrics were logged before the kill, the resumed run logs all test metrics again at the same step value.  MLflow records all data points without error.

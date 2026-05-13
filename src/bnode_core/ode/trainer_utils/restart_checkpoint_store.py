@@ -79,6 +79,11 @@ class RestartCheckpointStore:
         self._validate_checkpoint_uuid_pair(outer_state, inner_state)
         return outer_state, inner_state
 
+    def save_outer_for_test_job(self, train_all_phases_state: TrainAllPhasesState) -> None:
+        """Re-save only the outer restart state when advancing to a test job."""
+        self._atomic_state_save(train_all_phases_state, self.outer_path)
+        logging.info("Updated outer restart state for test job at %s", self.outer_path)
+
     def save_epoch_checkpoint(
         self,
         *,

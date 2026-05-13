@@ -40,10 +40,11 @@ def _resume_training_overrides(
     max_epochs: tuple[int, ...],
     batches_per_epoch: int = 1,
     scheduler_phase: int | None = None,
+    with_test_job: bool = False,
 ) -> list[str]:
     overrides = [
         f'nn_model={nn_model}',
-        'nn_model.training.test=false',
+        f'nn_model.training.test={"true" if with_test_job else "false"}',
         'use_cuda=false',
         'n_workers_train_loader=0',
         'n_workers_other_loaders=0',
@@ -470,4 +471,72 @@ def test_resume_from_same_hydra_output_dir_across_deterministic_activation(
     final_model_state = _load_model_state(resumed_dir / 'model.pt')
     assert final_model_state['latent_ode_func.net.0.weight'].shape[1] == 0, (
         "Expected det-mode masked weights in final model.pt"
+    )
+
+
+def test_resume_when_killed_during_test_job(monkeypatch):
+    """Killing the process during the test job re-runs only the test job on resume.
+
+    Sequence:
+    1. Train two phases to completion.  Just before the test job runs,
+       ``save_outer_restart_state_for_test_job`` advances ``job_idx`` to the
+       test-job index and saves the outer restart state.
+    2. A patched ``_run_test_job`` logs one metric and then raises
+       ``CheckpointRequestedExit``, simulating a mid-test-job kill.
+    3. The resume leg re-loads the outer state (job_idx = test job) and runs
+       only the test job — no training epochs are repeated.
+    4. The test verifies that MLflow double-logging (partial metric from the
+       interrupted run + all metrics from the resume) raises no errors and
+       that the metrics are present in the resumed run.
+    """
+    interrupted_case = 'resume_killed_during_test_job_interrupted'
+    mlflow_scope = 'resume_killed_during_test_job'
+    mlflow_overrides = _resume_mlflow_overrides(mlflow_scope)
+    common_overrides = _resume_training_overrides(
+        nn_model='bnode_pytest',
+        max_epochs=(2, 2),
+        with_test_job=True,
+    ) + mlflow_overrides
+
+    with monkeypatch.context() as ctx:
+        _set_training_seeds()
+
+        def _patched_run_test_job(*args, **kwargs):
+            mlflow.log_metric('partial_test_metric', 1.0, step=0)
+            raise CheckpointRequestedExit("Test-injected kill during test job.")
+
+        ctx.setattr(trainer, '_run_test_job', _patched_run_test_job)
+        interrupted_dir = ode_training(interrupted_case, overrides=common_overrides)
+
+    outer_restart_path = interrupted_dir / OUTER_RESTART_STATE_FILENAME
+    inner_restart_path = interrupted_dir / INNER_RESTART_STATE_FILENAME
+
+    # Outer state must point at the test job; inner state must survive from
+    # the last epoch checkpoint.
+    outer_restart_state = TrainAllPhasesState().load(outer_restart_path)
+    # bnode_pytest job list: pre_train(skip)=0, phase0=1, phase1=2, test=3
+    assert outer_restart_state.job_idx == 3, (
+        f"Expected job_idx=3 (test job) after kill, got {outer_restart_state.job_idx}"
+    )
+    assert inner_restart_path.exists(), "Inner restart state must remain on disk after kill during test job."
+
+    # Resume: outer state points at the test job, so only the test job re-runs.
+    _set_training_seeds()
+    resumed_dir = ode_training(
+        interrupted_case,
+        overrides=common_overrides,
+        clear_output_before_start=False,
+    )
+    assert resumed_dir == interrupted_dir
+
+    # Restart-checkpoint files are cleaned up after successful completion.
+    assert not outer_restart_path.exists()
+    assert not inner_restart_path.exists()
+
+    # MLflow: double-logging the same step is safe — both runs' metrics are
+    # present and no exception was raised during resume.
+    tracking_uri = _resume_mlflow_tracking_uri(mlflow_scope)
+    resumed_run = _get_mlflow_run(tracking_uri, outer_restart_state.mlflow_run_id)
+    assert 'partial_test_metric' in resumed_run.data.metrics, (
+        "partial_test_metric from the interrupted run must still be present in MLflow."
     )

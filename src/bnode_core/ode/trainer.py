@@ -201,6 +201,7 @@ from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpo
 from bnode_core.ode.trainer_utils.restart_utils import (
     _clear_restart_state,
     load_restart_state_pair,
+    save_outer_restart_state_for_test_job,
 )
 
 
@@ -578,6 +579,15 @@ def _initialize_or_reload_model_for_job(
                         job['train_cfg'].seq_len_train
                     )
                 )
+    elif job.get('test') is True and created_model_this_job:
+        # Resuming at a test job with no model in memory: load the latest model checkpoint
+        # so the test runs on the trained weights rather than a freshly-initialised model.
+        current_model_path = filepaths.filepath_model_current_hydra_output()
+        if current_model_path.exists():
+            model.load(path=current_model_path, device=device)
+            logging.info('Resuming at test job: loaded trained model from %s', current_model_path)
+        else:
+            logging.warning('Resuming at test job but no model checkpoint found at %s', current_model_path)
     return model
 
 
@@ -875,6 +885,12 @@ def train_all_phases(cfg: train_test_config_class):
                             )
                             logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx + 1]['train_cfg'].seq_len_epoch_start))
                     else:
+                        save_outer_restart_state_for_test_job(
+                            train_all_phases_state=train_all_phases_state,
+                            outer_path=outer_restart_state_path,
+                            inner_path=inner_restart_state_path,
+                            job_idx=idx,
+                        )
                         _run_test_job(
                             cfg,
                             model,
