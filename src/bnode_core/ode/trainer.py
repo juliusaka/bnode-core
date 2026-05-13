@@ -885,8 +885,6 @@ def train_all_phases(cfg: train_test_config_class):
                             logging.info('Set seq_len_epoch_start for next job to {}, the seq_len_train of this job'.format(job_list[idx + 1]['train_cfg'].seq_len_epoch_start))
                     else:
                         train_all_phases_state.job_idx = idx
-                        _active_run = mlflow.active_run()
-                        train_all_phases_state.mlflow_run_id = _active_run.info.run_id if _active_run is not None else None
                         RestartCheckpointStore.from_paths(
                             outer_path=outer_restart_state_path,
                             inner_path=inner_restart_state_path,
