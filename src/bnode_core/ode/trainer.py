@@ -464,14 +464,16 @@ def _create_datasets_and_dataloaders_for_job(
             dataloaders[context] = None
             continue
         batch_size = batch_size_valid_test if context in ['validation', 'test', 'testnorm'] else batch_size_train
-        num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
         if context == 'ref':
-            num_workers = 1 if cfg.n_workers_other_loaders > 0 else 0
-        if batch_size > len(datasets[context]):
+            batch_size_here = len(datasets[context])
+        elif batch_size > len(datasets[context]):
             batch_size_here = len(datasets[context])
             logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(batch_size, len(datasets[context]), context, batch_size_here))
         else:
             batch_size_here = batch_size
+        num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
+        if context == 'ref':
+            num_workers = 1 if cfg.n_workers_other_loaders > 0 else 0
         if len(datasets[context]) == 0:
             raise ValueError('While creating dataloaders, dataset for context {} is empty. Aborting.'.format(context))
         dataloaders[context] = torch.utils.data.DataLoader(
@@ -1431,12 +1433,13 @@ def train_one_phase(
                 logging.info('loaded best model from {}'.format(path_best_model))
 
             if pre_train is False:
-                # check if the seq_len_increase phase is over
+                # check if the seq_len_increase phase is over, setting the flag is handled later
                 if flag_out_of_seq_len_increase is False:
                     if phase_state.stable_epochs > train_cfg.seq_len_increase_abort_after_n_stable_epochs:
                         _seq_len_increase_in_batches = batches_per_epoch * ( epoch - phase_epoch_0)
                         epoch_stop = phase_epoch_0 + train_cfg.max_epochs + ( epoch - phase_epoch_0)
 
+            # normal training 
             if not flag_break_after_epoch and not first_epoch_is_evaluation:
                 try:
                     ret_vals_train, dataloader_iters['train'] = train_one_epoch(
@@ -1462,12 +1465,14 @@ def train_one_phase(
                     logging.error('This is likely to happen because of the odeint integration in the model.')
                     logging.error('Aborting training of this epoch and reloading last working model to continue with next epoch.')
                     reload_assertion_error = True
+                # handle nans and infs
                 if np.isnan(ret_vals_train['loss']) or np.isinf(ret_vals_train['loss']) or reload_assertion_error:
                     # Increment before any reload attempt so the counter is persisted even
                     # if the reload raises (the subsequent checkpoint save won't happen in that case).
                     phase_state.nan_counter += 1
                     if train_cfg.reload_model_if_loss_nan:
                         if not phase_state.nan_counter > 49:
+                            # frist appraoch: try to reload the last checkpoint
                             try:
                                 _bundle = torch.load(checkpoint_store.checkpoint_path, map_location="cpu", weights_only=False)
                                 model.load_state_dict({k: v.to(device) for k, v in _bundle["model"].items()})
@@ -1479,11 +1484,13 @@ def train_one_phase(
                                 logging.error('Loss is NaN. Could not load last model and corresponding optimizer from restart bundle')
                                 logging.error('The reason for this is that not even the first epoch had stable resuls. Aborting.')
                                 raise ValueError('Loss is NaN. First training epoch did not have stable results.')
+                            # if nan in loss happens more than 2 times, we reduce clip_grad norm to avoid that to large model updates are the problem.
                             if phase_state.grad_norm_last_reduced_counter > 2:
                                 train_cfg.clip_grad_norm = train_cfg.clip_grad_norm * 0.7
                                 logging.info('Reducing clip_grad_norm to {}'.format(train_cfg.clip_grad_norm))
                                 phase_state.grad_norm_last_reduced_counter = 0
                         else:
+                            # if the reload happend more than 50 times, we try to reload the last best model
                             model.load(path=path_best_model, device=device)
                             optimizer.load_state_dict(torch.load(path_optimizer_best_model))
                             logging.warning('Loss is NaN. Loaded last best model and corresponding optimizer from {}'.format(path_best_model))
@@ -1509,7 +1516,7 @@ def train_one_phase(
                     train_cfg,
                     pre_train,
                     device,
-                    all_batches=False,
+                    all_batches=False, 
                     return_model_outputs=False,
                     activate_deterministic_mode=activate_deterministic_mode,
                     data_iter=dataloader_iters['train'],
@@ -1525,112 +1532,89 @@ def train_one_phase(
 
             mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train', pre_train), step=epoch)
 
-            try:
-                ret_vals_validation = test_or_validate_one_epoch(
-                    model,
-                    dataloaders['validation'],
-                    train_cfg,
-                    pre_train,
-                    device,
-                    all_batches=True,
-                    return_model_outputs=False,
-                    data_iter=dataloader_iters['validation'],
-                )
-                if lr_schedulers and 'plateau' in lr_schedulers.keys():
-                    val_loss = ret_vals_validation.get('loss', None)
-                    if val_loss is not None and not (np.isnan(val_loss) or np.isinf(val_loss)):
-                        lr_schedulers['plateau'].step(val_loss)
-                early_stopping_metric_name, corresponding_metric_value = _get_early_stopping_corresponding_metric(ret_vals_validation)
-                early_stopping(
-                    ret_vals_validation['loss'],
-                    model,
-                    epoch,
-                    optimizer,
-                    corresponding_loss=corresponding_metric_value,
-                )
-                if ret_vals_validation['loss'] < 2 * ret_vals_train['loss']:
-                    phase_state.stable_epochs += 1
-                    if flag_out_of_seq_len_increase is False and pre_train is False:
-                        logging.info('\t \t \t Stable seq_len_increase epochs: {}/{}'.format(phase_state.stable_epochs, train_cfg.seq_len_increase_abort_after_n_stable_epochs))
+            # Evaluate all non-training contexts in a unified loop.
+            # ref and testnorm are guarded by a dataloader-presence check and an
+            # every-N-epochs condition; validation and test always run.
+            # On a non-finite AssertionError, validation skips its post-processing
+            # and mlflow log (matching original behaviour where those were inside the
+            # try block); other contexts still log the NaN values.
+            _every_n = cfg.nn_model.training.ref_and_testnorm_every_n_epochs
+            _run_always = flag_break_after_epoch or flag_max_epoch or first_epoch_is_evaluation
+            ret_vals_by_context: dict = {'validation': None, 'test': None, 'ref': None, 'testnorm': None}
+            for context in ['validation', 'test', 'ref', 'testnorm']:
+                if dataloaders[context] is None:
+                    continue
+                # ref and testnorm are only evaluated every N epochs (or at special epochs)
+                if context in ('ref', 'testnorm'):
+                    if not (epoch % _every_n == 0 or _run_always):
+                        continue
+                    logging.info('Testing {} dataset'.format(context))
+                try:
+                    result = test_or_validate_one_epoch(
+                        model,
+                        dataloaders[context],
+                        train_cfg,
+                        pre_train,
+                        device,
+                        all_batches=(context == 'validation'),
+                        return_model_outputs=False,
+                        data_iter=dataloader_iters.get(context),
+                    )
+                except AssertionError as e:
+                    if 'non-finite values in' in str(e):
+                        logging.warning('Error in {}: {}'.format(context, e))
+                        ret_vals_by_context[context] = {key: float('nan') for key in ret_vals_train.keys()}
+                        if context == 'validation':
+                            # Skip plateau / early-stopping / stable-epoch logic and
+                            # mlflow log, matching original behaviour.
+                            early_stopping_metric_name = None
+                            continue
+                    else:
+                        raise
                 else:
-                    phase_state.stable_epochs = 0
-                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation', pre_train), step=epoch)
-            except AssertionError as e:
-                if 'non-finite values in' in str(e):
-                    logging.warning('Error in validation: {}'.format(e))
-                    ret_vals_validation = {key: float('nan') for key in ret_vals_train.keys()}
-                    early_stopping_metric_name = None
-                else:
-                    raise e
+                    # Unpack result: validation (all_batches=True) returns only ret_vals;
+                    # all other contexts return (ret_vals, updated_iter).
+                    if context == 'validation':
+                        ret_vals_by_context[context] = result
+                    else:
+                        ret_vals, dataloader_iters[context] = result
+                        ret_vals_by_context[context] = ret_vals
 
-            try:
-                ret_vals_test, dataloader_iters['test'] = test_or_validate_one_epoch(
-                    model,
-                    dataloaders['test'],
-                    train_cfg,
-                    pre_train,
-                    device,
-                    all_batches=False,
-                    return_model_outputs=False,
-                    data_iter=dataloader_iters['test'],
-                )
-            except AssertionError as e:
-                if 'non-finite values in' in str(e):
-                    logging.warning('Error in test: {}'.format(e))
-                    ret_vals_test = {key: float('nan') for key in ret_vals_train.keys()}
-                else:
-                    raise e
-            mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test', pre_train), step=epoch)
+                ret_vals = ret_vals_by_context[context]
 
-            ret_vals_ref = None
-            if dataloaders['ref'] is not None:
-                if epoch % cfg.nn_model.training.ref_and_testnorm_every_n_epochs == 0 or flag_break_after_epoch or flag_max_epoch or first_epoch_is_evaluation:
-                    try:
-                        logging.info('Testing ref dataset')
-                        ret_vals_ref, dataloader_iters['ref'] = test_or_validate_one_epoch(
-                            model,
-                            dataloaders['ref'],
-                            train_cfg,
-                            pre_train,
-                            device,
-                            all_batches=False,
-                            return_model_outputs=False,
-                            data_iter=dataloader_iters['ref'],
-                        )
-                    except AssertionError as e:
-                        if 'non-finite values in' in str(e):
-                            logging.warning('Error in ref test: {}'.format(e))
-                            ret_vals_ref = {key: float('nan') for key in ret_vals_train.keys()}
-                        else:
-                            raise e
-                    res = append_context_to_dict_keys(ret_vals_ref, 'ref', pre_train)
+                # Validation-specific post-processing
+                if context == 'validation':
+                    # step lr scheduler on validation loss
+                    if lr_schedulers and 'plateau' in lr_schedulers.keys():
+                        val_loss = ret_vals.get('loss', None)
+                        if val_loss is not None and not (np.isnan(val_loss) or np.isinf(val_loss)):
+                            lr_schedulers['plateau'].step(val_loss)
+                    # early stopping
+                    early_stopping_metric_name, corresponding_metric_value = _get_early_stopping_corresponding_metric(ret_vals)
+                    early_stopping(
+                        ret_vals['loss'],
+                        model,
+                        epoch,
+                        optimizer,
+                        corresponding_loss=corresponding_metric_value,
+                    )
+                    # set stable epochs for seq_len increase phase
+                    if ret_vals['loss'] < 2 * ret_vals_train['loss']:
+                        phase_state.stable_epochs += 1
+                        if flag_out_of_seq_len_increase is False and pre_train is False:
+                            logging.info('\t \t \t Stable seq_len_increase epochs: {}/{}'.format(phase_state.stable_epochs, train_cfg.seq_len_increase_abort_after_n_stable_epochs))
+                    else:
+                        phase_state.stable_epochs = 0
+
+                res = append_context_to_dict_keys(ret_vals, context, pre_train)
+                if context in ('ref', 'testnorm'):
                     logging.info(res)
-                    mlflow_proxy.log_metrics(res, step=epoch)
+                mlflow_proxy.log_metrics(res, step=epoch)
 
-            ret_vals_testnorm = None
-            if dataloaders['testnorm'] is not None:
-                if epoch % cfg.nn_model.training.ref_and_testnorm_every_n_epochs == 0 or flag_break_after_epoch or flag_max_epoch or first_epoch_is_evaluation:
-                    try:
-                        logging.info('Testing testnorm dataset')
-                        ret_vals_testnorm, dataloader_iters['testnorm'] = test_or_validate_one_epoch(
-                            model,
-                            dataloaders['testnorm'],
-                            train_cfg,
-                            pre_train,
-                            device,
-                            all_batches=False,
-                            return_model_outputs=False,
-                            data_iter=dataloader_iters['testnorm'],
-                        )
-                    except AssertionError as e:
-                        if 'non-finite values in' in str(e):
-                            logging.warning('Error in testnorm test: {}'.format(e))
-                            ret_vals_testnorm = {key: float('nan') for key in ret_vals_train.keys()}
-                        else:
-                            raise e
-                    res = append_context_to_dict_keys(ret_vals_testnorm, 'testnorm', pre_train)
-                    logging.info(res)
-                    mlflow_proxy.log_metrics(res, step=epoch)
+            ret_vals_validation = ret_vals_by_context['validation']
+            ret_vals_test = ret_vals_by_context['test']
+            ret_vals_ref = ret_vals_by_context['ref']
+            ret_vals_testnorm = ret_vals_by_context['testnorm']
 
             mlflow_proxy.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
             mlflow_proxy.log_metric('Stable_epochs', phase_state.stable_epochs, step=epoch)
