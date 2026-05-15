@@ -945,7 +945,7 @@ def _next_batch(data_loader, iterator):
 
 
 # define train loop for one epoch
-def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase, lr_schedulers=None):
+def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cfg, pre_train, device, epoch, use_amp, use_cuda, batch_print_interval, epoch_this_phase, lr_schedulers=None, seq_len_increase_in_batches: int = 0):
     model.train()
     _time_forward = 0
     _time_backward = 0
@@ -966,14 +966,14 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
         # seq_len_increase_in_batches
         _batches_this_phase = epoch_this_phase * batches_per_epoch + batch_idx
         if pre_train is False:
-            if _batches_this_phase < train_cfg.seq_len_increase_in_batches:
-                _seq_len_now = train_cfg.seq_len_epoch_start + int(_batches_this_phase/train_cfg.seq_len_increase_in_batches * (train_cfg.seq_len_train - train_cfg.seq_len_epoch_start))
+            if _batches_this_phase < seq_len_increase_in_batches:
+                _seq_len_now = train_cfg.seq_len_epoch_start + int(_batches_this_phase/seq_len_increase_in_batches * (train_cfg.seq_len_train - train_cfg.seq_len_epoch_start))
                 _seq_len_now = min(_seq_len_now, train_cfg.seq_len_train)
                 for keys in data_batch.keys():
                     if len(data_batch[keys].shape) == 3:
                         data_batch[keys] = data_batch[keys][:,:,:_seq_len_now]
                 if batch_idx % batch_print_interval == 0:
-                    logging.info('\t \t Increasing sequence length to {} in batch since phase start {}/{} of increase_in_batches'.format(_seq_len_now, _batches_this_phase, train_cfg.seq_len_increase_in_batches))
+                    logging.info('\t \t Increasing sequence length to {} in batch since phase start {}/{} of increase_in_batches'.format(_seq_len_now, _batches_this_phase, seq_len_increase_in_batches))
             else:
                 _seq_len_now = train_cfg.seq_len_train
         else:
@@ -1150,23 +1150,31 @@ def _compute_phase_epoch_settings(
     dataloaders: dict,
     train_cfg: base_training_settings_class,
     pre_train: bool,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
+    """Return (batches_per_epoch, epochs_for_seq_len_increase, max_epochs, seq_len_increase_in_batches).
+
+    ``seq_len_increase_in_batches`` is derived from config and is 0 when the seq-len
+    increase phase is disabled.  The caller is responsible for storing it; this
+    function does *not* mutate ``train_cfg``.
+    """
     if pre_train is True:
         batches_per_epoch = len(dataloaders['train'])
         epochs_for_seq_len_increase = 0
+        seq_len_increase_in_batches = 0
     else:
         batches_per_epoch = len(dataloaders['train']) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
         if train_cfg.seq_len_epoch_start is not None:
             if train_cfg.seq_len_epoch_start < train_cfg.seq_len_train:
-                epochs_for_seq_len_increase = int(train_cfg.seq_len_increase_in_batches / batches_per_epoch)
+                seq_len_increase_in_batches = train_cfg.seq_len_increase_in_batches
+                epochs_for_seq_len_increase = int(seq_len_increase_in_batches / batches_per_epoch)
             else:
                 epochs_for_seq_len_increase = 0
-                train_cfg.seq_len_increase_in_batches = 0
+                seq_len_increase_in_batches = 0
         else:
             epochs_for_seq_len_increase = 0
-            train_cfg.seq_len_increase_in_batches = 0
+            seq_len_increase_in_batches = 0
     max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
-    return batches_per_epoch, epochs_for_seq_len_increase, max_epochs
+    return batches_per_epoch, epochs_for_seq_len_increase, max_epochs, seq_len_increase_in_batches
 
 
 def _build_phase_checkpoint_paths(pre_train: bool, job_idx: int) -> tuple[Path, Path, Path, Path]:
@@ -1314,17 +1322,16 @@ def train_one_phase(
     phase_state = restart_train_one_phase_state if _resuming else TrainOnePhaseState()
     phase_state.early_stopping = early_stopping
 
-    if (
-        _resuming
-        and hasattr(train_cfg, 'seq_len_increase_in_batches')
-        and phase_state.seq_len_increase_in_batches is not None
-    ):
-        train_cfg.seq_len_increase_in_batches = phase_state.seq_len_increase_in_batches
-    batches_per_epoch, _epochs_for_seq_len_increase, max_epochs = _compute_phase_epoch_settings(
+    # compute training settings for this phase based on config and dataloader.
+    # seq_len_increase_in_batches: initialized from config on fresh start; on resume it
+    # is already carried by phase_state from the checkpoint (no restore needed).
+    batches_per_epoch, _epochs_for_seq_len_increase, max_epochs, _seq_len_increase_from_cfg = _compute_phase_epoch_settings(
         dataloaders,
         train_cfg,
         pre_train,
     )
+    if not _resuming:
+        phase_state.seq_len_increase_in_batches = _seq_len_increase_from_cfg
     lr_schedulers = _create_phase_lr_schedulers(
         train_cfg,
         optimizer,
@@ -1333,6 +1340,7 @@ def train_one_phase(
         pre_train,
         False,
     )
+    # handle resume: load model, optimizer, schedulers, scaler states; set epoch and scheduler positions
     if _resuming:
         if restart_model_state is None:
             raise ValueError(
@@ -1371,11 +1379,11 @@ def train_one_phase(
     first_epoch_is_evaluation = not _resuming
     batches_completed_before_resume = phase_state.phase_epoch * batches_per_epoch
     if pre_train is False:
-        if train_cfg.seq_len_increase_in_batches == 0:
+        if phase_state.seq_len_increase_in_batches == 0:
             flag_out_of_seq_len_increase = True
         else:
             flag_out_of_seq_len_increase = (
-                batches_completed_before_resume > train_cfg.seq_len_increase_in_batches
+                batches_completed_before_resume > phase_state.seq_len_increase_in_batches
             )
     else:
         flag_out_of_seq_len_increase = True
@@ -1425,7 +1433,7 @@ def train_one_phase(
                     > train_cfg.seq_len_increase_abort_after_n_stable_epochs
                     and flag_out_of_seq_len_increase is False
                 ):
-                    train_cfg.seq_len_increase_in_batches = batches_per_epoch * (
+                    phase_state.seq_len_increase_in_batches = batches_per_epoch * (
                         epoch - phase_epoch_0
                     )
                     epoch_stop = phase_epoch_0 + train_cfg.max_epochs + (
@@ -1449,6 +1457,7 @@ def train_one_phase(
                         cfg.batch_print_interval,
                         epoch - phase_epoch_0,
                         lr_schedulers,
+                        seq_len_increase_in_batches=phase_state.seq_len_increase_in_batches,
                     )
                     reload_assertion_error = False
                 except AssertionError as e:
@@ -1641,7 +1650,7 @@ def train_one_phase(
 
             batches_this_phase = (epoch - phase_epoch_0 + 1) * batches_per_epoch
             if pre_train is False:
-                if batches_this_phase > train_cfg.seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
+                if batches_this_phase > phase_state.seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
                     logging.info('Out of seq_len_increase_in_batches')
                     flag_out_of_seq_len_increase = True
                     early_stopping.reset_counter()
@@ -1651,11 +1660,6 @@ def train_one_phase(
                 if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                     mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
             phase_state.phase_epoch = epoch + 1 - phase_epoch_0
-            phase_state.seq_len_increase_in_batches = getattr(
-                train_cfg,
-                'seq_len_increase_in_batches',
-                None,
-            )
             phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
             train_all_state = (
                 train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
