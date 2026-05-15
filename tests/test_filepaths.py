@@ -28,18 +28,6 @@ def test_training_restart_paths_use_restart_filenames(monkeypatch, tmp_path):
     monkeypatch.setattr(filepaths.hydra.core.hydra_config.HydraConfig, "get", lambda: hydra_cfg)
 
     assert (
-        filepaths.filepath_training_outer_restart_state_current_hydra_output()
-        == hydra_output_dir / "training_outer_restart.pt"
-    )
-    assert (
-        filepaths.filepath_training_inner_restart_state_current_hydra_output()
-        == hydra_output_dir / "training_inner_restart.pt"
-    )
-    assert (
-        filepaths.filepath_lr_schedulers_current_hydra_output()
-        == hydra_output_dir / "lr_schedulers.pt"
-    )
-    assert (
-        filepaths.filepath_grad_scaler_current_hydra_output()
-        == hydra_output_dir / "grad_scaler.pt"
+        filepaths.filepath_restart_checkpoint_current_hydra_output()
+        == hydra_output_dir / "training_restart_checkpoint.pt"
     )

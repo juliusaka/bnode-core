@@ -87,9 +87,10 @@ def test_oom_retry_reduces_batch_size_with_compounding_factor(monkeypatch):
 
     output_dir = ode_training('oom_retry', overrides=_OOM_TEST_OVERRIDES)
 
-    # Training must not abort — model.pt must be present.
-    assert (output_dir / 'model.pt').exists(), (
-        "model.pt missing after OOM recovery — phase was likely aborted."
+    # Training must not abort — at least one model_phase_*.pt must be present.
+    phase_models = list(output_dir.glob('model_phase_*.pt'))
+    assert len(phase_models) > 0, (
+        "No model_phase_*.pt found after OOM recovery — phase was likely aborted."
     )
 
     # Dataloader creation is called once per attempt before train_one_phase.
