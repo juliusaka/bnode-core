@@ -64,9 +64,9 @@
 
 | Aspect | Old | New |
 |---|---|---|
-| BNODE + pre-train guard | Silently skipped or behaviour undefined | Raises `ValueError` immediately |
+| BNODE + pre-train guard | Silently skipped or behaviour undefined | Logs a warning and marks the pre-train job as skipped; training continues with main-training phases |
 
-**New (potential output impact if relied on silently):** Any pipeline that previously used BNODE + `pre_train=True` and observed silent behaviour will now get a hard error. No impact on normal usage.
+**New (potential output impact if relied on silently):** Any pipeline that previously used BNODE + `pre_train=True` and observed silent behaviour will now see a warning and the pre-train job will be skipped explicitly. No impact on normal usage.
 
 ### 3.2 `train_all_phases()` main loop
 
@@ -262,7 +262,7 @@ In this case the old code would use a smaller batch size for subsequent test job
 
 | Aspect | Notes |
 |---|---|
-| BNODE + pre-train `ValueError` | Now a hard runtime guard; previously silent/undefined |
+| BNODE + pre-train `ValueError` | Now a warning + skip; previously silent/undefined |
 | MLflow NaN tag text | Fixed from `'4 NaNs in loss'` to `'50 NaNs in loss'` |
 | `int(...)` vs `ceil` in epoch budget | Code was always `int()` (floor); old flow doc was wrong — no code change |
 | Atomic bundle consistency | All restart state from same epoch guaranteed |

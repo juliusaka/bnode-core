@@ -202,10 +202,10 @@ Returns an ordered list of dicts, each describing one "job":
 ]
 ```
 
-**BNODE + pre-train guard**: if `cfg.nn_model.training.pre_train=True` and `cfg.nn_model.model_type='bnode'`, a `ValueError` is raised immediately at job-list construction — no silent failure.
+**BNODE + pre-train guard**: if `cfg.nn_model.training.pre_train=True` and `cfg.nn_model.model_type='bnode'`, a warning is logged and the pre-train job is marked as skipped. Training continues normally with the main-training phases.
 
 Skip conditions:
-- Pre-train job is skipped if `cfg.nn_model.training.pre_train=False`, or `load_pretrained_model=True`, or `load_trained_model_for_test=True`.
+- Pre-train job is skipped if `cfg.nn_model.training.pre_train=False`, `cfg.nn_model.model_type='bnode'`, `load_pretrained_model=True`, or `load_trained_model_for_test=True`.
 - Main-training jobs are skipped if `load_trained_model_for_test=True`.
 
 ### 3.2 `train_all_phases()` Main Loop
@@ -271,7 +271,8 @@ for epoch in range(epoch_0, phase_epoch_0 + max_epochs):
     flag_max_epoch = epoch == epoch_stop - 1
     flag_early_stopping = early_stopping.early_stop and flag_out_of_seq_len_increase
     flag_break_after_loss = early_stopping.best_score < train_cfg.break_after_loss_of  # if configured
-    flag_nan_counter = phase_state.nan_counter > 50
+    _nan_counter_threshold = 50
+    flag_nan_counter = phase_state.nan_counter > _nan_counter_threshold
     flag_break_after_epoch = False
 
     if any termination flag:
