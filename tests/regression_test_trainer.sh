@@ -68,7 +68,8 @@ run_training() {
             "dataset_path=$dataset_path" \
             "mlflow_experiment_name=regression" \
             "mlflow_run_name=$run_name" \
-            "mlflow_tracking_uri=file://$MLRUNS_DIR"
+            "mlflow_tracking_uri=file://$MLRUNS_DIR" \
+            "max_epochs_override=1000"
     )
 }
 
