@@ -586,6 +586,10 @@ def _run_test_job(
     hdf5_dataset_ref: hdf5_dataset_class | None,
 ) -> None:
     logging.info('Testing model')
+    pred_dataset_path = filepaths.filepath_dataset_current_hydra_output()
+    if pred_dataset_path.exists():
+        logging.warning('Deleting stale predictions dataset from previous interrupted run: {}'.format(pred_dataset_path))
+        pred_dataset_path.unlink()
     saved_predictions_to_dataset = False
     for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
         if dataloaders[context] is None:
@@ -595,23 +599,19 @@ def _run_test_job(
         logging.info('Testing of dataset for context {}'.format(context))
         
         # determine if we want to save predictions for the current context
-        save_predictions = cfg.nn_model.training.save_predictions_in_dataset
-        save_predictions = save_predictions and context in cfg.nn_model.training.save_predictions_for
-        save_predictions = save_predictions or (context in cfg.nn_model.training.test_save_internal_variables_for)
+        save_predictions = cfg.nn_model.training.save_predictions_in_dataset and context in cfg.nn_model.training.save_predictions_for
 
         if save_predictions is True:
-            if not filepaths.filepath_dataset_current_hydra_output().exists():
-                logging.warning('Creating dataset file: {}'.format(filepaths.filepath_dataset_current_hydra_output()))
-                hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'w')
+            if not pred_dataset_path.exists():
+                logging.warning('Creating dataset file: {}'.format(pred_dataset_path))
+                hdf5_dataset_pred = h5py.File(pred_dataset_path, 'w')
                 for key in hdf5_dataset.keys():
                     if key not in ['train', 'test', 'validation', 'common_test', 'common_validation', 'time']:
                         hdf5_dataset_pred.copy(hdf5_dataset[key], key)
                         logging.info('Copying dataset key {} to hdf5 file for testing.'.format(key))
             else:
-                hdf5_dataset_pred = h5py.File(filepaths.filepath_dataset_current_hydra_output(), 'a')
-
+                hdf5_dataset_pred = h5py.File(pred_dataset_path, 'a')
             logging.info('Copying dataset for context {} to hdf5 file for testing.'.format(context))
-
             if context in ['train', 'test', 'validation', 'common_test', 'common_validation']:
                 hdf5_dataset_pred.create_group(context)
                 for key in hdf5_dataset[context].keys():
