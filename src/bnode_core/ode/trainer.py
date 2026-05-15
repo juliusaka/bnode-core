@@ -658,6 +658,7 @@ def _run_test_job(
                         test=True,
                     )
                 if not created_dsets:
+                    # Decide which keys to save
                     for key in model_outputs_batch.keys():
                         if key in ['states_hat', 'states_der_hat', 'outputs_hat']:
                             save_key = True
@@ -668,25 +669,30 @@ def _run_test_job(
                             save_key = False
                         if save_key:
                             keys_to_save.append(key)
+                    # Create HDF5 datasets per key with full size on first dimension
                     for key in keys_to_save:
                         arr = model_outputs_batch[key]
                         shape_rest = arr.shape[1:]
                         dset_shape = (total_len,) + shape_rest
                         hdf5_dataset_pred.create_dataset(context + '/' + key, shape=dset_shape, dtype=arr.dtype)
                     created_dsets = True
+                # Write this batch to HDF5
                 batch = next(iter(model_outputs_batch.values())).shape[0] if len(model_outputs_batch) > 0 else 0
                 for key in keys_to_save:
                     arr = model_outputs_batch[key]
                     hdf5_dataset_pred[context + '/' + key][write_offset:write_offset + arr.shape[0], ...] = arr
                 write_offset += batch
+                # Accumulate metrics for averaging later (match old np.mean over batches)
                 if n_batches == 0:
                     metrics_sum = {k: float(v) for k, v in ret_vals_batch.items()}
                 else:
                     for key, value in ret_vals_batch.items():
                         metrics_sum[key] += float(value)
                 n_batches += 1
+            # Compute mean metrics across batches
             ret_vals = {k: (metrics_sum[k] / max(n_batches, 1)) for k in metrics_sum.keys()}
         else:
+            # Full-dataset evaluation for this context; iterator is not reused.
             ret_vals = test_or_validate_one_epoch(
                 model,
                 dataloaders[context],
@@ -697,9 +703,12 @@ def _run_test_job(
                 return_model_outputs=False,
             )
 
+        # log stats with logging
         logging.info('Stats for context {}: {}'.format(context, ret_vals))
+        # log stats with mlflow
         mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, context), step=epoch_0 + 1)
         mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals, '{}_final'.format(context)), step=epoch_0 + 1)
+        # save loss function values
         if save_predictions is True:
             for key, value in ret_vals.items():
                 hdf5_dataset_pred.create_dataset(context + '/' + key, data=value)
@@ -707,6 +716,7 @@ def _run_test_job(
             saved_predictions_to_dataset = True
 
     if saved_predictions_to_dataset:
+        # save this file
         shutil.copy(Path(__file__), filepaths.dir_current_hydra_output())
         logging.info('copied current trainer.py: {} \nto: \n{}'.format(Path(__file__), filepaths.dir_current_hydra_output()))
 
