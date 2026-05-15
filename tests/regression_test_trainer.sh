@@ -56,17 +56,18 @@ trap restore_git_state EXIT
 # Helper: run training from bnode-core root
 # ---------------------------------------------------------------------------
 run_training() {
-    local experiment_name="$1"
+    local run_name="$1"
     local dataset_path="$2"
     local label="$3"
 
     echo ""
-    echo "=== [$label] experiment=$experiment_name dataset=$(basename "$(dirname "$dataset_path")")"
+    echo "=== [$label] run=$run_name dataset=$(basename "$(dirname "$dataset_path")")"
     (
         cd "$BNODE_CORE_DIR"
         python -m bnode_core.ode.trainer \
             "dataset_path=$dataset_path" \
-            "mlflow_experiment_name=$experiment_name" \
+            "mlflow_experiment_name=regression" \
+            "mlflow_run_name=$run_name" \
             "mlflow_tracking_uri=file://$MLRUNS_DIR"
     )
 }
