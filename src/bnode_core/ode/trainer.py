@@ -1378,12 +1378,16 @@ def train_one_phase(
     epoch_stop = phase_epoch_0 + max_epochs
     first_epoch_is_evaluation = not _resuming
     batches_completed_before_resume = phase_state.phase_epoch * batches_per_epoch
+    # Local variable tracking the live seq_len_increase_in_batches value for within-epoch use.
+    # It is written back to phase_state at end-of-epoch so that checkpoints are always
+    # consistent with phase_epoch (both updated atomically before the checkpoint save).
+    _seq_len_increase_in_batches = phase_state.seq_len_increase_in_batches
     if pre_train is False:
-        if phase_state.seq_len_increase_in_batches == 0:
+        if _seq_len_increase_in_batches == 0:
             flag_out_of_seq_len_increase = True
         else:
             flag_out_of_seq_len_increase = (
-                batches_completed_before_resume > phase_state.seq_len_increase_in_batches
+                batches_completed_before_resume > _seq_len_increase_in_batches
             )
     else:
         flag_out_of_seq_len_increase = True
@@ -1391,6 +1395,7 @@ def train_one_phase(
     try:
         dataloader_iters = {ctx: None for ctx, dl in dataloaders.items() if dl is not None}
         for epoch in range(epoch_0, phase_epoch_0 + max_epochs):
+            # handle stopping flags because of max epoch, early_stopping, certain loss level reached, or too many NaNs in loss
             if epoch == epoch_stop:
                 break
             flag_max_epoch = epoch == epoch_stop - 1
@@ -1406,7 +1411,6 @@ def train_one_phase(
             _nan_counter_threshold = 50
             flag_nan_counter = phase_state.nan_counter > _nan_counter_threshold
             flag_break_after_epoch = False
-
             if flag_max_epoch or flag_early_stopping or flag_break_after_loss or flag_nan_counter:
                 if flag_max_epoch:
                     logging.info('Reached max epochs')
@@ -1427,18 +1431,11 @@ def train_one_phase(
                 logging.info('loaded best model from {}'.format(path_best_model))
 
             if pre_train is False:
-                # check if we are still in the sequence length increase phase and update settings accordingly
-                if (
-                    phase_state.stable_epochs
-                    > train_cfg.seq_len_increase_abort_after_n_stable_epochs
-                    and flag_out_of_seq_len_increase is False
-                ):
-                    phase_state.seq_len_increase_in_batches = batches_per_epoch * (
-                        epoch - phase_epoch_0
-                    )
-                    epoch_stop = phase_epoch_0 + train_cfg.max_epochs + (
-                        epoch - phase_epoch_0
-                    )
+                # check if the seq_len_increase phase is over
+                if flag_out_of_seq_len_increase is False:
+                    if phase_state.stable_epochs > train_cfg.seq_len_increase_abort_after_n_stable_epochs:
+                        _seq_len_increase_in_batches = batches_per_epoch * ( epoch - phase_epoch_0)
+                        epoch_stop = phase_epoch_0 + train_cfg.max_epochs + ( epoch - phase_epoch_0)
 
             if not flag_break_after_epoch and not first_epoch_is_evaluation:
                 try:
@@ -1457,7 +1454,7 @@ def train_one_phase(
                         cfg.batch_print_interval,
                         epoch - phase_epoch_0,
                         lr_schedulers,
-                        seq_len_increase_in_batches=phase_state.seq_len_increase_in_batches,
+                        seq_len_increase_in_batches=_seq_len_increase_in_batches,
                     )
                     reload_assertion_error = False
                 except AssertionError as e:
@@ -1466,6 +1463,9 @@ def train_one_phase(
                     logging.error('Aborting training of this epoch and reloading last working model to continue with next epoch.')
                     reload_assertion_error = True
                 if np.isnan(ret_vals_train['loss']) or np.isinf(ret_vals_train['loss']) or reload_assertion_error:
+                    # Increment before any reload attempt so the counter is persisted even
+                    # if the reload raises (the subsequent checkpoint save won't happen in that case).
+                    phase_state.nan_counter += 1
                     if train_cfg.reload_model_if_loss_nan:
                         if not phase_state.nan_counter > 49:
                             try:
@@ -1493,7 +1493,6 @@ def train_one_phase(
                                 raise ValueError('Loss is NaN for more than 55 epochs, even after reloading last best model. Aborting training.')
                     else:
                         logging.warning('Loss is NaN. Continuing with current model and optimizer as reload_model_if_loss_nan is False')
-                    phase_state.nan_counter += 1
                 else:
                     mlflow_proxy.log_metric('loss_nan_reload', 0, step=epoch)
                     phase_state.nan_counter = 0
@@ -1650,7 +1649,7 @@ def train_one_phase(
 
             batches_this_phase = (epoch - phase_epoch_0 + 1) * batches_per_epoch
             if pre_train is False:
-                if batches_this_phase > phase_state.seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
+                if batches_this_phase > _seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
                     logging.info('Out of seq_len_increase_in_batches')
                     flag_out_of_seq_len_increase = True
                     early_stopping.reset_counter()
@@ -1660,6 +1659,7 @@ def train_one_phase(
                 if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                     mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
             phase_state.phase_epoch = epoch + 1 - phase_epoch_0
+            phase_state.seq_len_increase_in_batches = _seq_len_increase_in_batches
             phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
             train_all_state = (
                 train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
