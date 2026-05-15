@@ -842,7 +842,10 @@ def train_all_phases(cfg: train_test_config_class):
                     else:
                         logging.info('Skipping Train Job {} as trained model is loaded in following phases'.format(idx))
                 else:
+                    # perform training on phase
                     if job['test'] is False:
+                        # phase_restart_state: inner checkpoint state for this phase, or None for a fresh start.
+                        # Only used on the first job of a resume; subsequent jobs always start fresh.
                         phase_restart_state = (
                             train_one_phase_state
                             if train_all_phases_state is not None and idx == job_start_idx
@@ -856,7 +859,7 @@ def train_all_phases(cfg: train_test_config_class):
                             job['pre_train'],
                             idx,
                             next_epoch_anchor,
-                            train_one_phase_state=phase_restart_state,
+                            restart_train_one_phase_state=phase_restart_state,
                             train_all_phases_state=train_all_phases_state,
                             checkpoint_store=checkpoint_store,
                             restart_scheduler_states=restart_scheduler_states if idx == job_start_idx else None,
@@ -864,6 +867,7 @@ def train_all_phases(cfg: train_test_config_class):
                             restart_model_state=restart_model_state if idx == job_start_idx else None,
                             restart_optimizer_state=restart_optimizer_state if idx == job_start_idx else None,
                         )
+                        # Clear all restart state after first resumed phase; remaining phases start fresh.
                         train_one_phase_state = None
                         restart_scheduler_states = None
                         restart_scaler_state = None
@@ -1276,7 +1280,7 @@ def train_one_phase(
     pre_train: bool,
     job_idx: int,
     epoch_0: int = 0,
-    train_one_phase_state: TrainOnePhaseState | None = None,
+    restart_train_one_phase_state: TrainOnePhaseState | None = None,  # None = fresh start, non-None = resume
     train_all_phases_state: TrainAllPhasesState | None = None,
     checkpoint_store: RestartCheckpointStore | None = None,
     restart_scheduler_states: dict | None = None,
@@ -1305,11 +1309,13 @@ def train_one_phase(
     logging.info('Training with automatic mixed precision: {}'.format(cfg.use_amp and cfg.use_cuda))
     checkpoint_store = checkpoint_store or RestartCheckpointStore.from_current_hydra_output()
 
-    phase_state = train_one_phase_state if train_one_phase_state is not None else TrainOnePhaseState()
+    # _resuming: True when resuming from a checkpoint, False for a fresh phase start.
+    _resuming = restart_train_one_phase_state is not None
+    phase_state = restart_train_one_phase_state if _resuming else TrainOnePhaseState()
     phase_state.early_stopping = early_stopping
 
     if (
-        train_one_phase_state is not None
+        _resuming
         and hasattr(train_cfg, 'seq_len_increase_in_batches')
         and phase_state.seq_len_increase_in_batches is not None
     ):
@@ -1327,7 +1333,7 @@ def train_one_phase(
         pre_train,
         False,
     )
-    if train_one_phase_state is not None:
+    if _resuming:
         if restart_model_state is None:
             raise ValueError(
                 "Expected model state in restart bundle for resume, but got None."
@@ -1362,7 +1368,7 @@ def train_one_phase(
 
     phase_epoch_0 = epoch_0 - phase_state.phase_epoch
     epoch_stop = phase_epoch_0 + max_epochs
-    first_epoch_is_evaluation = train_one_phase_state is None
+    first_epoch_is_evaluation = not _resuming
     batches_completed_before_resume = phase_state.phase_epoch * batches_per_epoch
     if pre_train is False:
         if train_cfg.seq_len_increase_in_batches == 0:
