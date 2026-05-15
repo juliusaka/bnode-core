@@ -337,13 +337,14 @@ def initialize_model(cfg: train_test_config_class, train_dataset: TimeSeriesData
 def _build_job_list(cfg: train_test_config_class) -> list[dict]:
     """Build the ordered outer training workflow."""
     if cfg.nn_model.training.pre_train and cfg.nn_model.model_type == 'bnode':
-        raise ValueError(
+        logging.warning(
             "Pre-training (nn_model.training.pre_train=True) is not supported for BNODE models "
-            "(nn_model.model_type='bnode'). Disable pre_train or switch to a NODE model."
+            "(nn_model.model_type='bnode'). The pre-training job will be skipped."
         )
     job_list = []
     job_list.append({
         'skip': not cfg.nn_model.training.pre_train
+        or cfg.nn_model.model_type == 'bnode'
         or cfg.nn_model.training.load_pretrained_model
         or cfg.nn_model.training.load_trained_model_for_test,
         'test': False,
@@ -1410,7 +1411,8 @@ def train_one_phase(
                 and early_stopping.best_score is not None
                 else False
             )
-            flag_nan_counter = phase_state.nan_counter > 50
+            _nan_counter_threshold = 50
+            flag_nan_counter = phase_state.nan_counter > _nan_counter_threshold
             flag_break_after_epoch = False
 
             if flag_max_epoch or flag_early_stopping or flag_break_after_loss or flag_nan_counter:
@@ -1424,8 +1426,8 @@ def train_one_phase(
                     logging.info('Break phase after reaching loss level of {}'.format(train_cfg.break_after_loss_of))
                     mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), 'break after loss')
                 elif flag_nan_counter:
-                    logging.info('Break phase after 50 NaNs in loss')
-                    mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), '50 NaNs in loss')
+                    logging.info('Break phase after {} NaNs in loss'.format(_nan_counter_threshold))
+                    mlflow_proxy.set_tag_if_active('job {} ended by'.format(job_idx), '{} NaNs in loss'.format(_nan_counter_threshold))
                 else:
                     raise ValueError('This should not happen')
                 flag_break_after_epoch = True
