@@ -459,17 +459,17 @@ def _create_datasets_and_dataloaders_for_job(
     else:
         batch_size_train = base_batch_size_train
         batch_size_valid_test = base_batch_size_valid_test
-    for context in ['train', 'test', 'validation', 'common_test', 'testnorm']:
-        batch_size = batch_size_valid_test if context in ['validation', 'test', 'testnorm'] else batch_size_train
+    for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
         if context == 'testnorm' and datasets[context] is None:
             dataloaders[context] = None
             continue
-        if job['test'] is True and len(datasets[context]) == 0:  # when only testing, datasets can be empty
-            # TODO: I believe this is never reached
+        if context == 'ref' and datasets[context] is None:
             dataloaders[context] = None
-            logging.info('Only Testing: No data for context {} in dataset. Skipping loading dataloader for this context'.format(context))
             continue
+        batch_size = batch_size_valid_test if context in ['validation', 'test', 'testnorm'] else batch_size_train
         num_workers = cfg.n_workers_train_loader if context == 'train' else cfg.n_workers_other_loaders
+        if context == 'ref':
+            num_workers = 1 if cfg.n_workers_other_loaders > 0 else 0
         if batch_size > len(datasets[context]):
             batch_size_here = len(datasets[context])
             logging.warning('Batch size {} is larger than dataset size {} for context {}. Setting batch size to {}'.format(batch_size, len(datasets[context]), context, batch_size_here))
@@ -489,20 +489,6 @@ def _create_datasets_and_dataloaders_for_job(
             prefetch_factor=cfg.prefetch_factor,
             collate_fn=timeseries_collate_fn,
         )
-    if datasets['ref'] is not None:
-        dataloaders['ref'] = torch.utils.data.DataLoader(
-            datasets['ref'],
-            batch_size=len(datasets['ref']),
-            shuffle=False,
-            num_workers=1 if cfg.n_workers_other_loaders > 0 else 0,
-            persistent_workers=True if cfg.n_workers_other_loaders > 0 else False,
-            pin_memory=True,
-            drop_last=False,
-            prefetch_factor=cfg.prefetch_factor,
-            collate_fn=timeseries_collate_fn,
-        )
-    else:
-        dataloaders['ref'] = None
     if hasattr(datasets['train'], 'seq_len'):
         job['train_cfg'].seq_len_train = datasets['train'].seq_len
     else:
