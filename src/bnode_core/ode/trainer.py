@@ -416,7 +416,6 @@ def _create_datasets_and_dataloaders_for_job(
             dataloaders.  A factor < 1.0 is used after CUDA OOM to retry with
             a smaller memory footprint.  Minimum effective batch size is 1.
     """
-    _log_job_start(job_idx, job)
     load_seq_len, seq_len_batches, stride_valid_test, max_samples_valid = _job_dataset_loading_settings(job)
     datasets = {}
     for context in ['train', 'test', 'validation', 'common_test']:
@@ -834,6 +833,7 @@ def train_all_phases(cfg: train_test_config_class):
         # None means use config batch sizes as-is; reset to None at the start of every phase.
         batch_size_reduction_factor: float | None = None
         oom_reduction_count = 0
+        _log_job_start(idx, job)
         while True: # loop to catch memory errors
             try:
                 if job['skip'] is False: 
