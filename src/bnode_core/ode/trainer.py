@@ -1611,37 +1611,36 @@ def train_one_phase(
                     logging.info(res)
                 mlflow_proxy.log_metrics(res, step=epoch)
 
-            ret_vals_validation = ret_vals_by_context['validation']
-            ret_vals_test = ret_vals_by_context['test']
-            ret_vals_ref = ret_vals_by_context['ref']
-            ret_vals_testnorm = ret_vals_by_context['testnorm']
-
             mlflow_proxy.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
             mlflow_proxy.log_metric('Stable_epochs', phase_state.stable_epochs, step=epoch)
-            progress_string = model.get_progress_string(ret_vals_train, ret_vals_validation, ret_vals_test, pre_train)
+            progress_string = model.get_progress_string(ret_vals_train, ret_vals_by_context['validation'], ret_vals_by_context['test'], pre_train)
             logging.info('Epoch: {}/{} EarlyStopping: {}/{} |-| {}'.format(epoch + 1, epoch_stop, early_stopping.counter, early_stopping.patience, progress_string))
 
             if flag_break_after_epoch:
                 mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
-                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_validation, 'validation_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
-                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_test, 'test_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
-                if dataloaders['ref'] is not None and ret_vals_ref is not None:
-                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_ref, 'ref_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
-                if dataloaders['testnorm'] is not None and ret_vals_testnorm is not None:
-                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_testnorm, 'testnorm_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
+                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_by_context['validation'], 'validation_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
+                mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_by_context['test'], 'test_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
+                if dataloaders['ref'] is not None and ret_vals_by_context['ref'] is not None:
+                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_by_context['ref'], 'ref_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
+                if dataloaders['testnorm'] is not None and ret_vals_by_context['testnorm'] is not None:
+                    mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_by_context['testnorm'], 'testnorm_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
                 break
-
+            
+            # handle seq_len_increase
             batches_this_phase = (epoch - phase_epoch_0 + 1) * batches_per_epoch
             if pre_train is False:
                 if batches_this_phase > _seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
                     logging.info('Out of seq_len_increase_in_batches')
                     flag_out_of_seq_len_increase = True
                     early_stopping.reset_counter()
+            # log early stopping
             mlflow_proxy.log_metric('EarlyStopping_counter', early_stopping.counter, step=epoch)
             if early_stopping.counter == 0:
                 mlflow_proxy.log_metric('EarlyStopping_best_loss', early_stopping.best_score, step=epoch)
                 if early_stopping_metric_name is not None and early_stopping.corresponding_score is not None:
                     mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
+            
+            # handle checkpointing the trainer state
             phase_state.phase_epoch = epoch + 1 - phase_epoch_0
             phase_state.seq_len_increase_in_batches = _seq_len_increase_in_batches
             phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
