@@ -213,4 +213,5 @@ tests/_results/*
 _tests/*
 _tests_results/*
 tests/results*
+tests/regression_mlruns
 
