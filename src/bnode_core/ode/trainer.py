@@ -198,9 +198,6 @@ from bnode_core.ode.trainer_utils.restart_state import (
     restore_rng_state,
 )
 from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
-from bnode_core.ode.trainer_utils.restart_utils import (
-    load_restart_checkpoint,
-)
 
 
 torch.backends.cudnn.benchmark = True
@@ -590,7 +587,7 @@ def _run_test_job(
     if pred_dataset_path.exists():
         logging.warning('Deleting stale predictions dataset from previous interrupted run: {}'.format(pred_dataset_path))
         pred_dataset_path.unlink()
-    saved_predictions_to_dataset = False
+        
     for context in ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref']:
         if dataloaders[context] is None:
             logging.info('No data for context {} in dataset. Skipping.'.format(context))
@@ -713,12 +710,6 @@ def _run_test_job(
             for key, value in ret_vals.items():
                 hdf5_dataset_pred.create_dataset(context + '/' + key, data=value)
             hdf5_dataset_pred.close()
-            saved_predictions_to_dataset = True
-
-    if saved_predictions_to_dataset:
-        # save this file
-        shutil.copy(Path(__file__), filepaths.dir_current_hydra_output())
-        logging.info('copied current trainer.py: {} \nto: \n{}'.format(Path(__file__), filepaths.dir_current_hydra_output()))
 
 
 @log_hydra_to_mlflow
@@ -806,17 +797,8 @@ def train_all_phases(cfg: train_test_config_class):
     logging.info('Created job list: {}'.format(job_list))
 
     # load restart state if exists, to continue training from checkpoint if needed
-    (
-        train_all_phases_state,
-        train_one_phase_state,
-        restart_scheduler_states,
-        restart_scaler_state,
-        restart_model_state,
-        restart_optimizer_state,
-        checkpoint_store,
-    ) = load_restart_checkpoint(
-        job_list=job_list
-    )
+    checkpoint_store = RestartCheckpointStore.from_current_hydra_output()
+    train_all_phases_state, train_one_phase_state, restart_scheduler_states, restart_scaler_state, restart_model_state, restart_optimizer_state = checkpoint_store.load_and_validate(job_list=job_list)
     train_all_phases_state = (
         train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
     )

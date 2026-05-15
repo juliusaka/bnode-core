@@ -5,6 +5,7 @@ import os
 import uuid
 from pathlib import Path
 
+import mlflow
 import torch
 
 import bnode_core.filepaths as filepaths
@@ -45,6 +46,40 @@ class RestartCheckpointStore:
         outer_state = TrainAllPhasesState().load_from_state_dict(bundle["outer"])
         inner_state = TrainOnePhaseState().load_from_state_dict(bundle["inner"])
         return outer_state, inner_state, bundle["scheduler"], bundle["scaler"], bundle["model"], bundle["optimizer"]
+
+    def load_and_validate(
+        self,
+        *,
+        job_list: list[dict],
+    ) -> tuple[
+        TrainAllPhasesState | None,
+        TrainOnePhaseState | None,
+        dict | None,  # scheduler_states
+        dict | None,  # scaler_state
+        dict | None,  # model_state_dict
+        dict | None,  # optimizer_state_dict
+    ]:
+        """Load checkpoint (if any) and validate it against the active MLflow run and job list."""
+        outer, inner, scheduler_states, scaler_state, model_state, optimizer_state = self.load_checkpoint_if_available()
+        if outer is None:
+            return None, None, None, None, None, None
+        active_run = mlflow.active_run()
+        if outer.mlflow_run_id is not None and active_run is not None and active_run.info.run_id != outer.mlflow_run_id:
+            raise ValueError(
+                f"Active MLflow run {active_run.info.run_id} does not match restart-state run {outer.mlflow_run_id}."
+            )
+        if inner is None:
+            raise ValueError(
+                "Trainer restart requires both train_all_phases_state and train_one_phase_state."
+            )
+        if outer.job_idx >= len(job_list):
+            raise ValueError(
+                f"Restart state refers to job index {outer.job_idx}, but only {len(job_list)} jobs exist."
+            )
+        if job_list[outer.job_idx]["pre_train"]:
+            raise ValueError("Trainer restart does not support resuming at pre-training phases.")
+        logging.info("Loaded restart checkpoint from %s", self.checkpoint_path)
+        return outer, inner, scheduler_states, scaler_state, model_state, optimizer_state
 
     def save_epoch_checkpoint(
         self,
