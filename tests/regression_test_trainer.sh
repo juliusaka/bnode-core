@@ -69,7 +69,7 @@ run_training() {
             "mlflow_experiment_name=regression" \
             "mlflow_run_name=$run_name" \
             "mlflow_tracking_uri=file://$MLRUNS_DIR" \
-            "max_epochs_override=1000"
+            "nn_model.training.max_epochs_override=1000"
     )
 }
 
