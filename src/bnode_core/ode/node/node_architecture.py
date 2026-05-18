@@ -523,7 +523,7 @@ class NeuralODE(nn.Module):
 
     def forward_ODE(self, t, x):
         if self.include_controls:
-            u = get_control_input_at_t(t, self.current_times, self.current_controls, use_input_smoother=self.use_input_smoother)
+            u, _ = get_control_input_at_t(t, self.current_times, self.current_controls, use_input_smoother=self.use_input_smoother)
         else:
             u = None
         # call
@@ -582,12 +582,13 @@ class NeuralODE(nn.Module):
         """training"""
         if pre_train is False:
             _time_logging0 = pyTime.time()
+            # Use a single 1D time grid for ODE integration and control lookup.
+            time = time[0,0,:] # as we used equidistant time steps in data generation, we can use the first time vector
             # provide inputs to NeuralODE
             self.set_input(controls, time, parameters)
             self.ode_fun_count = 0
             # forward pass
             x0 = states[:, :, 0].swapaxes(0,1) # x is shape [batch_size, states_dim, timeseries_length], but for odeint it must be [states_dim, batch_size]
-            time = time[0,0,:] # as we used equidistant time steps in data generation, we can use the first time vector
             # specify options for odeint
             _fixed_step_solvers = ['euler', 'midpoint', 'rk4', 'implicit_adams', 'explicit_adams']
             _base_options = {}

@@ -22,30 +22,32 @@ training:
   path_trained_model: ''
 
   weight_decay_override: 1e-5
+  batches_per_epoch_override: 12
 
 
   pre_training:
 
     batch_size: 100
-    max_epochs: 100
+    max_epochs: 10
     method: collocation
+    batches_per_epoch: 12
 
   main_training:
 
   # pre training with 3 steps
-  - batch_size: 800
+  - batch_size: 128
     solver: euler
     lr_start: 1e-3
-    max_epochs: 100
+    max_epochs: 10
     early_stopping_patience: 80
     load_seq_len: null
     seq_len_train: 3
 
   # increase seq len to 10 steps
-  - batch_size: 400
+  - batch_size: 32
     solver: rk4
     lr_start: 1e-3
-    max_epochs: 100
+    max_epochs: 10
     early_stopping_patience: 10
     seq_len_train: null
     seq_len_increase_in_batches: 100

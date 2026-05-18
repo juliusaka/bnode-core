@@ -2,6 +2,9 @@ from pathlib import Path
 import sys
 import os
 import shutil
+import json
+
+import onnx
 from hydra.core.global_hydra import GlobalHydra
 
 from test_bnode import ode_training
@@ -27,7 +30,7 @@ parameter_dataset_path = r"resources/data/surrogate-test-data/data/datasets/Stra
 #   
 
 def ode_export_test(test_name: str, training_overrides: list[str] = [], export_overrides: list[str] = [],
-                    dataset_path: str = ""):
+                    dataset_path: str = "") -> Path:
     os.environ['HYDRA_FULL_ERROR'] = '1'
     training_overrides += ['nn_model.training.max_epochs_override=10']
     training_overrides += [f'dataset_path={str(Path(dataset_path).absolute())}']
@@ -36,19 +39,20 @@ def ode_export_test(test_name: str, training_overrides: list[str] = [], export_o
     # reset hydra
     GlobalHydra.instance().clear()
     # export model
+    export_dir = test_dir / 'test_export_onnx'
     orig_argv = sys.argv[:]
     sys.argv = [orig_argv[0], 
                 '--config-dir=resources/config',
                 '--config-name=onnx_export_pytest',
                 'model_directory=' + str(test_dir.absolute()),
-                'output_dir=' + str(test_dir.absolute() / 'test_export' / 'onnx'),
-                f"hydra.run.dir={str(test_dir.absolute() / 'test_export')}",
+                'output_dir=' + str(export_dir.absolute()),
+                f"hydra.run.dir={str(test_dir.absolute() / 'test_export_hydra')}",
                 'dataset_path=' + dataset_path,
-                'config_path=' + str(test_dir.absolute() / '.hydra' / 'config_validated.yaml'),
                 ]
     sys.argv += export_overrides
     bnode_export_main()
     sys.argv = orig_argv
+    return export_dir
 
 def test_bnode_export():
     """Test basic BNODE export with controls."""
@@ -91,3 +95,110 @@ def test_bnode_export_no_parameter_encoder():
                         'nn_model.network.include_params_encoder=false'
                     ],
                     dataset_path=parameter_dataset_path)
+
+
+def test_bnode_export_deterministic_mode():
+    """Test BNODE export with deterministic mode activated after phase."""
+    ode_export_test('bnode_export_det_mode',
+                    training_overrides=[
+                        'nn_model=bnode_pytest_det',
+                    ],
+                    dataset_path=dataset_path)
+
+
+def test_bnode_export_deterministic_mode_from_state0():
+    """Test BNODE export with deterministic_mode_from_state0=true."""
+    ode_export_test('bnode_export_det_from_state0',
+                    training_overrides=[
+                        'nn_model=bnode_pytest_det',
+                        'nn_model.training.main_training.1.deterministic_mode_from_state0=true',
+                    ],
+                    dataset_path=dataset_path)
+
+
+def test_bnode_export_deterministic_linear_mpc():
+    """Test BNODE export with deterministic mode and linear_mode=mpc_mode_for_controls."""
+    ode_export_test('bnode_export_det_linear_mpc',
+                    training_overrides=[
+                        'nn_model=bnode_pytest_det',
+                        'nn_model.network.linear_mode=mpc_mode_for_controls',
+                        'nn_model.training.main_training.1.threshold_count_populated_dimensions=0.1',
+                    ],
+                    dataset_path=dataset_path)
+
+
+def _assert_contiguous_specs(specs: list[dict]) -> int:
+    offset = 0
+    for spec in specs:
+        assert spec["start"] == offset
+        assert spec["end"] - spec["start"] == spec["dim"]
+        offset = spec["end"]
+    return offset
+
+
+def _tensor_feature_dim(value_info) -> int:
+    tensor_shape = value_info.type.tensor_type.shape.dim
+    assert len(tensor_shape) == 2
+    feature_dim = tensor_shape[1]
+    assert feature_dim.HasField("dim_value")
+    return int(feature_dim.dim_value)
+
+
+def _assert_siso_module_dimensions(export_dir: Path, module_key: str, dims: dict) -> None:
+    module_dims = dims[module_key]
+    path_onnx = export_dir / module_dims["siso_onnx"]
+    assert path_onnx.exists()
+
+    expected_input_dim = _assert_contiguous_specs(module_dims["input"])
+    expected_output_dim = _assert_contiguous_specs(module_dims["output"])
+
+    model = onnx.load(path_onnx)
+    assert len(model.graph.input) == 1
+    assert len(model.graph.output) == 1
+    assert model.graph.input[0].name == "input"
+    assert model.graph.output[0].name == "output"
+
+    assert _tensor_feature_dim(model.graph.input[0]) == expected_input_dim
+    assert _tensor_feature_dim(model.graph.output[0]) == expected_output_dim
+
+
+def _assert_siso_export(export_dir: Path, *, deterministic: bool) -> None:
+    dims = json.loads((export_dir / 'siso_dimensions.json').read_text())
+    assert dims["version"] == 1
+    assert 'encoder_states' in dims
+    assert 'latent_ode' in dims
+    assert 'decoder' in dims
+
+    _assert_siso_module_dimensions(export_dir, "encoder_states", dims)
+    _assert_siso_module_dimensions(export_dir, "latent_ode", dims)
+    _assert_siso_module_dimensions(export_dir, "decoder", dims)
+
+    encoder_outputs = dims["encoder_states"]["output"]
+    if deterministic:
+        assert [spec["name"] for spec in encoder_outputs] == ["latent_states_mu"]
+    else:
+        assert [spec["name"] for spec in encoder_outputs] == [
+            "latent_states_mu",
+            "latent_states_logvar",
+        ]
+
+
+def test_bnode_export_siso():
+    """Test BNODE SISO export: *_siso.onnx files and siso_dimensions.json must be written."""
+    export_dir = ode_export_test(
+        'bnode_export_siso',
+        dataset_path=dataset_path,
+        export_overrides=['siso=true'],
+    )
+    _assert_siso_export(export_dir, deterministic=False)
+
+
+def test_bnode_export_siso_deterministic():
+    """Test BNODE SISO export with a deterministic training phase (encoder outputs only mu)."""
+    export_dir = ode_export_test(
+        'bnode_export_siso_det',
+        training_overrides=['nn_model=bnode_pytest_det'],
+        dataset_path=dataset_path,
+        export_overrides=['siso=true'],
+    )
+    _assert_siso_export(export_dir, deterministic=True)

@@ -10,12 +10,14 @@ Attention:
 
 import numpy as np
 import logging
+from pathlib import Path
 import torch
 from typing import Optional, Callable
 import torch.nn as nn
 import torch.optim as optim
 
-class EarlyStopping:
+
+class EarlyStopping(nn.Module):
     """Stop training early if validation loss doesn't improve after given patience.
     
     Tracks validation loss and saves model checkpoints when improvements occur.
@@ -58,6 +60,7 @@ class EarlyStopping:
             optimizer_path: Path to save optimizer state. Default: 'optimizer.pt'.
             trace_func: Logging function for status messages. Default: print.
         """
+        super().__init__()
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
@@ -175,7 +178,35 @@ class EarlyStopping:
         """
         if self.verbose:
             self.trace_func('----------------------> Epoch {} Validation loss decreased ({:.6f} --> {:.6f}).  Saving model to {}'.format(epoch, self.score_last_save, loss, self.path))
-        model.save(self.path)
+        model.save(Path(self.path))
         self.score_last_save = loss
         if optimizer is not None:
-                torch.save(optimizer.state_dict(), self.optimizer_path)
+                torch.save(optimizer.state_dict(), Path(self.optimizer_path))
+
+    def get_extra_state(self) -> dict:
+        return {
+            'patience': self.patience,
+            'verbose': self.verbose,
+            'counter': self.counter,
+            'best_score': self.best_score,
+            'corresponding_score': self.corresponding_score,
+            'early_stop': self.early_stop,
+            'score_last_save': self.score_last_save,
+            'threshold': self.threshold,
+            'threshold_mode': self.threshold_mode,
+            'path': str(self.path),
+            'optimizer_path': str(self.optimizer_path),
+        }
+
+    def set_extra_state(self, state: dict) -> None:
+        self.patience = state['patience']
+        self.verbose = state['verbose']
+        self.counter = state['counter']
+        self.best_score = state['best_score']
+        self.corresponding_score = state['corresponding_score']
+        self.early_stop = state['early_stop']
+        self.score_last_save = state['score_last_save']
+        self.threshold = state['threshold']
+        self.threshold_mode = state['threshold_mode']
+        self.path = state['path']
+        self.optimizer_path = state['optimizer_path']

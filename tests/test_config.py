@@ -11,6 +11,17 @@ def test_config_store_singleton():
     cs2 = config.get_config_store()
     assert cs is cs2
 
+def test_config_store_registration_is_idempotent(monkeypatch):
+    cs = config.get_config_store()
+
+    def fail_store(*args, **kwargs):
+        raise AssertionError("ConfigStore.store() should not run after initial registration")
+
+    monkeypatch.setattr(cs, "store", fail_store)
+
+    cs2 = config.get_config_store()
+    assert cs2 is cs
+
 def test_solver_sequence_length_computed():
     s = config.SolverClass(simulationStartTime=0.0, simulationEndTime=1.0, timestep=0.2)
     # ceil((1-0)/0.2) + 1 = ceil(5) + 1 = 5
@@ -25,11 +36,27 @@ def test_lat_ode_type_invalid():
         config.latent_ode_network_class(lat_ode_type='invalid_type')
 
 def test_convert_cfg_to_dataclass():
-    dc = OmegaConf.create({'x': 1, 'y': {'z': 2}})
-    obj = config.convert_cfg_to_dataclass(dc)
-    assert isinstance(obj, dict)
-    assert obj['x'] == 1
-    assert obj['y']['z'] == 2
+    # Structured backing should round-trip to dataclass directly
+    structured_cfg = OmegaConf.structured(
+        config.train_test_config_class(
+            nn_model=config.base_nn_model_class()
+        )
+    )
+    structured_obj = config.convert_cfg_to_dataclass(structured_cfg)
+    assert isinstance(structured_obj, config.train_test_config_class)
+    assert isinstance(structured_obj.nn_model, config.base_nn_model_class)
+
+    # Flat config (no structured backing) should be reconstructed via model_type
+    flat_cfg = OmegaConf.create({
+        'nn_model': {
+            'model_type': 'bnode',
+            'network': {},
+            'training': {},
+        }
+    })
+    flat_obj = config.convert_cfg_to_dataclass(flat_cfg)
+    assert isinstance(flat_obj, config.train_test_config_class)
+    assert isinstance(flat_obj.nn_model, config.base_latent_ode_nn_model_class)
 
 def test_bnode_linear_mode():
     cls = config.latent_ode_network_class(linear_mode='mpc_mode')

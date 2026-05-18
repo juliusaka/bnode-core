@@ -104,6 +104,8 @@ import yaml
 import logging
 from pydantic import model_validator
 
+_CONFIG_STORE_REGISTERED = False
+
 ########################################################################################################################
 # Dataclasses
 ########################################################################################################################
@@ -432,6 +434,7 @@ class base_training_settings_class:
         batch_size (int): Training mini-batch size.
         max_epochs (int): Maximum number of epochs.
         lr_start (float): Initial learning rate.
+        optimizer (str): Optimizer type identifier ('adam' or 'lbfgs').
         beta1_adam (float): Adam beta1 parameter.
         beta2_adam (float): Adam beta2 parameter.
         weight_decay (float): L2 weight decay.
@@ -439,26 +442,68 @@ class base_training_settings_class:
         early_stopping_patience (int): Patience before early stopping.
         early_stopping_threshold (float): Improvement threshold for early stopping.
         early_stopping_threshold_mode (str): Threshold mode, typically 'rel' or 'abs'.
+        use_lr_scheduler (bool): Enable learning rate scheduler for this phase.
+        lr_scheduler_type (Optional[str]): Learning rate scheduler type identifier (e.g. 'cosine', 'plateau').
+        cosine_T_max (Optional[int]): Cosine scheduler horizon in epochs; if None, defaults to max_epochs/5.
+        cosine_eta_min (float): Minimum learning rate for cosine scheduler.
+        plateau_mode (str): Mode for ReduceLROnPlateau ('min' or 'max').
+        plateau_factor (float): Multiplicative factor of learning rate reduction on plateau.
+        plateau_patience (int): Number of epochs with no improvement before reducing LR. If none (default), set patience based on heuristic
+        plateau_threshold (float): Threshold for measuring new optimum.
+        plateau_threshold_mode (str): Threshold mode for plateau scheduler ('rel' or 'abs').
+        plateau_cooldown (int): Number of epochs to wait before resuming normal operation after LR has been reduced.
+        plateau_min_lr (float): Minimum learning rate for plateau scheduler.
+        plateau_eps (float): Minimal decay applied to LR.
+        lbfgs_max_iter (int): Maximum number of iterations per LBFGS step.
+        lbfgs_history_size (int): History size for LBFGS.
+        lbfgs_tolerance_grad (float): LBFGS gradient tolerance for convergence.
+        lbfgs_tolerance_change (float): LBFGS parameter-change tolerance for convergence.
+        lbfgs_line_search_fn (Optional[str]): Optional LBFGS line search function name.
+        lbfgs_n_steps_per_batch (int): Number of LBFGS steps to perform per batch.
         initialization_type (Optional[str]): Optional weight initialization scheme identifier.
     """
     batch_size: int = 64
     max_epochs: int = 1500
-    lr_start: float = 0.001
+    lr_start: float = 1e-4
+    optimizer: str = 'adam'
     beta1_adam: Optional[float] = 0.9
     beta2_adam: Optional[float] = 0.999
     weight_decay: float = 0.0
-    clip_grad_norm: float = 100.0
+    clip_grad_norm: float = 50.0
     early_stopping_patience: int = 50
     early_stopping_threshold: float = 0.000
     early_stopping_threshold_mode: str = 'abs'
+    # optional learning-rate scheduler configuration (shared across models)
+    use_lr_scheduler: bool = False
+    lr_scheduler_type: Optional[str] = None
+    cosine_T_max: Optional[int] = None
+    cosine_eta_min: float = 1e-5
+    plateau_mode: str = 'min'
+    plateau_factor: float = 0.5
+    plateau_patience: Optional[float] = None # if none, set patience based on heuristic
+    plateau_threshold: float = 1e-4
+    plateau_threshold_mode: str = 'rel'
+    plateau_cooldown: int = 0
+    plateau_min_lr: float = 1e-7
+    plateau_eps: float = 0
+    lbfgs_max_iter: int = 20
+    lbfgs_history_size: int = 100
+    lbfgs_tolerance_grad: float = 1e-7
+    lbfgs_tolerance_change: float = 1e-9
+    lbfgs_line_search_fn: Optional[str] = None
+    lbfgs_n_steps_per_batch: int = 1
     initialization_type: Optional[str] = None
 
 @dataclass
 class abstract_nn_model_class:
     """
     Marker base class for neural-network configuration objects.
+
+    Attributes:
+        model_type (Optional[str]): Discriminator for the nn_model variant
+            ('node', 'bnode', or None for simple feed-forward).
     """
-    pass
+    model_type: Optional[str] = None
 
 @dataclass
 class base_nn_model_class(abstract_nn_model_class):
@@ -623,6 +668,7 @@ class latent_ode_network_class(base_network_class):
         lat_states_dim (int): Dimension of latent state space.
         lat_parameters_dim (int): Dimension of latent parameter space.
         lat_controls_dim (int): Dimension of latent control space.
+        feedthrough_controls (Optional[List[Union[str, int]]]): List of control variable names (str) or indices (int) to pass directly to the decoder. When set, these controls are passed raw (normalized) to the decoder in addition to being encoded through the control encoder. This enables direct feed-through paths for selected control signals. Variable names are matched against the 'controls_names' stored in the HDF5 dataset. Defaults to None (no feedthrough).
     """
     n_linear_layers: int = 4
     linear_hidden_dim: int = 128
@@ -648,6 +694,15 @@ class latent_ode_network_class(base_network_class):
     lat_states_dim: int = 64
     lat_parameters_dim: int = 64
     lat_controls_dim: int = 64
+
+    feedthrough_controls: Optional[List[Union[str, int]]] = None
+    """List of control variable names (str) or indices (int) to pass directly to the decoder.
+    
+    When set, these controls are passed raw (normalized) to the decoder in addition to
+    being encoded through the control encoder. This enables direct feed-through paths
+    for selected control signals. Variable names are matched against the 'controls_names'
+    stored in the HDF5 dataset. Defaults to None (no feedthrough).
+    """
 
     # check field lat_ode_type
     @field_validator('lat_ode_type')
@@ -808,6 +863,7 @@ class base_neural_ode_training_settings_class():
         save_predictions_for (Optional[List[str]]): Dataset contexts for which predictions are saved when
             save_predictions_in_dataset is True. Typical entries are
             ['train', 'test', 'validation', 'common_test', 'testnorm', 'ref'].
+        test (bool): Enable a post-training test run.
         test_save_internal_variables (bool): Store internal variables during test for analysis.
         test_save_internal_variables_for (Optional[List[str]]): Dataset contexts for which internal
             variables are stored during testing. Uses the same context labels as save_predictions_for.
@@ -828,6 +884,7 @@ class base_neural_ode_training_settings_class():
     load_trained_model_for_test: bool = False
     save_predictions_in_dataset: bool = True
     save_predictions_for: Optional[List[str]] = field(default_factory=lambda: ['test']) # contexts: 'train', 'test', 'validation', 'common_test', 'testnorm', 'ref'
+    test: bool = True
     test_save_internal_variables: bool = False
     test_save_internal_variables_for: Optional[List[str]] = field(default_factory=lambda: ['test'])
     pre_trained_model_seq_len: Optional[int] = None
@@ -843,6 +900,7 @@ class base_neural_ode_training_settings_class():
     batch_size_override: Optional[int] = None
     batches_per_epoch_override: Optional[int] = None
     max_epochs_override: Optional[int] = None
+    optimizer_override: Optional[str] = None
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
@@ -851,6 +909,20 @@ class base_neural_ode_training_settings_class():
     early_stopping_patience_override: Optional[int] = None
     early_stopping_threshold_override: Optional[float] = None
     early_stopping_threshold_mode_override: Optional[str] = None
+
+    # learning-rate scheduler overrides (applied to all main_training phases)
+    use_lr_scheduler_override: Optional[bool] = None
+    lr_scheduler_type_override: Optional[str] = None
+    cosine_T_max_override: Optional[int] = None
+    cosine_eta_min_override: Optional[float] = None
+    plateau_mode_override: Optional[str] = None
+    plateau_factor_override: Optional[float] = None
+    plateau_patience_override: Optional[int] = None
+    plateau_threshold_override: Optional[float] = None
+    plateau_threshold_mode_override: Optional[str] = None
+    plateau_cooldown_override: Optional[int] = None
+    plateau_min_lr_override: Optional[float] = None
+    plateau_eps_override: Optional[float] = None
 
     reload_optimizer_override: Optional[bool] = None    
     solver_override: Optional[str] = None
@@ -875,10 +947,15 @@ class base_neural_ode_training_settings_class():
     def set_overrides(cls, v, info: ValidationInfo):
         default_class = base_time_stepper_training_settings()
         for i, training_settings in enumerate(v):
-            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'lr_start_override',
+            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override',
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
-                        'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
+                        'early_stopping_threshold_mode_override',
+                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'plateau_mode_override', 'plateau_factor_override', 'plateau_patience_override',
+                        'plateau_threshold_override', 'plateau_threshold_mode_override', 'plateau_cooldown_override',
+                        'plateau_min_lr_override', 'plateau_eps_override',
+                        'reload_optimizer_override','solver_override', 'load_seq_len_override', 
                         'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override','solver_rtol_override', 
                         'solver_atol_override', 'solver_step_size_override', 'solver_min_step_override', 'solver_norm_override',
                         'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override',]:
@@ -898,6 +975,7 @@ class base_ode_nn_model_class(abstract_nn_model_class):
         network (base_network_class): NN backbone used for the ODE model.
         training (base_neural_ode_training_settings_class): ODE training schedule and overrides.
     """
+    model_type: str = 'node'
     network: base_network_class = field(default_factory=base_network_class)
     training: base_neural_ode_training_settings_class = field(default_factory=base_neural_ode_training_settings_class)
 
@@ -998,6 +1076,7 @@ class base_latent_ode_training_settings_class:
     batch_size_override: Optional[int] = None
     batches_per_epoch_override: Optional[int] = None
     max_epochs_override: Optional[int] = None
+    optimizer_override: Optional[str] = None
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
@@ -1023,6 +1102,20 @@ class base_latent_ode_training_settings_class:
     # no override for break_after_loss_of as this should only used for one training phase
     # no override for activate_deterministic_mode_after_this_phase as this should only used for one training phase
 
+    # learning-rate scheduler overrides (applied to all main_training phases)
+    use_lr_scheduler_override: Optional[bool] = None
+    lr_scheduler_type_override: Optional[str] = None
+    cosine_T_max_override: Optional[int] = None
+    cosine_eta_min_override: Optional[float] = None
+    plateau_mode_override: Optional[str] = None
+    plateau_factor_override: Optional[float] = None
+    plateau_patience_override: Optional[int] = None
+    plateau_threshold_override: Optional[float] = None
+    plateau_threshold_mode_override: Optional[str] = None
+    plateau_cooldown_override: Optional[int] = None
+    plateau_min_lr_override: Optional[float] = None
+    plateau_eps_override: Optional[float] = None
+
     # additional to base_neural_ode_training_settings_class
     beta_start_override: Optional[float] = None
     alpha_mu_override: Optional[float] = None
@@ -1046,7 +1139,7 @@ class base_latent_ode_training_settings_class:
     def set_overrides(cls, v, info: ValidationInfo):
         default_class = latent_timestepper_training_settings()
         for i, training_settings in enumerate(v):
-            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'lr_start_override', 
+            for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override', 
                         'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
@@ -1057,7 +1150,11 @@ class base_latent_ode_training_settings_class:
                         'include_reconstruction_loss_state0_override', 'include_reconstruction_loss_outputs0_override',
                         'multi_shooting_condition_multiplier_override',
                         'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override', 'solver_norm_override',
-                        'include_states_grad_loss_override', 'include_outputs_grad_loss_override']:
+                        'include_states_grad_loss_override', 'include_outputs_grad_loss_override',
+                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'plateau_mode_override', 'plateau_factor_override', 'plateau_patience_override',
+                        'plateau_threshold_override', 'plateau_threshold_mode_override', 'plateau_cooldown_override',
+                        'plateau_min_lr_override', 'plateau_eps_override']:
                 if info.data[key] is not None:
                     # print warning if override is set and non-default value is used
                     if v[i].__getattribute__(key.split('_override')[0]) != default_class.__getattribute__(key.split('_override')[0]):
@@ -1078,7 +1175,14 @@ class base_latent_ode_training_settings_class:
                     logging.warning('otherwise excess states in latent ode are not learned to be ignored and the model fails')
         if n > 1:
             raise ValueError('Only one phase can have activate_deterministic_mode_after_this_phase set to True')
-        
+        # If phase i activates deterministic mode, force reload_optimizer=False on
+        # the next phase — the old optimizer state has stale momentum buffers for
+        # the pre-trimming parameter shapes.
+        for i, training_settings in enumerate(v):
+            if training_settings.activate_deterministic_mode_after_this_phase and i + 1 < len(v):
+                if v[i + 1].reload_optimizer is True:
+                    logging.warning('Setting reload_optimizer=False for phase %d (follows deterministic-mode activation)', i + 1)
+                    v[i + 1].reload_optimizer = False
         return v
 
 @dataclass
@@ -1090,6 +1194,7 @@ class base_latent_ode_nn_model_class(abstract_nn_model_class):
         network (latent_ode_network_class): Latent ODE network hyperparameters.
         training (base_latent_ode_training_settings_class): Latent ODE training configuration.
     """
+    model_type: str = 'bnode'
     network: latent_ode_network_class = field(default_factory=latent_ode_network_class)
     training: base_latent_ode_training_settings_class = field(default_factory=base_latent_ode_training_settings_class)
 
@@ -1110,6 +1215,7 @@ class train_test_config_class:
         dataset_ref_path (str): Alternatively, give path to this dataset.
         mlflow_tracking_uri (str): MLflow tracking server URI. If None, mlflow runs without server (direct to `./mlruns`).
         mlflow_experiment_name (str): MLflow experiment name.
+        mlflow_run_name (str): Optional MLflow run name. If None, MLflow assigns a default name.
         use_amp (bool): Enable automatic mixed precision. Should not be used for NODE/BNODE models.
         use_cuda (bool): Use CUDA if available.
         raise_exception (bool): If True, re-raise exceptions for debugging. Otherwise, log and continue.
@@ -1129,6 +1235,7 @@ class train_test_config_class:
         
     mlflow_tracking_uri: Optional[str] = None
     mlflow_experiment_name: str = 'Default'
+    mlflow_run_name: Optional[str] = None
     
     use_amp: bool = False
     use_cuda: bool = True
@@ -1224,6 +1331,8 @@ class onnx_export_config_class(load_latent_ode_config_class):
         model_checkpoint_path (Optional[str]): Direct path to a model checkpoint file.
         config_path (Optional[str]): Path to a saved Hydra config to reproduce settings.
         dataset_path (Optional[str]): Path to a dataset used during export/evaluation.
+        siso (bool): If True, export a single-input-single-output (SISO) version of the model. This is required
+            e.g. for usage in smartint.
     """
     output_dir: Optional[str] = None
     model_directory: Optional[str] = None
@@ -1232,6 +1341,7 @@ class onnx_export_config_class(load_latent_ode_config_class):
     model_checkpoint_path: Optional[str] = None
     config_path: Optional[str] = None
     dataset_path: Optional[str] = None
+    siso: bool = False
 
     @model_validator(mode='after')
     def _check_exclusive_model_source(self):
@@ -1252,7 +1362,12 @@ def get_config_store() -> ConfigStore:
 
         cs: ConfigStore instance with registered configurations.    
     """
+    global _CONFIG_STORE_REGISTERED
+
     cs = ConfigStore.instance()
+    if _CONFIG_STORE_REGISTERED:
+        return cs
+
     cs.store(name='base_data_gen', node=data_gen_config)
     cs.store(group='pModel', name='base_pModel', node=base_pModelClass)
 
@@ -1281,6 +1396,7 @@ def get_config_store() -> ConfigStore:
 
     # onnx export
     cs.store(name='base_onnx_export', node=onnx_export_config_class)
+    _CONFIG_STORE_REGISTERED = True
     return cs
 
 ########################################################################################################################
@@ -1290,7 +1406,14 @@ def get_config_store() -> ConfigStore:
 
 def convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass:
     '''
-    Converts a hydra config object to a dataclass
+    Converts a hydra config object to a dataclass.
+
+    When the DictConfig has structured config backing (normal Hydra composition
+    with ``defaults:``), ``OmegaConf.to_object`` returns a Pydantic dataclass
+    directly.  When loading a flat validated YAML (no ``defaults:`` list),
+    ``OmegaConf.to_object`` returns a plain dict instead.  In that case we
+    reconstruct the proper Pydantic dataclass hierarchy using the
+    ``nn_model.model_type`` discriminator field.
     
     Args:
         cfg: hydra config object / that is omegaconf.dictconfig.DictConfig
@@ -1299,9 +1422,31 @@ def convert_cfg_to_dataclass(cfg: DictConfig) -> dataclass:
         cfg: dataclass
     '''
     logging.info('Validating config...')
-    cfg = OmegaConf.to_object(cfg)
-    logging.info('Validatied config and converted to dataclass')
-    return cfg
+    obj = OmegaConf.to_object(cfg)
+
+    if not isinstance(obj, dict):
+        # Structured config backing present — already a Pydantic dataclass
+        logging.info('Validated config and converted to dataclass')
+        return obj
+
+    # Flat YAML without structured backing — construct Pydantic dataclasses
+    logging.info('Config resolved to plain dict, reconstructing dataclasses via model_type...')
+    nn_model_dict = obj.get('nn_model', {})
+    model_type = nn_model_dict.get('model_type')
+
+    if model_type == 'node':
+        nn_model_obj = base_ode_nn_model_class(**nn_model_dict)
+    elif model_type == 'bnode':
+        nn_model_obj = base_latent_ode_nn_model_class(**nn_model_dict)
+    elif model_type is None:
+        nn_model_obj = base_nn_model_class(**nn_model_dict)
+    else:
+        raise ValueError(f"Unknown nn_model.model_type: '{model_type}'. Expected 'node', 'bnode', or None.")
+
+    obj['nn_model'] = nn_model_obj
+    result = train_test_config_class(**obj)
+    logging.info('Validated config and converted to dataclass')
+    return result
 
 def save_dataclass_as_yaml(cfg: dataclass, path: str):
     '''
