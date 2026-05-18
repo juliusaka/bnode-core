@@ -61,7 +61,6 @@ def _resume_training_overrides(
     if scheduler_phase is not None:
         overrides.extend(
             [
-                f'nn_model.training.main_training.{scheduler_phase}.use_lr_scheduler=true',
                 f'nn_model.training.main_training.{scheduler_phase}.lr_scheduler_type=cosine',
                 f'nn_model.training.main_training.{scheduler_phase}.cosine_T_max=2',
                 f'nn_model.training.main_training.{scheduler_phase}.cosine_eta_min=1e-6',

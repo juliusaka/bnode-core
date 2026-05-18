@@ -165,7 +165,7 @@ If `pre_train=False` and `train_cfg.reload_optimizer=True`, the optimizer state 
 
 ### 2.4 Learning Rate Schedulers — `_create_phase_lr_schedulers()`
 
-Schedulers are only created for main-training phases (`pre_train=False`, `test=False`) when `train_cfg.use_lr_scheduler=True`.
+Schedulers are only created for main-training phases (`pre_train=False`, `test=False`) when `train_cfg.lr_scheduler_type` is not `None`.
 
 | `lr_scheduler_type` | Scheduler | Step trigger |
 |---|---|---|
@@ -251,11 +251,13 @@ checkpoint_store.clear_restart_artifacts()
 
 ```
 batches_per_epoch = len(train_loader)  if train_cfg.batches_per_epoch is None  else train_cfg.batches_per_epoch
+warmup_epochs     = train_cfg.warmup_epochs  # 0 for pre-train phases
+warmup_batches    = warmup_epochs * batches_per_epoch
 epochs_for_seq_len_increase = int(seq_len_increase_in_batches / batches_per_epoch)   # floor
-max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
+max_epochs = train_cfg.max_epochs + warmup_epochs + epochs_for_seq_len_increase
 ```
 
-If `seq_len_epoch_start >= seq_len_train` (no ramp needed), `epochs_for_seq_len_increase = 0` and `train_cfg.seq_len_increase_in_batches` is zeroed.
+Warmup and seq_len_increase run **sequentially** — their epoch budgets are added together (not max'ed). If `seq_len_epoch_start >= seq_len_train` (no ramp needed), `epochs_for_seq_len_increase = 0` and `train_cfg.seq_len_increase_in_batches` is zeroed.
 
 ---
 
@@ -269,7 +271,7 @@ for epoch in range(epoch_0, phase_epoch_0 + max_epochs):
         break
     # --- termination checks ---
     flag_max_epoch = epoch == epoch_stop - 1
-    flag_early_stopping = early_stopping.early_stop and flag_out_of_seq_len_increase
+    flag_early_stopping = early_stopping.early_stop and flag_out_of_seq_len_increase and flag_out_of_warmup
     flag_break_after_loss = early_stopping.best_score < train_cfg.break_after_loss_of  # if configured
     _nan_counter_threshold = 50
     flag_nan_counter = phase_state.nan_counter > _nan_counter_threshold
@@ -604,30 +606,35 @@ So the next phase starts at the ending length of the previous phase.
 
 ```python
 _batches_this_phase = epoch_this_phase * batches_per_epoch + batch_idx
-if _batches_this_phase < train_cfg.seq_len_increase_in_batches:
-    _seq_len_now = seq_len_epoch_start + int(
-        _batches_this_phase / seq_len_increase_in_batches
-        * (seq_len_train - seq_len_epoch_start)
-    )
-    _seq_len_now = min(_seq_len_now, seq_len_train)
-    # truncate all 3D tensors in data_batch along the time axis:
-    for key in data_batch:
-        if len(data_batch[key].shape) == 3:
-            data_batch[key] = data_batch[key][:, :, :_seq_len_now]
+if _batches_this_phase < warmup_batches:
+    # Warmup phase: freeze seq_len at the start value
+    _seq_len_now = seq_len_epoch_start
+elif seq_len_increase_in_batches > 0:
+    _batches_after_warmup = _batches_this_phase - warmup_batches
+    if _batches_after_warmup < seq_len_increase_in_batches:
+        _seq_len_now = seq_len_epoch_start + int(
+            _batches_after_warmup / seq_len_increase_in_batches
+            * (seq_len_train - seq_len_epoch_start)
+        )
+        _seq_len_now = min(_seq_len_now, seq_len_train)
+    else:
+        _seq_len_now = seq_len_train
 else:
     _seq_len_now = seq_len_train
 ```
 
-Linear interpolation from `seq_len_epoch_start` to `seq_len_train` over `seq_len_increase_in_batches` batches.
+During warmup, seq_len is frozen at `seq_len_epoch_start`. After warmup, the ramp uses the **offset** batch count (`_batches_after_warmup`) so that `seq_len_increase_in_batches` means "batches of ramp after warmup ends" — the user-facing config meaning is unchanged.
 
 ### 8.5 Epoch Budget — `_compute_phase_epoch_settings()`
 
 ```python
+warmup_epochs = train_cfg.warmup_epochs        # 0 for pre-train phases
+warmup_batches = warmup_epochs * batches_per_epoch
 epochs_for_seq_len_increase = int(seq_len_increase_in_batches / batches_per_epoch)  # floor
-max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
+max_epochs = train_cfg.max_epochs + warmup_epochs + epochs_for_seq_len_increase
 ```
 
-The extra epochs ensure that early stopping patience is not consumed during the warm-up window.
+Warmup and seq_len_increase budgets are **added sequentially**. Both ensure early stopping patience is not consumed while LR or seq_len are still ramping.
 
 ### 8.6 Early Abort of Curriculum — `flag_out_of_seq_len_increase`
 
@@ -640,9 +647,47 @@ if (phase_state.stable_epochs > train_cfg.seq_len_increase_abort_after_n_stable_
     epoch_stop = phase_epoch_0 + train_cfg.max_epochs + (epoch - phase_epoch_0)
 ```
 
-`phase_state.stable_epochs` is incremented when `loss_validation < 2 * loss_train` (model generalises well) and reset to 0 otherwise.
+`phase_state.stable_epochs` is incremented when `loss_validation < 2 * loss_train` (model generalises well) and reset to 0 otherwise. Stable epochs are **only counted after warmup is complete** (`flag_out_of_warmup is True`), since seq_len does not increase during warmup.
 
-Once `batches_this_phase > seq_len_increase_in_batches`, `flag_out_of_seq_len_increase = True` and early stopping becomes active.
+Once `batches_this_phase >= warmup_batches + seq_len_increase_in_batches`, `flag_out_of_seq_len_increase = True` and early stopping becomes active (provided warmup is also complete).
+
+---
+
+## 8.7 LR Warm-Up — `warmup_epochs`
+
+### Purpose
+
+Ramp the learning rate from 0 to `lr_start` per batch over the first `warmup_epochs` epochs of a phase, before the main LR scheduler takes over. Prevents large early gradient steps from destabilising the model.
+
+### Configuration
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `train_cfg.warmup_epochs` | `int` | `0` | Epochs to ramp LR 0 → `lr_start`; 0 disables warmup |
+
+### Scheduler Composition
+
+`_create_phase_lr_schedulers()` creates a `torch.optim.lr_scheduler.LinearLR(start_factor=1e-8, end_factor=1.0, total_iters=warmup_batches)` warmup scheduler. Its placement depends on the main scheduler:
+
+| Main scheduler | Warmup storage |
+|---|---|
+| `cosine` | `SequentialLR([warmup, cosine], milestones=[warmup_batches])` under `'cosine'` key — stepped per batch |
+| `plateau` | `LinearLR` under `'warmup'` key; `ReduceLROnPlateau` under `'plateau'` key — plateau gated by `flag_out_of_warmup` |
+| none | `LinearLR` under `'warmup'` key — stepped per batch |
+
+### Guards
+
+- **Plateau stepping**: only when `flag_out_of_warmup is True`.
+- **Stable-epoch counting**: only when `flag_out_of_warmup is True`.
+- **Early stopping gate**: `early_stopping.early_stop and flag_out_of_seq_len_increase and flag_out_of_warmup`.
+
+### Counter Reset
+
+`early_stopping.reset_counter()` is called when the **last** of the two flags (`flag_out_of_warmup`, `flag_out_of_seq_len_increase`) transitions to True, so patience starts fresh at normal training conditions.
+
+### Resume Behaviour
+
+`flag_out_of_warmup` is re-derived at resume time from `phase_state.phase_epoch * batches_per_epoch >= warmup_batches` — no extra persisted field is needed.
 
 ---
 
@@ -671,14 +716,14 @@ When improved: saves model + optimizer checkpoint, resets counter.
 When not improved: increments counter.  
 When `counter >= patience`: sets `early_stop = True`.
 
-**Counter reset after curriculum**: `early_stopping.reset_counter()` is called when `flag_out_of_seq_len_increase` transitions to True, so patience starts fresh at full sequence length.
+**Counter reset after curriculum**: `early_stopping.reset_counter()` is called when the last of `flag_out_of_seq_len_increase` and `flag_out_of_warmup` transitions to True, so patience starts fresh at normal training conditions.
 
 ### Phase Termination Conditions (checked at top of each epoch)
 
 | Flag | Condition | MLflow tag |
 |---|---|---|
 | `flag_max_epoch` | `epoch == epoch_stop - 1` | `'max epochs'` |
-| `flag_early_stopping` | `early_stopping.early_stop and flag_out_of_seq_len_increase` | `'early stopping'` |
+| `flag_early_stopping` | `early_stopping.early_stop and flag_out_of_seq_len_increase and flag_out_of_warmup` | `'early stopping'` |
 | `flag_break_after_loss` | `early_stopping.best_score < train_cfg.break_after_loss_of` | `'break after loss'` |
 | `flag_nan_counter` | `phase_state.nan_counter > 50` | `'50 NaNs in loss'` |
 

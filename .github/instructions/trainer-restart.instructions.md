@@ -41,6 +41,7 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - retry batch-size locals
   - `first_epoch_is_evaluation`
   - `flag_out_of_seq_len_increase`
+  - `flag_out_of_warmup` — re-derived from `phase_state.phase_epoch * batches_per_epoch >= warmup_batches` on resume; no extra persisted field needed
   - `epoch_stop`
   - checkpoint-path locals
   - `_seq_len_now`
