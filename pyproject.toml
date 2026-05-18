@@ -119,5 +119,9 @@ omit = ["tests/*"]
 
 [tool.pytest.ini_options]
 # this enables pytest to automatically use all available cores.
-# loadscope ensures tests in the same scope (file/class) run sequentially, respecting dependencies
-addopts = "-n auto --dist loadscope"
+# --dist load distributes each test to the next available worker for maximum CPU utilisation.
+# The only file with inter-test ordering (test_data_generation_and_preperation.py) uses
+# pytest-dependency markers, which still enforce skipping if a prerequisite fails under --dist load.
+addopts = "-n auto --dist load"
+testpaths = ["tests"]
+norecursedirs = ["tests/_results", "__pycache__"]

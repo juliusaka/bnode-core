@@ -23,6 +23,9 @@ import logging
 
 from pathlib import Path
 from bnode_core.config import data_gen_config, convert_cfg_to_dataclass
+from bnode_core.ode.trainer_utils.restart_state import (
+    RESTART_CHECKPOINT_FILENAME,
+)
 
 
 def config_dir_auto_recognize() -> Path:
@@ -422,6 +425,11 @@ def filepath_optimizer_current_hydra_output(phase: int | None = None) -> Path:
         return dir_current_hydra_output() / 'optimizer_phase_{}.pt'.format(phase)
     else:
         return dir_current_hydra_output() / 'optimizer.pt'
+
+
+def filepath_restart_checkpoint_current_hydra_output() -> Path:
+    """Return the restart checkpoint bundle path in the current Hydra output dir."""
+    return dir_current_hydra_output() / RESTART_CHECKPOINT_FILENAME
 
 
 def filepath_from_ml_artifacts_uri(mlflow_uri: str) -> Path:

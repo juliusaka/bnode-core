@@ -9,6 +9,12 @@ from bnode_core.nn.nn_utils.load_data import (
 )
 
 
+TIMING_DATASET_N = 128
+TIMING_DATASET_T = 1000
+TIMING_SEQ_LEN = 10
+TIMING_BATCH_SIZE = 64
+
+
 def _build_dummy_datasets(N: int = 3, T: int = 10, seq_len: int = 4, stride: int = 1):
     """Create matching LegacyTimeSeriesDataset and TimeSeriesDataset on random data."""
     torch.manual_seed(0)
@@ -219,8 +225,13 @@ def test_timeseries_dataset_timing_comparison():
     uv run pytest -s bnode_core/tests/nn/test_timeseries_dataset.py::test_timeseries_dataset_timing_comparison
 
     """
-    # Use a slightly larger dummy dataset to make timing measurable
-    legacy, modern = _build_dummy_datasets(N=2048, T=8000, seq_len=10)
+    # Keep the synthetic dataset large enough for a useful timing signal while
+    # staying memory-safe in shared test runners such as VS Code.
+    legacy, modern = _build_dummy_datasets(
+        N=TIMING_DATASET_N,
+        T=TIMING_DATASET_T,
+        seq_len=TIMING_SEQ_LEN,
+    )
 
     n = 1024  # number of windows to iterate over; can adjust for longer/shorter timing
 
@@ -257,7 +268,11 @@ def test_timeseries_dataset_getitems_timing_comparison():
 
     uv run pytest -s bnode_core/tests/nn/test_timeseries_dataset.py::test_timeseries_dataset_getitems_timing_comparison
     """
-    legacy, modern = _build_dummy_datasets(N=2048, T=8000, seq_len=10)
+    legacy, modern = _build_dummy_datasets(
+        N=TIMING_DATASET_N,
+        T=TIMING_DATASET_T,
+        seq_len=TIMING_SEQ_LEN,
+    )
 
     n = 100
     batch_size = 800
@@ -332,8 +347,8 @@ def test_timeseries_dataset_dataloader_overhead():
     # Use a moderately large dummy dataset to make timings measurable
 
     print("Starting Test: TimeSeriesDataset DataLoader Overhead Comparison")
-    N, T, seq_len = 1024, 8000, 10
-    bs = 128
+    N, T, seq_len = TIMING_DATASET_N, TIMING_DATASET_T, TIMING_SEQ_LEN
+    bs = TIMING_BATCH_SIZE
 
     torch.manual_seed(0)
     time_base = torch.arange(T, dtype=torch.float32)
