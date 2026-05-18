@@ -224,6 +224,8 @@ def fmu_simulate(fmu_path,
     # final length of outputs is i+1
     # record the final output
     if sim_succesful:
+        if control_values is not None:
+            fmu.setReal(vr=control_refs, value=control_values[:,i])
         record_data(i+1)
     
     try:
@@ -319,6 +321,25 @@ def simulate_and_plot(cfg: data_gen_config, plot: bool = False, return_res: bool
     outputs, states, states_der, controls_from_model = res['outputs'], res['states'], res['states_der'], res['controls_from_model']
     logging.info('simulation successful: ' + str(res['success']))
 
+    # Perform min/max scaling of variables for plotting
+    # Get min/max values for each variable type
+    data_arrays = [outputs, states, states_der, ctrl_values, controls_from_model]
+    scaled_arrays = []
+    
+    for data in data_arrays:
+        if data is not None:
+            data_min = np.min(data, axis=1, keepdims=True)
+            data_max = np.max(data, axis=1, keepdims=True)
+            data_range = data_max - data_min
+            data_range[data_range == 0] = 1
+            scaled_data = (data - data_min) / data_range
+        else:
+            scaled_data = None
+        scaled_arrays.append(scaled_data)
+    
+    outputs, states, states_der, ctrl_values, controls_from_model = scaled_arrays
+
+
     if plot:
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(5,1, sharex=True)
@@ -331,26 +352,26 @@ def simulate_and_plot(cfg: data_gen_config, plot: bool = False, return_res: bool
             for i in range(len(cfg.pModel.RawData.outputs)):
                 ax[0].plot(x, outputs[i,:], label=cfg.pModel.RawData.outputs[i])
         ax[0].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-        ax[0].set_title('outputs')
+        ax[0].set_title('outputs (min-max scaled)')
         for i in range(len(cfg.pModel.RawData.states.keys())):
             ax[1].plot(x, states[i,:], label=list(cfg.pModel.RawData.states.keys())[i])
         ax[1].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-        ax[1].set_title('states')
+        ax[1].set_title('states (min-max scaled)')
         if cfg.pModel.RawData.states_der_include:
             for i in range(len(cfg.pModel.RawData.states.keys())):
                 ax[2].plot(x, states_der[i,:], label=list(cfg.pModel.RawData.states.keys())[i])
             ax[2].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-            ax[2].set_title('state derivatives')
+            ax[2].set_title('state derivatives (min-max scaled)')
         if cfg.pModel.RawData.controls_include:
             for i in range(len(cfg.pModel.RawData.controls.keys())):
                 ax[3].plot(x, ctrl_values[i,:], label=list(cfg.pModel.RawData.controls.keys())[i])
             ax[3].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-            ax[3].set_title('controls')
+            ax[3].set_title('controls (min-max scaled)')
         if cfg.pModel.RawData.controls_only_for_sampling_extract_actual_from_model:
             for i in range(len(cfg.pModel.RawData.controls_from_model)):
                 ax[4].plot(x, controls_from_model[i,:], label=cfg.pModel.RawData.controls_from_model[i])
             ax[4].legend(fontsize=6, bbox_to_anchor=(1.005, 1), loc='upper left')
-            ax[4].set_title('controls from model')
+            ax[4].set_title('controls from model (min-max scaled)')
         plt.show()
     if return_res:
         return res

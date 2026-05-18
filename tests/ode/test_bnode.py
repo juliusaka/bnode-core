@@ -1,40 +1,4 @@
-import sys
-import os
-import hydra
-import shutil
-from pathlib import Path
-from bnode_core.ode import trainer
-from bnode_core.config import get_config_store
-
-def ode_training(test_case: str, overrides: list[str] = [],):
-    os.environ['HYDRA_FULL_ERROR'] = '1'
-    cs = get_config_store()
-    # avoid passing pytest's CLI args into the called main()
-    orig_argv = sys.argv[:]
-    test_dir = Path('./tests/_results/ode') / ('test_' + test_case)
-    if test_dir.exists():
-        shutil.rmtree(test_dir, ignore_errors=True) 
-    sys.argv = [orig_argv[0], 
-                '--config-dir=resources/config',
-                '--config-name=train_test_ode_pytest',
-                f"hydra.run.dir={str(test_dir.absolute())}"
-                ]
-    sys.argv += overrides
-    trainer.main()
-    sys.argv = orig_argv
-    return test_dir
-
-def ode_training_params(test_case: str, overrides: list[str] = []):
-    overrides += [
-        'dataset_path=resources/data/surrogate-test-data/data/datasets/StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest/StratifiedHeatFlowModel_v3_p-R_c-RROCS__n-100_pytest_dataset.hdf5',
-    ]
-    ode_training(test_case, overrides=overrides)
-
-def ode_training_initial_states(test_case: str, overrides: list[str] = []):
-    overrides += [
-        'dataset_path=resources/data/surrogate-test-data/data/datasets/SimpleSeriesResonance_v4_s-R__n-100_pytest/SimpleSeriesResonance_v4_s-R__n-100_pytest_dataset.hdf5',
-    ]
-    ode_training(test_case, overrides=overrides)
+from bnode_test_helpers import ode_training, ode_training_params, ode_training_initial_states
 
 
 def test_bnode_training():
@@ -175,7 +139,7 @@ def test_only_initial_states_linear_mpc():
 
 # Deterministic mode tests (simplified - complex nested list override skipped as requested)
 
-def test_determistic_mode():
+def test_deterministic_mode():
     """Test activate_deterministic_mode_after_this_phase=true """
     ode_training('deterministic_mode_after_phase1', overrides=[
         'nn_model=bnode_pytest_det',

@@ -11,10 +11,12 @@ import h5py
 import torch
 from pathlib import Path
 import logging
+import numpy as np
 from omegaconf import OmegaConf
 from bnode_core.config import base_pModelClass, train_test_config_class
 from bnode_core.filepaths import filepath_dataset_config_from_name, filepath_dataset_from_config
 from typing import Tuple, Optional, Union
+from torch.utils.data import default_collate
 
 def load_validate_dataset_config(path: Path) -> base_pModelClass:
     """Load and validate dataset configuration from YAML file.
@@ -76,11 +78,27 @@ def load_dataset_and_config(dataset_name: str, dataset_path: str) -> Tuple[h5py.
         dataset_config = load_validate_dataset_config(_path)
     return dataset, dataset_config
 
+
+def timeseries_collate_fn(batch):
+        """Collate function compatible with both __getitem__ and __getitems__.
+
+        - If ``batch`` is a dict of already-batched tensors (as returned by
+            ``TimeSeriesDataset.__getitems__`` when used by newer PyTorch DataLoader
+            implementations), it is returned unchanged.
+        - Otherwise, it falls back to PyTorch's default_collate for standard
+            list-of-samples batches.
+        """
+        if isinstance(batch, dict):
+                return batch
+        return default_collate(batch)
+
 def make_stacked_dataset(
     dataset: h5py.File, 
     context: str, 
     seq_len_from_file: Optional[int] = None, 
-    seq_len_batches: Optional[int] = None
+    seq_len_batches: Optional[int] = None,
+    stride: int = 1, 
+    max_samples: Optional[int] = None
 ) -> Union[torch.utils.data.StackDataset, 'TimeSeriesDataset']:
     """Create a PyTorch dataset from HDF5 data with optional time series batching.
     
@@ -98,6 +116,8 @@ def make_stacked_dataset(
         seq_len_batches (int, optional): If provided, returns a TimeSeriesDataset that extracts
             subsequences of this length via sliding window. If None, returns standard StackDataset
             with full sequences. Defaults to None.
+        max_samples (int, optional): If provided, limits the number of samples in the returned dataset.
+            Defaults to None (no limit). Only applicable if seq_len_batches is not None.
     
     Returns:
         torch.utils.data.StackDataset or TimeSeriesDataset: A dataset that yields dictionaries
@@ -135,7 +155,7 @@ def make_stacked_dataset(
         return kwargs
 
     # make torch dataset with dict as output
-    dataset_type = torch.utils.data.StackDataset if seq_len_batches is None else lambda *args, **kwargs: TimeSeriesDataset(seq_len_batches, *args, **kwargs)
+    dataset_type = torch.utils.data.StackDataset if seq_len_batches is None else lambda *args, **kwargs: TimeSeriesDataset(seq_len_batches, stride=stride, max_samples=max_samples, *args, **kwargs)
     torch_dataset = dataset_type(
         **_delete_nones(
             time = torch.tensor(time, dtype=torch.float32).unsqueeze(0).expand(states.shape[0], -1).unsqueeze(1),
@@ -154,9 +174,9 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
     
     Extends StackDataset to enable extracting subsequences from longer time series via a
     sliding window approach. The full sequences are stored internally, but __getitem__
-    returns only a subsequence of specified length. This enables training on different
-    sequence lengths without reloading data, and increases effective dataset size by
-    treating each sliding window position as a separate sample.
+    returns only a subsequence of specified length. Windows advance by the configured
+    stride, and the number of windows per sample uses floor division. This increases
+    effective dataset size by treating each window position as a separate sample.
     
     The dataset expects dict-style data with a 'time' key, where all time series have shape
     (n_samples, n_channels, n_timesteps). Non-time-series data (2D) is replicated across
@@ -164,17 +184,18 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
     
     Attributes:
         seq_len (int): Length of subsequences returned by __getitem__.
-        mapping (list): List of [sample_idx, start_pos, end_pos] tuples defining each
-            sliding window position across all samples.
         _length (int): Total number of sliding windows (dataset length).
         _length_old (int): Original number of samples before windowing.
+        _n_windows_per_sample (int): Number of windows per original sample.
     """
-    def __init__(self, seq_len: int, *args, **kwargs):
+    def __init__(self, seq_len: int, stride: int = 1, max_samples: int = None, *args, **kwargs):
         """Initialize TimeSeriesDataset with sliding window parameters.
         
         Args:
             seq_len (int): Length of subsequences to extract. If larger than available
                 time series length, will be clamped to maximum available length.
+            stride (int): Stride for sliding window positions. Default is 1.
+            max_number_of_samples (int, optional): If provided, limits the number of samples in the dataset.
             *args: Positional arguments passed to parent StackDataset.
             **kwargs: Keyword arguments passed to parent StackDataset. Must result in
                 a dict-style dataset with a 'time' key.
@@ -190,8 +211,65 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
             Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
             seq_len = self.datasets['time'].shape[2]
         self.seq_len = seq_len
-        self.initialize_map(seq_len)
+        # clamp stride so there is at least 1 window per sample
+        _full_windows = self.datasets['time'].shape[2] - seq_len + 1
+        # the max stride that still allows at least 1 window per sample is _full_windows
+        if stride > _full_windows:
+            logging.warning(f'stride {stride} exceeds available windows {_full_windows} for seq_len {seq_len}, clamping stride to {_full_windows}')
+            stride = _full_windows
+        self.max_samples = max_samples
+        # calculate effective stride to be at or below max_samples if needed
+        if max_samples is not None:
+            stride = self.calculate_effective_stride(
+                N=self._length_old,
+                T=self.datasets['time'].shape[2],
+                seq_len=seq_len,
+                stride=stride,
+                max_samples=max_samples,
+            )
+            logging.info(f'Calculated effective stride {stride} to limit number of samples to {max_samples}')
+        self.stride = stride
 
+        # build sliding-window tensor views for all time-series tensors
+        self._build_window_views(seq_len, self.stride)
+
+    @staticmethod
+    def calculate_effective_stride(N: int, T: int, seq_len: int, stride: int, max_samples: Optional[int] = None) -> int:
+        """Compute an effective stride so that total windows do not exceed ``max_samples``.
+
+        Uses the same window-counting convention as ``_build_window_views``:
+        full_windows_per_sample = T - (seq_len - 1)
+        windows_per_sample(stride) = full_windows_per_sample // stride.
+        """
+        if max_samples is None:
+            return stride
+
+        assert N > 0, "N must be positive"
+        assert stride > 0, "stride must be positive"
+
+        full_windows_per_sample = T - (seq_len - 1)
+        assert full_windows_per_sample > 0, "seq_len must be <= time series length"
+
+        # windows for the initial stride
+        windows_per_sample = full_windows_per_sample // stride
+        if windows_per_sample <= 0:
+            windows_per_sample = 1
+
+        total_windows = windows_per_sample * N
+        if total_windows <= max_samples:
+            return stride
+
+        # Maximum windows per sample allowed under the global max_samples constraint
+        max_windows_per_sample = max_samples // N
+        if max_windows_per_sample <= 0:
+            max_windows_per_sample = 1
+
+        # Factor by which we need to increase the stride: use ceiling
+        # so that windows_per_sample / factor <= max_windows_per_sample.
+        factor = int(np.ceil(windows_per_sample / max_windows_per_sample))
+        effective_stride = stride * max(1, factor)
+        return effective_stride
+    
     def set_seq_len(self, seq_len: int):
         """Change the subsequence length and rebuild the sliding window mapping.
         
@@ -203,15 +281,240 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
             Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
             seq_len = self.datasets['time'].shape[2]
         self.seq_len = seq_len
-        self.initialize_map(seq_len)
+        # rebuild sliding-window tensor views
+        # validate stride with max_samples if needed
+        if self.max_samples is not None:
+            new_stride = self.calculate_effective_stride(
+                N=self._length_old,
+                T=self.datasets['time'].shape[2],
+                seq_len=seq_len,
+                stride=self.stride,
+                max_samples=self.max_samples,
+            )
+            logging.info(f'Calculated effective stride {new_stride} to limit number of samples to {self.max_samples}')
+            self.stride = new_stride
+        self._build_window_views(seq_len, self.stride)
 
-    def initialize_map(self, seq_len: int):
+    def _build_window_views(self, seq_len: int, stride: int = 1) -> None:
+        """Build sliding-window tensor views for all time-series tensors.
+
+        This replaces the explicit Python mapping with tensor views created via
+        ``as_strided`` so that each window can be accessed by simple tensor
+        indexing. The original full-length tensors remain in ``self.datasets``.
+
+        Args:
+            seq_len (int): Length of sliding windows. Must be at least 1.
+        """
+        assert seq_len > 0, "seq_len must be at least 1"
+        assert stride > 0, "stride must be at least 1"
+
+        self.stride = stride
+
+        time_tensor = self.datasets['time']
+        assert time_tensor.ndim == 3, "time tensor must have shape (N, C_time, T)"
+
+        N = self._length_old  # original number of samples
+        T = time_tensor.shape[2]
+
+        # number of windows per sample with given stride (floor division like legacy)
+        full_windows_per_sample = T - (seq_len - 1)
+        n_windows_per_sample = full_windows_per_sample // stride
+        assert n_windows_per_sample > 0, "seq_len must be <= time series length"
+
+        self._n_windows_per_sample = n_windows_per_sample
+        self._length = int(N * n_windows_per_sample)
+
+        # legacy-style index map (matches LegacyTimeSeriesDataset stride behavior)
+        map_sample_idx = [0] * self._length
+        map_window_start = [0] * self._length
+        k_stop = seq_len
+        j = 0
+        for i in range(self._length):
+            map_sample_idx[i] = j
+            map_window_start[i] = k_stop - seq_len
+            k_stop += stride
+            if k_stop > T:
+                k_stop = seq_len
+                j += 1
+
+        self._map_sample_idx = torch.as_tensor(map_sample_idx, dtype=torch.long)
+        self._map_window_start = torch.as_tensor(map_window_start, dtype=torch.long)
+
+        # dictionaries holding windowed (3D -> 4D views) and per-sequence (2D) tensors
+        self._windowed = {}
+        self._per_seq = {}
+
+        for key, value in self.datasets.items():
+            if value.ndim == 3:
+                # value: (N, C, T)
+                x = value.contiguous()
+                sN, sC, sT = x.stride()
+                C = x.shape[1]
+                size = (N, full_windows_per_sample, C, seq_len)
+                stride_view = (sN, sT, sC, sT)
+                self._windowed[key] = x.as_strided(size=size, stride=stride_view)
+            elif value.ndim == 2:
+                # per-sample data: (N, D)
+                self._per_seq[key] = value
+            else:
+                # keep as-is and broadcast per sample if needed in __getitem__
+                self._per_seq[key] = value
+
+
+    def __getitem__(self, index: int) -> dict:
+        """Get a single sliding window sample.
+        
+        Args:
+            index (int): Index of the sliding window to retrieve.
+        
+        Returns:
+            dict: Dictionary with same keys as self.datasets. For 3D+ arrays (time series),
+                returns subsequence [start:end] from appropriate sample. For 2D arrays,
+                returns full array for the sample.
+        """
+        ret_val = {}
+        idx = int(index)
+        sample_idx = int(self._map_sample_idx[idx])
+        window_idx = int(self._map_window_start[idx])
+
+        # time-series tensors: use precomputed window views
+        for key, w in self._windowed.items():
+            # w shape: (N, n_windows_per_sample, C, seq_len)
+            ret_val[key] = w[sample_idx, window_idx]
+
+        # per-sample tensors: index by original sample index
+        for key, value in self._per_seq.items():
+            if value.ndim == 0:
+                ret_val[key] = value
+            elif value.ndim == 1:
+                ret_val[key] = value[sample_idx]
+            else:
+                ret_val[key] = value[sample_idx, ...]
+        return ret_val
+    
+    def __getitems__(self, indices: list) -> list:
+        """Get multiple sliding window samples (batch retrieval).
+        
+        Args:
+            indices (list): List of window indices to retrieve.
+        
+        Returns:
+            dict: Mapping from keys to batched tensors, where the first dimension
+                corresponds to the provided indices.
+        
+        Note:
+            This method is intended for manual batched access or for
+            frameworks that support batched dataset indexing. The standard
+            PyTorch DataLoader still calls ``__getitem__`` with scalar indices.
+        """
+
+        if len(indices) == 0:
+            return {}
+
+        idx_tensor = torch.as_tensor(indices, dtype=torch.long)
+        sample_idx = self._map_sample_idx[idx_tensor]
+        window_idx = self._map_window_start[idx_tensor]
+
+        batch = {}
+
+        # batched gather for windowed tensors
+        for key, w in self._windowed.items():
+            batch[key] = w[sample_idx, window_idx]
+
+        # batched gather for per-sample tensors
+        for key, value in self._per_seq.items():
+            if value.ndim == 0:
+                batch[key] = value.expand(idx_tensor.shape[0])
+            elif value.ndim == 1:
+                batch[key] = value[sample_idx]
+            else:
+                batch[key] = value[sample_idx, ...]
+
+        return batch
+
+    def __len__(self) -> int:
+        """Return the total number of sliding windows in the dataset.
+        
+        Returns:
+            int: Total number of windows across all samples.
+        """
+        return self._length
+
+class LegacyTimeSeriesDataset(torch.utils.data.StackDataset):
+    """Dataset for time series with sliding window sampling of variable-length subsequences.
+    
+    This is the original implementation using explicit Python mapping to define sliding windows.
+    It it used in a test to compare against the new TimeSeriesDataset which uses tensor views for efficient indexing,
+    because the new one was generated with copilot.
+
+    Extends StackDataset to enable extracting subsequences from longer time series via a
+    sliding window approach. The full sequences are stored internally, but __getitem__
+    returns only a subsequence of specified length. This enables training on different
+    sequence lengths without reloading data, and increases effective dataset size by
+    treating each sliding window position as a separate sample.
+    
+    The dataset expects dict-style data with a 'time' key, where all time series have shape
+    (n_samples, n_channels, n_timesteps). Non-time-series data (2D) is replicated across
+    all windows from the same sample.
+    
+    Attributes:
+        seq_len (int): Length of subsequences returned by __getitem__.
+        mapping (list): List of [sample_idx, start_pos, end_pos] tuples defining each
+            sliding window position across all samples.
+        _length (int): Total number of sliding windows (dataset length).
+        _length_old (int): Original number of samples before windowing.
+    """
+    def __init__(self, seq_len: int, stride: int = 1, *args, **kwargs):
+        """Initialize TimeSeriesDataset with sliding window parameters.
+        
+        Args:
+            seq_len (int): Length of subsequences to extract. If larger than available
+                time series length, will be clamped to maximum available length.
+            stride (int): Stride for sliding window positions. Default is 1.
+            *args: Positional arguments passed to parent StackDataset.
+            **kwargs: Keyword arguments passed to parent StackDataset. Must result in
+                a dict-style dataset with a 'time' key.
+        
+        Raises:
+            AssertionError: If datasets is not a dict or lacks 'time' key.
+        """
+        super().__init__(*args, **kwargs)
+        assert isinstance(self.datasets, dict), "can only handle dict style stacked datasets with one key-value pair time"
+        assert 'time' in self.datasets.keys(), "need one dataset with key time to define the map" 
+        self._length_old = self._length
+        if seq_len > self.datasets['time'].shape[2]:
+            Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
+            seq_len = self.datasets['time'].shape[2]
+        self.seq_len = seq_len
+        # clamp stride so there is at least 1 window per sample
+        _full_windows = self.datasets['time'].shape[2] - seq_len + 1
+        # the max stride that still allows at least 1 window per sample is _full_windows
+        if stride > _full_windows:
+            logging.warning(f'stride {stride} exceeds available windows {_full_windows} for seq_len {seq_len}, clamping stride to {_full_windows}')
+            stride = _full_windows
+        self.stride = stride
+        self.initialize_map(seq_len, stride)
+
+    def set_seq_len(self, seq_len: int, stride: int = 1):
+        """Change the subsequence length and rebuild the sliding window mapping.
+        
+        Args:
+            seq_len (int): New subsequence length. If None, 0, or larger than available
+                time series length, will be clamped to maximum available length.
+        """
+        if seq_len == None or seq_len == 0 or seq_len > self.datasets['time'].shape[2]:
+            Warning("seq_len is {}, setting to len of timeseries".format(seq_len))
+            seq_len = self.datasets['time'].shape[2]
+        self.seq_len = seq_len
+        self.initialize_map(seq_len, stride)
+
+    def initialize_map(self, seq_len: int, stride: int = 1) -> None:
         """Create the sliding window index mapping for all samples.
         
         Builds a mapping list where each entry [sample_idx, start_pos, end_pos] defines
-        a sliding window position. Windows slide by 1 timestep across each sample, then
-        continue to the next sample. This treats each window position as an independent
-        dataset item.
+        a sliding window position. Windows advance by the provided stride, and the
+        number of windows per sample uses floor division. This treats each window
+        position as an independent dataset item.
         
         Args:
             seq_len (int): Length of sliding windows. Must be at least 1.
@@ -225,20 +528,20 @@ class TimeSeriesDataset(torch.utils.data.StackDataset):
         """
         assert seq_len > 0, "seq_len must be at least 1"
         # define map
-        n_batches_per_sample = (self.datasets['time'].shape[2] - (seq_len - 1))
+        n_batches_per_sample = (self.datasets['time'].shape[2] - (seq_len - 1)) // stride # stride with floor division to get number of windows per sample
         n_batches_total = n_batches_per_sample * self._length_old
         self.mapping = [[] for i in range(n_batches_total)]
         self._length = n_batches_total
+        self.stride = stride
         # fill out map. mapping shall contain [n_sample, start_position, stop_position]
         k_stop=seq_len # stop position in sequence
         j=0 # sample position in datasets
         for i in range(n_batches_total):
             self.mapping[i] = [j, k_stop-seq_len, k_stop]
-            if k_stop + 2 > n_batches_per_sample + seq_len: # if the over next sequence would be out of bounds, go to next sample (+1 more because of > and not >=)
+            k_stop += stride
+            if k_stop > self.datasets['time'].shape[2]: # if the next stop position would be out of bounds, go to next sample
                 k_stop = seq_len
                 j += 1
-            else:
-                k_stop += 1
         #self.mapping = torch.tensor(np.array(self.mapping), dtype=torch.int64)
 
 

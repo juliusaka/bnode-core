@@ -1,5 +1,7 @@
 import pytest
-from pathlib import Path
+from types import SimpleNamespace
+
+from bnode_core import filepaths
 from bnode_core.filepaths import config_dir_auto_recognize
 
 def test_returns_config_dir_when_bnode_and_config_exist(tmp_path, monkeypatch):
@@ -17,3 +19,15 @@ def test_raises_when_nothing_found(tmp_path, monkeypatch):
     with pytest.raises(ValueError) as exc:
         config_dir_auto_recognize()
     assert "Please ensure you are in a correct working directory" in str(exc.value)
+
+
+def test_training_restart_paths_use_restart_filenames(monkeypatch, tmp_path):
+    hydra_output_dir = tmp_path / "hydra-run"
+    hydra_output_dir.mkdir()
+    hydra_cfg = SimpleNamespace(runtime=SimpleNamespace(output_dir=str(hydra_output_dir)))
+    monkeypatch.setattr(filepaths.hydra.core.hydra_config.HydraConfig, "get", lambda: hydra_cfg)
+
+    assert (
+        filepaths.filepath_restart_checkpoint_current_hydra_output()
+        == hydra_output_dir / "training_restart_checkpoint.pt"
+    )

@@ -203,14 +203,72 @@ import mlflow
 import yaml
 import h5py
 import torch
+import torch.nn as nn
 from omegaconf import OmegaConf
 import shutil
+import onnx
+from onnx import shape_inference
 
 import bnode_core.filepaths as filepaths
 from bnode_core.filepaths import config_dir_auto_recognize
 from bnode_core.ode.trainer import initialize_model
 from bnode_core.nn.nn_utils.load_data import make_stacked_dataset
 from bnode_core.config import onnx_export_config_class, get_config_store
+from bnode_core.ode.bnode.siso_export import (
+    SISOWrapper,
+    build_input_specs,
+    build_output_specs,
+    write_siso_dimensions,
+    SISO_DIMENSIONS_FILE_NAME,
+)
+
+
+def _export_module(
+    module: nn.Module,
+    filtered_inputs: dict,
+    res,
+    output_names: list,
+    dir_output: Path,
+    stem: str,
+    siso: bool,
+) -> dict | None:
+    """Export a module to ONNX. If siso=True, wraps with SISOWrapper and returns a siso_dims entry."""
+    if siso:
+        path = dir_output / f'{stem}_siso.onnx'
+        input_specs = [(name, tensor.shape[1]) for name, tensor in filtered_inputs.items()]
+        wrapped = SISOWrapper(module, input_specs)
+        x = torch.cat(list(filtered_inputs.values()), dim=1)
+        torch.onnx.export(
+            wrapped,
+            args=(x,),
+            f=path,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}},
+            dynamo=False,
+        )
+        onnx.save(shape_inference.infer_shapes(onnx.load(path)), path)
+        return {
+            'siso_onnx': path.name,
+            'input': build_input_specs(filtered_inputs),
+            'output': build_output_specs(res, output_names),
+        }
+    else:
+        path = dir_output / f'{stem}.onnx'
+        input_names = list(filtered_inputs.keys())
+        dynamic_axes = {name: {0: 'batch_size'} for name in input_names + output_names}
+        torch.onnx.export(
+            module,
+            args=(),
+            kwargs=filtered_inputs,
+            f=path,
+            input_names=input_names,
+            output_names=output_names,
+            dynamic_axes=dynamic_axes,
+            dynamo=False,
+        )
+        onnx.save(shape_inference.infer_shapes(onnx.load(path)), path)
+        return None
 
 
 def load_trained_latent_ode(cfg_export):
@@ -311,8 +369,8 @@ def load_trained_latent_ode(cfg_export):
     else:
         raise FileNotFoundError(f'Dataset file {path_dataset} not found. Please provide a valid dataset path.')
     dataset = make_stacked_dataset(dataset_file, 'train')
-    model = initialize_model(cfg, train_dataset=dataset, hdf5_dataset=None, 
-                             initialize_normalization=False, model_type='bnode')
+    model = initialize_model(cfg, train_dataset=dataset, hdf5_dataset=dataset_file, 
+                             initialize_normalization=False)
     
     # load latest checkpoint
     if cfg_export.model_checkpoint_path is None:
@@ -410,7 +468,6 @@ def log_shapes_of_dict(d, name=''):
                 logging.info(f"\t[{i}]: {value}")
     else:
         logging.info(f"\t{type(d)}: {d}")
-
 
 
 def export_bnode(cfg_export: onnx_export_config_class):
@@ -529,6 +586,9 @@ def export_bnode(cfg_export: onnx_export_config_class):
     model, cfg, dataset_file, dataset = res['model'], res['cfg'], res['dataset_file'], res['dataset']
     temp_dir = res['temp_dir']
     model.eval()
+
+    # check if deterministic mode (reduced dims) is active
+    masks_set = bool(model.deterministic_mode_active_masks_set.item())
     
     # determine output dir
     dir_output = Path(cfg_export.output_dir) if cfg_export.output_dir is not None else filepaths.dir_current_hydra_output()
@@ -544,12 +604,16 @@ def export_bnode(cfg_export: onnx_export_config_class):
     test_state = dataset[0]['states'][:,0].unsqueeze(0)
     test_control = dataset[0]['controls'][:,0].unsqueeze(0) if model.include_controls else None
     test_parameters = dataset[0]['parameters'].unsqueeze(0) if model.include_parameters else None
+    if model.include_feedthrough_controls:
+        _feedthrough_mask = model.feedthrough_controls_mask.cpu().numpy()
+        test_feedthrough_controls = dataset[0]['controls'][_feedthrough_mask, 0].unsqueeze(0) if model.include_feedthrough_controls else None
 
-    # export the encoders
+    # export the encoders — modules handle reduced dims natively in deterministic mode
     encoders = {'states': model.state_encoder, 
                 'controls': model.controls_encoder if model.include_controls else None,
                 'parameters': model.parameter_encoder if model.include_params_encoder else None
             }
+
     # construct test inputs for graph construction
     inputs_dict = {
         'states': {'x': test_state},
@@ -563,46 +627,51 @@ def export_bnode(cfg_export: onnx_export_config_class):
         inputs_dict['states']['controls'] = test_control
     
     latents_dict = {}
+    siso_dims: dict = {}
     for key, encoder in encoders.items():
         if encoder is not None:
-            path_encoder = dir_output / f'encoder_{key}.onnx'
-            logging.info(f'Exporting {key} encoder to {path_encoder}')
+            logging.info(f'Exporting {key} encoder')
             # test model
             log_shapes_of_dict(inputs_dict[key], f'Inputs for {key} encoder')
             res = encoder(**inputs_dict[key])
             log_shapes_of_dict(res, f'Outputs of {key} encoder')
             logging.info(f'Test result {res}')
+            # build output names (same for both paths)
+            if masks_set:
+                output_names = ['latent_' + key + '_mu']
+            else:
+                output_names = ['latent_' + key + '_mu', 'latent_' + key + '_logvar']
             # export
-            input_names = list(inputs_dict[key].keys())
-            output_names=['latent_' + key + '_mu', 'latent_' + key + '_logvar']
-            dynamic_axes={}
-            for name in input_names:
-                dynamic_axes[name] = {0: 'batch_size'}
-            for name in output_names:
-                dynamic_axes[name] = {0: 'batch_size'}
-            # Use legacy TorchScript-based exporter for better stability
-            torch.onnx.export(encoder, 
-                              args=(),
-                              kwargs=inputs_dict[key],
-                              f=path_encoder, 
-                              input_names=input_names,
-                              output_names=output_names,
-                              dynamic_axes=dynamic_axes,
-                              dynamo=False
+            dims = _export_module(
+                encoder,
+                inputs_dict[key],
+                res,
+                output_names,
+                dir_output,
+                f'encoder_{key}',
+                cfg_export.siso,
             )
+            if dims is not None:
+                dims['normalization_mu'] = encoder.normalization.mu.detach().tolist()
+                dims['normalization_std'] = encoder.normalization.std.detach().tolist()
+                siso_dims[f'encoder_{key}'] = dims
             logging.info(f'Exported {key} encoder successfully')
             # export also example io
             path_example_io = dir_output / f'encoder_{key}_example_io.hdf5'
             export_example_io_data(res, inputs_dict[key], path_example_io)
             # save latent variable
-            latents_dict[key] = res[0] # the first is mu
+            if masks_set:
+                latents_dict[key] = res  # encoder returns only mu tensor in deterministic mode
+            else:
+                latents_dict[key] = res[0]  # returns (mu, logvar) tuple
 
     # export ssm from parameters model and get A_from_param and B_from_param for the latent ODE function
-    ode = model.latent_ode_func
-    if ode.include_parameters is True and ode.linear is True:
+    ode_base = model.latent_ode_func
+    ode = ode_base
+    if ode_base.include_parameters is True and ode_base.linear is True:
         # this is only possible if the model is linear and has parameters
         logging.info('Exporting SSM from parameters')
-        ssm = model.latent_ode_func.ssm_from_param
+        ssm = ode_base.ssm_from_param
         path_ssm = dir_output / 'latent_ode_ssm_from_param.onnx'
         logging.info(f'Export latent ODE SSM from parameters to {path_ssm}')
         # construct test input
@@ -616,120 +685,124 @@ def export_bnode(cfg_export: onnx_export_config_class):
         logging.info(f'Test result {res}')
         # export
         input_names=['lat_parameters']
-        output_names=['A', 'B'] if ode.include_controls else ['A']
+        output_names=['A', 'B'] if ode_base.include_controls else ['A']
         dynamic_axes={}
         for name in input_names:
             dynamic_axes[name] = {0: 'batch_size'}
         for name in output_names:
             dynamic_axes[name] = {0: 'batch_size'}
-        torch.onnx.export(ssm, 
-                          args=(),
-                          kwargs=inputs,
-                          f=path_ssm, 
-                          input_names=input_names, 
-                          output_names=output_names, 
-                          dynamic_axes=dynamic_axes,
-                          dynamo=False)
+        torch.onnx.export(
+            ssm,
+            args=(),
+            kwargs=inputs,
+            f=path_ssm,
+            input_names=input_names,
+            output_names=output_names,
+            dynamic_axes=dynamic_axes,
+            dynamo=False,
+        )
+        onnx.save(shape_inference.infer_shapes(onnx.load(path_ssm)), path_ssm)
         logging.info(f'Exported latent ODE SSM from parameters successfully')
         # get A_from_param and B_from_param
-        if ode.include_controls:
+        if ode_base.include_controls:
             A_from_param, B_from_param = res
         else:
             A_from_param = res
 
     # export the latent ode function
-    path_ode = dir_output / 'latent_ode.onnx'
-    logging.info(f'Export latent ODE to {path_ode}')
+    logging.info('Export latent ODE')
     # construct test input
     inputs = {
         'lat_states': latents_dict['states'],
-        'lat_parameters': latents_dict['parameters'] if ode.include_parameters is True else None,
-        'lat_controls': latents_dict['controls'] if ode.include_controls is True else None,
-        'A_from_param': A_from_param if ode.include_parameters is True and ode.linear else None,
-        'B_from_param': B_from_param if ode.include_parameters is True and ode.linear and ode.include_controls else None,
+        'lat_parameters': latents_dict['parameters'] if ode_base.include_parameters is True else None,
+        'lat_controls': latents_dict['controls'] if ode_base.include_controls is True else None,
+        'A_from_param': A_from_param if ode_base.include_parameters is True and ode_base.linear else None,
+        'B_from_param': B_from_param if ode_base.include_parameters is True and ode_base.linear and ode_base.include_controls else None,
     }
     # test model
     log_shapes_of_dict(inputs, 'Inputs for latent ODE')
     res = ode(**inputs)
     log_shapes_of_dict(res, 'Outputs of latent ODE')
     logging.info(f'Test result {res}')
-    # export
-    input_names=[]
-    for key in inputs.keys():
-        if inputs[key] != None:
-            input_names.append(key)
-    dynamic_axes={}
-    for name in input_names:
-        dynamic_axes[name] = {0: 'batch_size'}
+    # build output names (same for both paths)
     if model.lat_ode_type == 'variance_constant' or model.lat_ode_type == 'vanilla':
         output_names = ['lat_states_mu_dot']
-        dynamic_axes['lat_states_mu_dot'] = {0: 'batch_size'}
     elif model.lat_ode_type == 'variance_dynamic':
         output_names = ['concat(lat_states_mu_dot,lat_states_logvar_dot)']
-        dynamic_axes['concat(lat_states_mu_dot,lat_states_logvar_dot)'] = {0: 'batch_size'}
-    # Filter out None values and convert to tuple
+    # Filter out None values
     filtered_inputs = {k: v for k, v in inputs.items() if v is not None}
-    torch.onnx.export(ode, 
-                      args=(),
-                      kwargs=filtered_inputs,
-                      f=path_ode, 
-                      input_names=input_names, 
-                      output_names=output_names, 
-                      dynamic_axes=dynamic_axes,
-                      dynamo=False)
+    # SSM models (ode_base.linear) have 3D matrix inputs (A_from_param, B_from_param)
+    # that cannot be concatenated as 1D feature vectors — always export multi-input.
+    dims = _export_module(
+        ode,
+        filtered_inputs,
+        res,
+        output_names,
+        dir_output,
+        'latent_ode',
+        siso=cfg_export.siso and not ode_base.linear,
+    )
+    if dims is not None:
+        siso_dims['latent_ode'] = dims
     logging.info(f'Exported latent ODE successfully')
     # export also example io
     path_example_io = dir_output / f'latent_ode_example_io.hdf5'
     export_example_io_data(res, inputs, path_example_io)
 
     # export the decoder
-    # TODO: What to with split return? because we have to tak the first n elements for states etc now... implement other function for this? / optional argument?
     decoder = model.decoder
     decoder.onnx_export = True  # disable concatenation of outputs for ONNX export
-    path_decoder = dir_output / 'decoder.onnx'
-    logging.info(f'Export decoder to {path_decoder}')
+    logging.info('Export decoder')
     # construct test input
     inputs = {
         'lat_state': latents_dict['states'],
         'lat_parameters': latents_dict['parameters'] if decoder.include_parameters is True else None,
         'lat_controls': latents_dict['controls'] if decoder.include_controls is True else None,
+        'feedthrough_controls': test_feedthrough_controls if decoder.include_feedthrough_controls is True else None,
     }
     # test model
     log_shapes_of_dict(inputs, 'Inputs for decoder')
     res = decoder(**inputs)
     log_shapes_of_dict(res, 'Outputs of decoder')
     logging.info(f'Test result {res}')
-    input_names = []
-    # export
-    for key in inputs.keys():
-        if inputs[key] != None:
-            input_names.append(key)
+    # build output names (same for both paths)
     if decoder.include_outputs and decoder.include_states:
         output_names = ['states', 'outputs']
     elif decoder.include_outputs:
         output_names = ['outputs']
     elif decoder.include_states:
         output_names = ['states']
-    dynamic_axes={}
-    for name in input_names:
-        dynamic_axes[name] = {0: 'batch_size'}
-    for name in output_names:
-        dynamic_axes[name] = {0: 'batch_size'}
-    # Filter out None values and convert to tuple
+    # Filter out None values
     filtered_inputs = {k: v for k, v in inputs.items() if v is not None}
-    torch.onnx.export(decoder, 
-                      args=(),
-                      kwargs=filtered_inputs,
-                      f=path_decoder, 
-                      input_names=input_names, 
-                      output_names=output_names, 
-                      dynamic_axes=dynamic_axes,
-                      dynamo=False)
+    # export
+    dims = _export_module(
+        decoder,
+        filtered_inputs,
+        res,
+        output_names,
+        dir_output,
+        'decoder',
+        cfg_export.siso,
+    )
+    if dims is not None:
+        # Store decoder output normalization statistics so consumers can compute
+        # normalised RMSE against physical-unit predictions.
+        if decoder.include_states and hasattr(decoder, 'state_normalization') and decoder.state_normalization is not None:
+            dims['states_normalization_mu'] = decoder.state_normalization.mu.detach().tolist()
+            dims['states_normalization_std'] = decoder.state_normalization.std.detach().tolist()
+        if decoder.include_outputs and hasattr(decoder, 'outputs_normalization') and decoder.outputs_normalization is not None:
+            dims['outputs_normalization_mu'] = decoder.outputs_normalization.mu.detach().tolist()
+            dims['outputs_normalization_std'] = decoder.outputs_normalization.std.detach().tolist()
+        siso_dims['decoder'] = dims
     logging.info(f'Exported decoder successfully')
     # export also example io
     path_example_io = dir_output / f'decoder_example_io.hdf5'
     export_example_io_data(res, inputs, path_example_io)
-    
+
+    if cfg_export.siso:
+        write_siso_dimensions(siso_dims, dir_output / SISO_DIMENSIONS_FILE_NAME)
+        logging.info(f'Wrote SISO dimensions to {dir_output / SISO_DIMENSIONS_FILE_NAME}')
+
     if temp_dir is not None:
         logging.info(f'Cleaning up temporary directory: {temp_dir}')
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -743,7 +816,7 @@ def export_bnode(cfg_export: onnx_export_config_class):
         shutil.copytree(dir_hydra_current, dir_hydra_output_copy, dirs_exist_ok=True)
         logging.info('Hydra directory copied successfully')
     else: 
-       Warning(f'Current Hydra directory {dir_hydra_current} not found and could not be copied.')
+       logging.warning(f'Skipping Hydra directory copy (nested or not found): {dir_hydra_current}')
 
 
 def main():

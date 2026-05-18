@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
 import logging
 import sys
-import filepaths
 from common import save_figure
 
 
@@ -802,7 +801,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Open dataset and perform analysis
-    with h5py.File(filepaths.filepath_from_local_or_ml_artifacts(args.dataset_path), 'r') as f:
+    with h5py.File(args.dataset_path, 'r') as f:
         output_path = Path(args.output_folder)
         output_path.mkdir(parents=True, exist_ok=True)
         

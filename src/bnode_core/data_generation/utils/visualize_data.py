@@ -227,10 +227,14 @@ def main():
                 # Limits from config
                 if class_name in print_limits:
                     if raw_dataset:
-                        limits = config[class_name][name]
+                        try:
+                            limits = config[class_name][name]
+                        except KeyError:
+                            limits = None
+                            print(f"\t no Limits for {class_name} {name}: in config, Skipping limits for this variable.")
                     else:
                         limits = config['RawData'][class_name][name]
-                    limits = [float(limits[0]), float(limits[1])]
+                    limits = [float(limits[0]), float(limits[1])] if limits is not None else None
                 else:
                     limits = None
 

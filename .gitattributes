@@ -1,0 +1,2 @@
+# This attribute ensure proper file handling for git on Windows and WSL
+* text=auto eol=lf

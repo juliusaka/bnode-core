@@ -88,6 +88,12 @@ TODO: add examples
         ```
     in your terminal or add it in VS Code using the command palette (Ctrl+Shift+P) and searching for "Python: Select Interpreter".
 
+5. (Optional: ) Install tkinter, e.g. for showing interactive matplotlib plots on WSL
+
+    ```
+    sudo apt-get update && sudo apt-get install -y python3-tk
+    ```
+
 You don't need to use the virtual environment, **you can simply** place ```uv run``` in front of the python-file you want to run to make it run in the specified environment.
 
 ## Usage

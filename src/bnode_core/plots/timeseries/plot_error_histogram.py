@@ -15,7 +15,6 @@ from typing import Dict, List, Tuple, Optional, Union
 import logging
 import sys
 import argparse
-import filepaths
 
 # Import useful functions from plot_dataset and plot_error_correlation
 from plot_dataset import (
@@ -465,7 +464,7 @@ if __name__ == "__main__":
     
     # Open dataset and perform analysis
     try:
-        with h5py.File(filepaths.filepath_from_local_or_ml_artifacts(args.dataset_path), 'r') as f:
+        with h5py.File(args.dataset_path, 'r') as f:
             output_path = Path(args.output_folder)
             output_path.mkdir(parents=True, exist_ok=True)
             

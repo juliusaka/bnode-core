@@ -90,6 +90,7 @@ import sys
 import numpy as np
 import pandas as pd
 import h5py
+import shutil
 from pathlib import Path
 import logging
 from omegaconf import OmegaConf
@@ -684,6 +685,7 @@ def data_generation(cfg: data_gen_config,
                                                 future.release()
                                                 futures.remove(future)
                                                 _n_timedout += 1
+                                                _n_finished += 1
                                                 raw_data['logs/timedout'][key] = True
                     if _restart_worker:
                         _workers_to_restart.append(worker)
@@ -947,6 +949,14 @@ def run_data_generation(cfg: data_gen_config) -> None:
     # save pModel config as yaml
     log_overwriting_file(filepath_raw_data_config(cfg))
     OmegaConf.save(cfg.pModel.RawData, filepath_raw_data_config(cfg))
+
+    # copy hydra folder to output folder
+    hydra_output_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+    dest_dir = Path(filepath_raw_data(cfg)).parent / 'hydra'
+    logging.info('Copying hydra output folder from {} to {}'.format(hydra_output_dir, dest_dir))
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    shutil.copytree(hydra_output_dir, dest_dir)
 
 def main():
     """CLI entry point for raw data generation.

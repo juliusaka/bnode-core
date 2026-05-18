@@ -47,14 +47,14 @@ dev = [
     "pytest-html>=4.1.1",
     "pytest-dependency>=0.6.0",
 ]
-# torch is define here and in optiona dependencies. The dependency groups hera are only for development.
+# torch is define here and in optional dependencies. The dependency groups hera are only for development.
 torch =[
     "mlflow>=3.5.0",
     "onnx>=1.19.1",
-    "torch>=2.7.0",
-    "torchaudio>=2.8.0",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
     "torchdiffeq>=0.2.5",
-    "torchvision>=0.22.0",
+    "torchvision>=0.22.1",
 ]
 
 plotly =[
@@ -64,13 +64,33 @@ plotly =[
 
 [project.optional-dependencies]
 # torch is defined here and in dependency gropus
+
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "ty",
+    "twine",
+    "build",
+    "pre-commit",
+    "rich",
+    "pytest-xdist>=3.8.0",
+    "pytest-html>=4.1.1",
+    "pytest-dependency>=0.6.0",
+]
+
 torch =[
     "mlflow>=3.5.0",
     "onnx>=1.19.1",
-    "torch>=2.7.0",
-    "torchaudio>=2.8.0",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
     "torchdiffeq>=0.2.5",
-    "torchvision>=0.22.0",
+    "torchvision>=0.22.1",
+]
+
+plotly =[
+    "dash>=3.3.0",
+    "plotly>=6.4.0",
 ]
 
 [tool.uv]
@@ -99,4 +119,9 @@ omit = ["tests/*"]
 
 [tool.pytest.ini_options]
 # this enables pytest to automatically use all available cores.
-addopts = "-n auto"
+# --dist load distributes each test to the next available worker for maximum CPU utilisation.
+# The only file with inter-test ordering (test_data_generation_and_preperation.py) uses
+# pytest-dependency markers, which still enforce skipping if a prerequisite fails under --dist load.
+addopts = "-n auto --dist load"
+testpaths = ["tests"]
+norecursedirs = ["tests/_results", "__pycache__"]

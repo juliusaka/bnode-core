@@ -50,9 +50,8 @@ class NormalizationLayerTimeSeries(nn.Module):
             Sets self.mu and self.std buffers if not already initialized.
         """
         if not self._initialized:
-            variance = torch.var(x, dim=(0,2)).detach()
-            self.std.set_(torch.sqrt(variance + torch.ones(variance.size()).to(variance.device) * 1e-3))
-            self.mu.set_(torch.mean(x, dim=(0,2)).detach())
+            self.std.set_(x.var(dim=(0, 2)).add(1e-3).sqrt().detach())
+            self.mu.set_(x.mean(dim=(0, 2)).detach())
             self._initialized = torch.tensor(True)
             assert self.std.requires_grad == False
             assert self.mu.requires_grad == False
@@ -74,19 +73,13 @@ class NormalizationLayerTimeSeries(nn.Module):
         if denormalize is False:
             if not self._initialized:
                 self.initialize_normalization(x)
-        batch_size = x.shape[0]
-        seq_len = x.shape[2]
-        # add dimensions at position 0 (for number of batches) and at position 2 (for sequence length)
-        # expand these dimensions
-        std = self.std.unsqueeze(0).unsqueeze(2).expand(batch_size,-1,seq_len)
-        mu = self.mu.unsqueeze(0).unsqueeze(2).expand(batch_size,-1,seq_len)
+        # (n_channels,) -> (1, n_channels, 1) for broadcasting over batch and time
+        mu = self.mu.unsqueeze(0).unsqueeze(-1)
+        std = self.std.unsqueeze(0).unsqueeze(-1)
         if denormalize is False:
-            x = torch.subtract(x,mu)
-            x = torch.divide(x, std)
+            return (x - mu) / std
         else:
-            x = torch.multiply(x, std)
-            x = torch.add(x, mu)
-        return x
+            return x * std + mu
     
 class NormalizationLayer1D(nn.Module):
     """Normalization layer for 1D feature vectors with shape (batch, features).
@@ -114,7 +107,7 @@ class NormalizationLayer1D(nn.Module):
         self.register_buffer('std', torch.zeros((num_features)))
         self.register_buffer('mu', torch.zeros(num_features))
     
-    def initialize_normalization(self, x, eps = 1e-5, verbose = False, name = None):
+    def initialize_normalization(self, x, eps = 1e-7, verbose = False, name = None):
         """Compute and store mean and std from input data.
         
         Calculates per-feature statistics across batch dimension. Adds epsilon to variance
@@ -122,7 +115,7 @@ class NormalizationLayer1D(nn.Module):
         
         Args:
             x (torch.Tensor or np.ndarray): Input data with shape (batch_size, num_features).
-            eps (float, optional): Small constant added to variance for stability. Defaults to 1e-5.
+            eps (float, optional): Small constant added to variance for stability. Defaults to 1e-7.
             verbose (bool, optional): If True, logs initialization info. Defaults to False.
             name (str, optional): Name for logging output. Defaults to None.
         
@@ -134,16 +127,12 @@ class NormalizationLayer1D(nn.Module):
             Sets self.mu and self.std buffers, logs initialization if verbose=True.
         """
         if not self._initialized:
-            if isinstance(x, torch.Tensor):
-                variance = torch.var(x, dim=(0)).detach()
-                self.std.set_(torch.sqrt(variance + torch.ones(variance.size()).to(variance.device) * eps))
-                self.mu.set_(torch.mean(x, dim=(0)).detach())
-            elif isinstance(x, np.ndarray):
-                variance = np.var(x, axis=0)
-                self.std.set_(torch.sqrt(torch.tensor(variance + np.ones(variance.shape) * eps, dtype=torch.float32)))
-                self.mu.set_(torch.tensor(np.mean(x, axis=0), dtype=torch.float32))
-            else:
+            if isinstance(x, np.ndarray):
+                x = torch.tensor(x, dtype=torch.float32)
+            elif not isinstance(x, torch.Tensor):
                 raise ValueError('Unknown type of input: {}'.format(type(x)))
+            self.std.set_(x.var(dim=0).add(eps).sqrt().detach())
+            self.mu.set_(x.mean(dim=0).detach())
             self._initialized = torch.tensor(True)
             assert self.std.requires_grad == False
             assert self.mu.requires_grad == False
@@ -171,22 +160,16 @@ class NormalizationLayer1D(nn.Module):
         if not denormalize:
             if not self._initialized:
                 self.initialize_normalization(x)
-        batch_size = x.shape[0]
-        # add dimension at position 0 and expand to batch_size
-        std = self.std.unsqueeze(0).expand(batch_size,-1)
-        mu = self.mu.unsqueeze(0).expand(batch_size,-1)
+        mu = self.mu
+        std = self.std
         if len(x.shape) == 3:
-            # if x is a 3D tensor, we assume it has shape (batch_size, num_features, sequence_length)
-            seq_len = x.shape[2]
-            std = std.unsqueeze(2).expand(batch_size,-1,seq_len)
-            mu = mu.unsqueeze(2).expand(batch_size,-1,seq_len)
+            # (num_features,) -> (num_features, 1) so broadcasting aligns with dim 1
+            mu = mu.unsqueeze(-1)
+            std = std.unsqueeze(-1)
         if not denormalize:
-            x = torch.subtract(x, mu)
-            x = torch.divide(x, std)
+            return (x - mu) / std
         else:
-            x = torch.multiply(x, std)
-            x = torch.add(x, mu)
-        return x
+            return x * std + mu
     
     def __repr__(self) -> str:
         """Return string representation of the layer.

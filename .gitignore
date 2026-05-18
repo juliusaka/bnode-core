@@ -204,6 +204,7 @@ resources/data/datasets/*
 mlruns/*
 mlruns/*
 mlflow/*
+mlflow.db
 
 # Coverage reports
 tests/_results/*
@@ -212,4 +213,5 @@ tests/_results/*
 _tests/*
 _tests_results/*
 tests/results*
+tests/regression_mlruns
 
