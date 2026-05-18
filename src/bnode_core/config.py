@@ -434,16 +434,16 @@ class base_training_settings_class:
         batch_size (int): Training mini-batch size.
         max_epochs (int): Maximum number of epochs.
         lr_start (float): Initial learning rate.
-        optimizer (str): Optimizer type identifier ('adam' or 'lbfgs').
-        beta1_adam (float): Adam beta1 parameter.
-        beta2_adam (float): Adam beta2 parameter.
+        optimizer (str): Optimizer type identifier ('adam', 'adamw', 'radam', 'radamw', or 'lbfgs').
+        beta1_adam (float): Adam beta1 parameter (used by adam, adamw, radam, radamw).
+        beta2_adam (float): Adam beta2 parameter (used by adam, adamw, radam, radamw).
+        eps_adam (float): Epsilon for numerical stability in Adam-family optimizers. Default 1e-8.
         weight_decay (float): L2 weight decay.
         clip_grad_norm (float): Gradient clipping norm.
         early_stopping_patience (int): Patience before early stopping.
         early_stopping_threshold (float): Improvement threshold for early stopping.
         early_stopping_threshold_mode (str): Threshold mode, typically 'rel' or 'abs'.
-        use_lr_scheduler (bool): Enable learning rate scheduler for this phase.
-        lr_scheduler_type (Optional[str]): Learning rate scheduler type identifier (e.g. 'cosine', 'plateau').
+        lr_scheduler_type (Optional[str]): Learning rate scheduler type identifier (e.g. 'cosine', 'plateau'). Set to None to disable the scheduler.
         cosine_T_max (Optional[int]): Cosine scheduler horizon in epochs; if None, defaults to max_epochs/5.
         cosine_eta_min (float): Minimum learning rate for cosine scheduler.
         plateau_mode (str): Mode for ReduceLROnPlateau ('min' or 'max').
@@ -461,6 +461,10 @@ class base_training_settings_class:
         lbfgs_line_search_fn (Optional[str]): Optional LBFGS line search function name.
         lbfgs_n_steps_per_batch (int): Number of LBFGS steps to perform per batch.
         initialization_type (Optional[str]): Optional weight initialization scheme identifier.
+        warmup_epochs (int): Number of epochs for LR warm-up. LR is ramped from 0 to lr_start
+            per batch over warmup_epochs epochs before main training begins. During warmup,
+            seq_len_increase is frozen at seq_len_epoch_start. warmup_epochs is added to
+            max_epochs sequentially (on top of seq_len_increase_epochs). Default 0 disables warmup.
     """
     batch_size: int = 64
     max_epochs: int = 1500
@@ -468,13 +472,13 @@ class base_training_settings_class:
     optimizer: str = 'adam'
     beta1_adam: Optional[float] = 0.9
     beta2_adam: Optional[float] = 0.999
+    eps_adam: float = 1e-8
     weight_decay: float = 0.0
     clip_grad_norm: float = 50.0
     early_stopping_patience: int = 50
     early_stopping_threshold: float = 0.000
     early_stopping_threshold_mode: str = 'abs'
     # optional learning-rate scheduler configuration (shared across models)
-    use_lr_scheduler: bool = False
     lr_scheduler_type: Optional[str] = None
     cosine_T_max: Optional[int] = None
     cosine_eta_min: float = 1e-5
@@ -493,6 +497,7 @@ class base_training_settings_class:
     lbfgs_line_search_fn: Optional[str] = None
     lbfgs_n_steps_per_batch: int = 1
     initialization_type: Optional[str] = None
+    warmup_epochs: int = 0
 
 @dataclass
 class abstract_nn_model_class:
@@ -904,6 +909,7 @@ class base_neural_ode_training_settings_class():
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
+    eps_adam_override: Optional[float] = None
     weight_decay_override: Optional[float] = None
     clip_grad_norm_override: Optional[float] = None
     early_stopping_patience_override: Optional[int] = None
@@ -911,7 +917,6 @@ class base_neural_ode_training_settings_class():
     early_stopping_threshold_mode_override: Optional[str] = None
 
     # learning-rate scheduler overrides (applied to all main_training phases)
-    use_lr_scheduler_override: Optional[bool] = None
     lr_scheduler_type_override: Optional[str] = None
     cosine_T_max_override: Optional[int] = None
     cosine_eta_min_override: Optional[float] = None
@@ -937,6 +942,7 @@ class base_neural_ode_training_settings_class():
     solver_step_size_override: Optional[float] = None
     solver_min_step_override: Optional[float] = None
     solver_norm_override: Optional[str] = None
+    warmup_epochs_override: Optional[int] = None
     # no override for break_after_loss_of as this should only used for one training phase    pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
     
     pre_training: base_neural_ode_pretraining_settings_class = field(default_factory=base_neural_ode_pretraining_settings_class)
@@ -948,17 +954,18 @@ class base_neural_ode_training_settings_class():
         default_class = base_time_stepper_training_settings()
         for i, training_settings in enumerate(v):
             for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override',
-                        'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
+                        'beta1_adam_override', 'beta2_adam_override', 'eps_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override',
-                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
                         'plateau_mode_override', 'plateau_factor_override', 'plateau_patience_override',
                         'plateau_threshold_override', 'plateau_threshold_mode_override', 'plateau_cooldown_override',
                         'plateau_min_lr_override', 'plateau_eps_override',
                         'reload_optimizer_override','solver_override', 'load_seq_len_override', 
                         'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override','solver_rtol_override', 
                         'solver_atol_override', 'solver_step_size_override', 'solver_min_step_override', 'solver_norm_override',
-                        'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override',]:
+                        'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override',
+                        'warmup_epochs_override',]:
                 if info.data[key] is not None:
                     # print warning if override is set and non-default value is used
                     if v[i].__getattribute__(key.split('_override')[0]) != default_class.__getattribute__(key.split('_override')[0]):
@@ -1080,6 +1087,7 @@ class base_latent_ode_training_settings_class:
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
+    eps_adam_override: Optional[float] = None
     weight_decay_override: Optional[float] = None
     clip_grad_norm_override: Optional[float] = None
     early_stopping_patience_override: Optional[int] = None
@@ -1099,11 +1107,11 @@ class base_latent_ode_training_settings_class:
     solver_step_size_override: Optional[float] = None
     solver_norm_override: Optional[str] = None
     solver_min_step_override: Optional[float] = None
+    warmup_epochs_override: Optional[int] = None
     # no override for break_after_loss_of as this should only used for one training phase
     # no override for activate_deterministic_mode_after_this_phase as this should only used for one training phase
 
     # learning-rate scheduler overrides (applied to all main_training phases)
-    use_lr_scheduler_override: Optional[bool] = None
     lr_scheduler_type_override: Optional[str] = None
     cosine_T_max_override: Optional[int] = None
     cosine_eta_min_override: Optional[float] = None
@@ -1140,7 +1148,7 @@ class base_latent_ode_training_settings_class:
         default_class = latent_timestepper_training_settings()
         for i, training_settings in enumerate(v):
             for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override', 
-                        'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
+                        'beta1_adam_override', 'beta2_adam_override', 'eps_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
                         'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override', 'solver_rtol_override', 
@@ -1151,10 +1159,11 @@ class base_latent_ode_training_settings_class:
                         'multi_shooting_condition_multiplier_override',
                         'seq_len_increase_in_batches_override', 'seq_len_increase_abort_after_n_stable_epochs_override', 'solver_norm_override',
                         'include_states_grad_loss_override', 'include_outputs_grad_loss_override',
-                        'use_lr_scheduler_override', 'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
+                        'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
                         'plateau_mode_override', 'plateau_factor_override', 'plateau_patience_override',
                         'plateau_threshold_override', 'plateau_threshold_mode_override', 'plateau_cooldown_override',
-                        'plateau_min_lr_override', 'plateau_eps_override']:
+                        'plateau_min_lr_override', 'plateau_eps_override',
+                        'warmup_epochs_override']:
                 if info.data[key] is not None:
                     # print warning if override is set and non-default value is used
                     if v[i].__getattribute__(key.split('_override')[0]) != default_class.__getattribute__(key.split('_override')[0]):

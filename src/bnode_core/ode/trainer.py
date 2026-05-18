@@ -172,7 +172,7 @@ import copy
 from h5py import Dataset as hdf5_dataset_class
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import LBFGS
-from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, ReduceLROnPlateau, SequentialLR
 
 import bnode_core.filepaths as filepaths
 from bnode_core.ode.node.node_architecture import NeuralODE
@@ -955,6 +955,7 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
     _time_loader = 0
     _time_l = pyTime.time()
     batches_per_epoch = len(train_loader) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
+    warmup_batches = train_cfg.warmup_epochs * batches_per_epoch
     if epoch_this_phase in [0, 1] and pre_train is False: # evaluate at control times only in first epoch to get good estimate for memory usage
         logging.info('Evaluating at control times to get good estimate for memory usage')
         train_cfg = copy.deepcopy(train_cfg)
@@ -965,19 +966,28 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
         # batches_per_epoch can be much larger than len(train_loader)
         # without repeatedly recreating iterators.
         data_batch, train_iter = _next_batch(train_loader, train_iter)
-        # seq_len_increase_in_batches
+        # seq_len determination: frozen during warmup, then ramped after warmup
         _batches_this_phase = epoch_this_phase * batches_per_epoch + batch_idx
         if pre_train is False:
-            if _batches_this_phase < seq_len_increase_in_batches:
-                _seq_len_now = train_cfg.seq_len_epoch_start + int(_batches_this_phase/seq_len_increase_in_batches * (train_cfg.seq_len_train - train_cfg.seq_len_epoch_start))
-                _seq_len_now = min(_seq_len_now, train_cfg.seq_len_train)
+            if _batches_this_phase < warmup_batches:
+                # Warmup phase: freeze seq_len at the start value
+                _seq_len_now = train_cfg.seq_len_epoch_start if train_cfg.seq_len_epoch_start is not None else train_cfg.seq_len_train
+            elif seq_len_increase_in_batches > 0:
+                # Seq-len increase phase: count batches from end of warmup
+                _batches_after_warmup = _batches_this_phase - warmup_batches
+                if _batches_after_warmup < seq_len_increase_in_batches:
+                    _seq_len_now = train_cfg.seq_len_epoch_start + int(_batches_after_warmup / seq_len_increase_in_batches * (train_cfg.seq_len_train - train_cfg.seq_len_epoch_start))
+                    _seq_len_now = min(_seq_len_now, train_cfg.seq_len_train)
+                    if batch_idx % batch_print_interval == 0:
+                        logging.info('\t \t Increasing sequence length to {} in batch since warmup end {}/{} of increase_in_batches'.format(_seq_len_now, _batches_after_warmup, seq_len_increase_in_batches))
+                else:
+                    _seq_len_now = train_cfg.seq_len_train
+            else:
+                _seq_len_now = train_cfg.seq_len_train
+            if _seq_len_now != train_cfg.seq_len_train:
                 for keys in data_batch.keys():
                     if len(data_batch[keys].shape) == 3:
                         data_batch[keys] = data_batch[keys][:,:,:_seq_len_now]
-                if batch_idx % batch_print_interval == 0:
-                    logging.info('\t \t Increasing sequence length to {} in batch since phase start {}/{} of increase_in_batches'.format(_seq_len_now, _batches_this_phase, seq_len_increase_in_batches))
-            else:
-                _seq_len_now = train_cfg.seq_len_train
         else:
             _seq_len_now = 1
         _time_loader += pyTime.time() - _time_l
@@ -1067,10 +1077,12 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
             _norm = clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)
         # step learning-rate scheduler(s) once per optimizer update (per batch)
         if lr_schedulers:
-            # For now only cosine-type schedulers are stepped per batch; others
-            # will typically be stepped at epoch level using validation metrics.
+            # 'cosine' (or SequentialLR wrapping warmup+cosine) and standalone 'warmup' are
+            # stepped per batch. 'plateau' is stepped at epoch level using validation metrics.
             for key in lr_schedulers.keys():
                 if key == 'cosine':
+                    lr_schedulers[key].step()
+                elif key == 'warmup' and _batches_this_phase < warmup_batches:
                     lr_schedulers[key].step()
         _time_step += pyTime.time() - _time
         
@@ -1152,17 +1164,21 @@ def _compute_phase_epoch_settings(
     dataloaders: dict,
     train_cfg: base_training_settings_class,
     pre_train: bool,
-) -> tuple[int, int, int, int]:
-    """Return (batches_per_epoch, epochs_for_seq_len_increase, max_epochs, seq_len_increase_in_batches).
+) -> tuple[int, int, int, int, int, int]:
+    """Return (batches_per_epoch, epochs_for_seq_len_increase, max_epochs, seq_len_increase_in_batches, warmup_epochs, warmup_batches).
 
     ``seq_len_increase_in_batches`` is derived from config and is 0 when the seq-len
     increase phase is disabled.  The caller is responsible for storing it; this
     function does *not* mutate ``train_cfg``.
+
+    ``warmup_epochs`` is taken from config (0 for pre-train phases).  Warmup and
+    seq_len_increase run sequentially, so max_epochs includes both addends.
     """
     if pre_train is True:
         batches_per_epoch = len(dataloaders['train'])
         epochs_for_seq_len_increase = 0
         seq_len_increase_in_batches = 0
+        warmup_epochs = 0
     else:
         batches_per_epoch = len(dataloaders['train']) if train_cfg.batches_per_epoch is None else train_cfg.batches_per_epoch
         if train_cfg.seq_len_epoch_start is not None:
@@ -1175,8 +1191,11 @@ def _compute_phase_epoch_settings(
         else:
             epochs_for_seq_len_increase = 0
             seq_len_increase_in_batches = 0
-    max_epochs = train_cfg.max_epochs + epochs_for_seq_len_increase
-    return batches_per_epoch, epochs_for_seq_len_increase, max_epochs, seq_len_increase_in_batches
+        warmup_epochs = train_cfg.warmup_epochs
+    warmup_batches = warmup_epochs * batches_per_epoch
+    # Warmup and seq_len_increase are sequential: warmup runs first, then seq_len_increase.
+    max_epochs = train_cfg.max_epochs + warmup_epochs + epochs_for_seq_len_increase
+    return batches_per_epoch, epochs_for_seq_len_increase, max_epochs, seq_len_increase_in_batches, warmup_epochs, warmup_batches
 
 
 def _build_phase_checkpoint_paths(pre_train: bool, job_idx: int) -> tuple[Path, Path, Path, Path]:
@@ -1194,12 +1213,35 @@ def _create_phase_optimizer(
     job_idx: int,
 ):
     optimizer_name_lower = train_cfg.optimizer.lower()
+    if optimizer_name_lower in ('radam', 'radamw') and train_cfg.warmup_epochs > 0:
+        raise ValueError(
+            f"Optimizer '{train_cfg.optimizer}' has a built-in warm-up phase via rectified variance; "
+            "do not combine with warmup_epochs > 0."
+        )
     if optimizer_name_lower == 'adam':
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=train_cfg.lr_start,
             weight_decay=train_cfg.weight_decay,
             betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            eps=train_cfg.eps_adam,
+        )
+    elif optimizer_name_lower == 'adamw':
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=train_cfg.lr_start,
+            weight_decay=train_cfg.weight_decay,
+            betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            eps=train_cfg.eps_adam,
+        )
+    elif optimizer_name_lower in ('radam', 'radamw'):
+        optimizer = torch.optim.RAdam(
+            model.parameters(),
+            lr=train_cfg.lr_start,
+            weight_decay=train_cfg.weight_decay,
+            betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            eps=train_cfg.eps_adam,
+            decoupled_weight_decay=(optimizer_name_lower == 'radamw'),
         )
     elif optimizer_name_lower == 'lbfgs':
         optimizer = LBFGS(
@@ -1213,7 +1255,7 @@ def _create_phase_optimizer(
         )
         logging.info('Using LBFGS optimizer')
     else:
-        raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'lbfgs'.")
+        raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'adamw', 'radam', 'radamw', 'lbfgs'.")
     if pre_train is False and train_cfg.reload_optimizer is True:
         try:
             optimizer.load_state_dict(torch.load(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
@@ -1234,49 +1276,79 @@ def _create_phase_lr_schedulers(
     job_idx: int,
     pre_train: bool,
     test: bool,
+    warmup_batches: int = 0,
 ):
     lr_schedulers = {}
-    if test is False and pre_train is False and train_cfg.use_lr_scheduler:
-        if train_cfg.lr_scheduler_type == 'cosine':
-            if train_cfg.cosine_T_max is not None:
-                t_max_epochs = train_cfg.cosine_T_max
-            else:
-                t_max_epochs = max(1, train_cfg.max_epochs // 10)
-            t_max_batches = max(1, int(t_max_epochs * batches_per_epoch))
-            eta_min = train_cfg.cosine_eta_min
-            lr_schedulers['cosine'] = CosineAnnealingLR(optimizer, T_max=t_max_batches, eta_min=eta_min)
-            logging.info(f'Initialized cosine LR scheduler (per batch): T_max_batches={t_max_batches}, eta_min={eta_min}')
-        elif train_cfg.lr_scheduler_type == 'plateau':
-            if train_cfg.plateau_patience is None:
-                iters = lr_on_plateau_iterations_to_min_lr(
-                    lr_start=train_cfg.lr_start,
-                    lr_min=train_cfg.plateau_min_lr,
-                    factor=train_cfg.plateau_factor,
-                    eps=train_cfg.plateau_eps
-                )
-                iters = max(iters, 1)
-                patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // iters)
-            else:
-                patience = train_cfg.plateau_patience
-            mlflow_proxy.log_param('job {} LR scheduler patience'.format(job_idx), patience)
-            lr_schedulers['plateau'] = ReduceLROnPlateau(
+    if test is False and pre_train is False:
+        # Build warmup scheduler if requested (always per-batch, LR 0 → lr_start)
+        warmup_sched = None
+        if warmup_batches > 0:
+            warmup_sched = LinearLR(
                 optimizer,
-                mode=train_cfg.plateau_mode,
-                factor=train_cfg.plateau_factor,
-                patience=patience,
-                threshold=train_cfg.plateau_threshold,
-                threshold_mode=train_cfg.plateau_threshold_mode,
-                cooldown=train_cfg.plateau_cooldown,
-                min_lr=train_cfg.plateau_min_lr,
-                eps=train_cfg.plateau_eps,
+                start_factor=1e-8,  # effectively 0 while avoiding division-by-zero in some torch versions
+                end_factor=1.0,
+                total_iters=warmup_batches,
             )
-            logging.info('Initialized ReduceLROnPlateau LR scheduler: '
-                         f"mode={train_cfg.plateau_mode}, factor={train_cfg.plateau_factor}, "
-                         f"patience={patience}, threshold={train_cfg.plateau_threshold}, "
-                         f"threshold_mode={train_cfg.plateau_threshold_mode}, cooldown={train_cfg.plateau_cooldown}, "
-                         f"min_lr={train_cfg.plateau_min_lr}, eps={train_cfg.plateau_eps}")
-        else:
-            raise ValueError(f'LR scheduler type {train_cfg.lr_scheduler_type} not recognized')
+            logging.info(f'Initialized LR warmup scheduler (per batch): warmup_batches={warmup_batches}')
+
+        if train_cfg.lr_scheduler_type is not None:
+            if train_cfg.lr_scheduler_type == 'cosine':
+                if train_cfg.cosine_T_max is not None:
+                    t_max_epochs = train_cfg.cosine_T_max
+                else:
+                    t_max_epochs = max(1, train_cfg.max_epochs // 10)
+                t_max_batches = max(1, int(t_max_epochs * batches_per_epoch))
+                eta_min = train_cfg.cosine_eta_min
+                cosine_sched = CosineAnnealingLR(optimizer, T_max=t_max_batches, eta_min=eta_min)
+                logging.info(f'Initialized cosine LR scheduler (per batch): T_max_batches={t_max_batches}, eta_min={eta_min}')
+                if warmup_sched is not None:
+                    # Combine warmup and cosine into a single sequential scheduler
+                    lr_schedulers['cosine'] = SequentialLR(
+                        optimizer,
+                        schedulers=[warmup_sched, cosine_sched],
+                        milestones=[warmup_batches],
+                    )
+                    logging.info('Wrapped cosine scheduler with warmup via SequentialLR')
+                else:
+                    lr_schedulers['cosine'] = cosine_sched
+            elif train_cfg.lr_scheduler_type == 'plateau':
+                if train_cfg.plateau_patience is None:
+                    iters = lr_on_plateau_iterations_to_min_lr(
+                        lr_start=train_cfg.lr_start,
+                        lr_min=train_cfg.plateau_min_lr,
+                        factor=train_cfg.plateau_factor,
+                        eps=train_cfg.plateau_eps
+                    )
+                    iters = max(iters, 1)
+                    patience = min(int(train_cfg.early_stopping_patience / 5), (train_cfg.max_epochs / 3) // iters)
+                else:
+                    patience = train_cfg.plateau_patience
+                mlflow_proxy.log_param('job {} LR scheduler patience'.format(job_idx), patience)
+                lr_schedulers['plateau'] = ReduceLROnPlateau(
+                    optimizer,
+                    mode=train_cfg.plateau_mode,
+                    factor=train_cfg.plateau_factor,
+                    patience=patience,
+                    threshold=train_cfg.plateau_threshold,
+                    threshold_mode=train_cfg.plateau_threshold_mode,
+                    cooldown=train_cfg.plateau_cooldown,
+                    min_lr=train_cfg.plateau_min_lr,
+                    eps=train_cfg.plateau_eps,
+                )
+                logging.info('Initialized ReduceLROnPlateau LR scheduler: '
+                             f"mode={train_cfg.plateau_mode}, factor={train_cfg.plateau_factor}, "
+                             f"patience={patience}, threshold={train_cfg.plateau_threshold}, "
+                             f"threshold_mode={train_cfg.plateau_threshold_mode}, cooldown={train_cfg.plateau_cooldown}, "
+                             f"min_lr={train_cfg.plateau_min_lr}, eps={train_cfg.plateau_eps}")
+                # Warmup stored separately; plateau is gated until warmup completes
+                if warmup_sched is not None:
+                    lr_schedulers['warmup'] = warmup_sched
+            else:
+                raise ValueError(f'LR scheduler type {train_cfg.lr_scheduler_type} not recognized')
+        elif warmup_sched is not None:
+            # Warmup only, no main scheduler
+            lr_schedulers['warmup'] = warmup_sched
+
     if len(lr_schedulers) == 0:
         return None
     return lr_schedulers
@@ -1327,7 +1399,7 @@ def train_one_phase(
     # compute training settings for this phase based on config and dataloader.
     # seq_len_increase_in_batches: initialized from config on fresh start; on resume it
     # is already carried by phase_state from the checkpoint (no restore needed).
-    batches_per_epoch, _epochs_for_seq_len_increase, max_epochs, _seq_len_increase_from_cfg = _compute_phase_epoch_settings(
+    batches_per_epoch, _epochs_for_seq_len_increase, max_epochs, _seq_len_increase_from_cfg, _warmup_epochs, warmup_batches = _compute_phase_epoch_settings(
         dataloaders,
         train_cfg,
         pre_train,
@@ -1341,6 +1413,7 @@ def train_one_phase(
         job_idx,
         pre_train,
         False,
+        warmup_batches=warmup_batches,
     )
     # handle resume: load model, optimizer, schedulers, scaler states; set epoch and scheduler positions
     if _resuming:
@@ -1388,11 +1461,14 @@ def train_one_phase(
         if _seq_len_increase_in_batches == 0:
             flag_out_of_seq_len_increase = True
         else:
+            # seq_len_increase starts after warmup; threshold is warmup_batches + seq_len_increase_in_batches
             flag_out_of_seq_len_increase = (
-                batches_completed_before_resume > _seq_len_increase_in_batches
+                batches_completed_before_resume >= warmup_batches + _seq_len_increase_in_batches
             )
+        flag_out_of_warmup = batches_completed_before_resume >= warmup_batches
     else:
         flag_out_of_seq_len_increase = True
+        flag_out_of_warmup = True
 
     try:
         dataloader_iters = {ctx: None for ctx, dl in dataloaders.items() if dl is not None}
@@ -1402,7 +1478,9 @@ def train_one_phase(
                 break
             flag_max_epoch = epoch == epoch_stop - 1
             flag_early_stopping = (
-                early_stopping.early_stop and flag_out_of_seq_len_increase is True
+                early_stopping.early_stop
+                and flag_out_of_seq_len_increase is True
+                and flag_out_of_warmup is True
             )
             flag_break_after_loss = (
                 early_stopping.best_score < train_cfg.break_after_loss_of
@@ -1433,11 +1511,14 @@ def train_one_phase(
                 logging.info('loaded best model from {}'.format(path_best_model))
 
             if pre_train is False:
-                # check if the seq_len_increase phase is over, setting the flag is handled later
-                if flag_out_of_seq_len_increase is False:
+                # check if the seq_len_increase phase is over; seq_len_increase starts after warmup
+                if flag_out_of_seq_len_increase is False and flag_out_of_warmup is True:
                     if phase_state.stable_epochs > train_cfg.seq_len_increase_abort_after_n_stable_epochs:
-                        _seq_len_increase_in_batches = batches_per_epoch * ( epoch - phase_epoch_0)
-                        epoch_stop = phase_epoch_0 + train_cfg.max_epochs + ( epoch - phase_epoch_0)
+                        # Abort seq_len_increase early. Adjust the threshold so flag_out_of_seq_len_increase
+                        # triggers at end of this epoch. epoch_stop gives max_epochs more training
+                        # epochs from the current position (warmup already spent).
+                        _seq_len_increase_in_batches = batches_per_epoch * (epoch - phase_epoch_0 - _warmup_epochs)
+                        epoch_stop = phase_epoch_0 + train_cfg.max_epochs + (epoch - phase_epoch_0)
 
             # normal training 
             if not flag_break_after_epoch and not first_epoch_is_evaluation:
@@ -1584,8 +1665,8 @@ def train_one_phase(
 
                 # Validation-specific post-processing
                 if context == 'validation':
-                    # step lr scheduler on validation loss
-                    if lr_schedulers and 'plateau' in lr_schedulers.keys():
+                    # step lr scheduler on validation loss (only after warmup is complete)
+                    if lr_schedulers and 'plateau' in lr_schedulers.keys() and flag_out_of_warmup:
                         val_loss = ret_vals.get('loss', None)
                         if val_loss is not None and not (np.isnan(val_loss) or np.isinf(val_loss)):
                             lr_schedulers['plateau'].step(val_loss)
@@ -1598,13 +1679,14 @@ def train_one_phase(
                         optimizer,
                         corresponding_loss=corresponding_metric_value,
                     )
-                    # set stable epochs for seq_len increase phase
-                    if ret_vals['loss'] < 2 * ret_vals_train['loss']:
-                        phase_state.stable_epochs += 1
-                        if flag_out_of_seq_len_increase is False and pre_train is False:
-                            logging.info('\t \t \t Stable seq_len_increase epochs: {}/{}'.format(phase_state.stable_epochs, train_cfg.seq_len_increase_abort_after_n_stable_epochs))
-                    else:
-                        phase_state.stable_epochs = 0
+                    # set stable epochs for seq_len increase phase; only meaningful after warmup
+                    if flag_out_of_warmup and pre_train is False:
+                        if ret_vals['loss'] < 2 * ret_vals_train['loss']:
+                            phase_state.stable_epochs += 1
+                            if flag_out_of_seq_len_increase is False:
+                                logging.info('\t \t \t Stable seq_len_increase epochs: {}/{}'.format(phase_state.stable_epochs, train_cfg.seq_len_increase_abort_after_n_stable_epochs))
+                        else:
+                            phase_state.stable_epochs = 0
 
                 res = append_context_to_dict_keys(ret_vals, context, pre_train)
                 if context in ('ref', 'testnorm'):
@@ -1626,13 +1708,19 @@ def train_one_phase(
                     mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_by_context['testnorm'], 'testnorm_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
                 break
             
-            # handle seq_len_increase
+            # handle warmup completion and seq_len_increase completion
             batches_this_phase = (epoch - phase_epoch_0 + 1) * batches_per_epoch
             if pre_train is False:
-                if batches_this_phase > _seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
+                if flag_out_of_warmup is False and batches_this_phase >= warmup_batches:
+                    logging.info('LR warmup complete')
+                    flag_out_of_warmup = True
+                    if flag_out_of_seq_len_increase is True:
+                        early_stopping.reset_counter()
+                if batches_this_phase >= warmup_batches + _seq_len_increase_in_batches and flag_out_of_seq_len_increase is False:
                     logging.info('Out of seq_len_increase_in_batches')
                     flag_out_of_seq_len_increase = True
-                    early_stopping.reset_counter()
+                    if flag_out_of_warmup is True:
+                        early_stopping.reset_counter()
             # log early stopping
             mlflow_proxy.log_metric('EarlyStopping_counter', early_stopping.counter, step=epoch)
             if early_stopping.counter == 0:
