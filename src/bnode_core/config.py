@@ -479,7 +479,7 @@ class base_training_settings_class:
     early_stopping_threshold: float = 0.000
     early_stopping_threshold_mode: str = 'abs'
     # optional learning-rate scheduler configuration (shared across models)
-    lr_scheduler_type: Optional[str] = None
+    lr_scheduler_type: Optional[str] = None # cosine, plateau or None for no scheduler
     cosine_T_max: Optional[int] = None
     cosine_eta_min: float = 1e-5
     plateau_mode: str = 'min'
