@@ -158,8 +158,13 @@ Determined by `train_cfg.optimizer` (case-insensitive):
 
 | Value | Optimizer | Key parameters |
 |---|---|---|
-| `'adam'` | `torch.optim.Adam` | `lr_start`, `weight_decay`, `beta1_adam`, `beta2_adam` |
+| `'adam'` | `torch.optim.Adam` | `lr_start`, `weight_decay`, `beta1_adam`, `beta2_adam`, `eps_adam` |
+| `'adamw'` | `torch.optim.AdamW` | `lr_start`, `weight_decay`, `beta1_adam`, `beta2_adam`, `eps_adam` (decoupled weight decay) |
+| `'radam'` | `torch.optim.RAdam` | `lr_start`, `weight_decay`, `beta1_adam`, `beta2_adam`, `eps_adam` |
+| `'radamw'` | `torch.optim.RAdam` | same as `radam` but with `decoupled_weight_decay=True` |
 | `'lbfgs'` | `torch.optim.LBFGS` | `lr_start`, `lbfgs_max_iter`, `lbfgs_history_size`, `lbfgs_tolerance_grad`, `lbfgs_tolerance_change`, `lbfgs_line_search_fn` |
+
+**Constraint:** `radam` and `radamw` cannot be combined with `warmup_epochs > 0` — both raise `ValueError` at startup because RAdam already includes a built-in warm-up via its rectified variance.
 
 If `pre_train=False` and `train_cfg.reload_optimizer=True`, the optimizer state from the previous phase's checkpoint (`filepath_optimizer_current_hydra_output(job_idx-1)`) is loaded and the learning rate is reset to `train_cfg.lr_start`. Failure is caught and logged as a warning (does not abort).
 

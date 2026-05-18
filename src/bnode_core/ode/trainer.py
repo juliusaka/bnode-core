@@ -1213,12 +1213,35 @@ def _create_phase_optimizer(
     job_idx: int,
 ):
     optimizer_name_lower = train_cfg.optimizer.lower()
+    if optimizer_name_lower in ('radam', 'radamw') and train_cfg.warmup_epochs > 0:
+        raise ValueError(
+            f"Optimizer '{train_cfg.optimizer}' has a built-in warm-up phase via rectified variance; "
+            "do not combine with warmup_epochs > 0."
+        )
     if optimizer_name_lower == 'adam':
         optimizer = torch.optim.Adam(
             model.parameters(),
             lr=train_cfg.lr_start,
             weight_decay=train_cfg.weight_decay,
             betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            eps=train_cfg.eps_adam,
+        )
+    elif optimizer_name_lower == 'adamw':
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=train_cfg.lr_start,
+            weight_decay=train_cfg.weight_decay,
+            betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            eps=train_cfg.eps_adam,
+        )
+    elif optimizer_name_lower in ('radam', 'radamw'):
+        optimizer = torch.optim.RAdam(
+            model.parameters(),
+            lr=train_cfg.lr_start,
+            weight_decay=train_cfg.weight_decay,
+            betas=(train_cfg.beta1_adam, train_cfg.beta2_adam),
+            eps=train_cfg.eps_adam,
+            decoupled_weight_decay=(optimizer_name_lower == 'radamw'),
         )
     elif optimizer_name_lower == 'lbfgs':
         optimizer = LBFGS(
@@ -1232,7 +1255,7 @@ def _create_phase_optimizer(
         )
         logging.info('Using LBFGS optimizer')
     else:
-        raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'lbfgs'.")
+        raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'adamw', 'radam', 'radamw', 'lbfgs'.")
     if pre_train is False and train_cfg.reload_optimizer is True:
         try:
             optimizer.load_state_dict(torch.load(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))

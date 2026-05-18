@@ -222,3 +222,25 @@ def test_warmup_seq_len_offset():
     # After ramp: at seq_len_train
     assert _seq_len_at(warmup_batches + seq_len_increase_in_batches) == seq_len_train
     assert _seq_len_at(warmup_batches + seq_len_increase_in_batches + 1) == seq_len_train
+
+
+# ---------------------------------------------------------------------------
+# RAdam / RAdamW + warmup guard
+# ---------------------------------------------------------------------------
+
+def _make_tiny_model() -> torch.nn.Module:
+    return nn.Linear(2, 1)
+
+
+@pytest.mark.parametrize("optimizer_name", ["radam", "RAdam", "radamw", "RAdamW"])
+def test_radam_warmup_raises(optimizer_name):
+    """_create_phase_optimizer must raise ValueError for radam/radamw + warmup_epochs > 0."""
+    from bnode_core.ode.trainer import _create_phase_optimizer
+
+    cfg = base_training_settings_class(
+        optimizer=optimizer_name,
+        warmup_epochs=2,
+        lr_start=1e-3,
+    )
+    with pytest.raises(ValueError, match="warmup_epochs"):
+        _create_phase_optimizer(_make_tiny_model(), cfg, pre_train=False, job_idx=0)

@@ -434,9 +434,10 @@ class base_training_settings_class:
         batch_size (int): Training mini-batch size.
         max_epochs (int): Maximum number of epochs.
         lr_start (float): Initial learning rate.
-        optimizer (str): Optimizer type identifier ('adam' or 'lbfgs').
-        beta1_adam (float): Adam beta1 parameter.
-        beta2_adam (float): Adam beta2 parameter.
+        optimizer (str): Optimizer type identifier ('adam', 'adamw', 'radam', 'radamw', or 'lbfgs').
+        beta1_adam (float): Adam beta1 parameter (used by adam, adamw, radam, radamw).
+        beta2_adam (float): Adam beta2 parameter (used by adam, adamw, radam, radamw).
+        eps_adam (float): Epsilon for numerical stability in Adam-family optimizers. Default 1e-8.
         weight_decay (float): L2 weight decay.
         clip_grad_norm (float): Gradient clipping norm.
         early_stopping_patience (int): Patience before early stopping.
@@ -471,6 +472,7 @@ class base_training_settings_class:
     optimizer: str = 'adam'
     beta1_adam: Optional[float] = 0.9
     beta2_adam: Optional[float] = 0.999
+    eps_adam: float = 1e-8
     weight_decay: float = 0.0
     clip_grad_norm: float = 50.0
     early_stopping_patience: int = 50
@@ -907,6 +909,7 @@ class base_neural_ode_training_settings_class():
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
+    eps_adam_override: Optional[float] = None
     weight_decay_override: Optional[float] = None
     clip_grad_norm_override: Optional[float] = None
     early_stopping_patience_override: Optional[int] = None
@@ -951,7 +954,7 @@ class base_neural_ode_training_settings_class():
         default_class = base_time_stepper_training_settings()
         for i, training_settings in enumerate(v):
             for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override',
-                        'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
+                        'beta1_adam_override', 'beta2_adam_override', 'eps_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override',
                         'lr_scheduler_type_override', 'cosine_T_max_override', 'cosine_eta_min_override',
@@ -1084,6 +1087,7 @@ class base_latent_ode_training_settings_class:
     lr_start_override: Optional[float] = None
     beta1_adam_override: Optional[float] = None
     beta2_adam_override: Optional[float] = None
+    eps_adam_override: Optional[float] = None
     weight_decay_override: Optional[float] = None
     clip_grad_norm_override: Optional[float] = None
     early_stopping_patience_override: Optional[int] = None
@@ -1144,7 +1148,7 @@ class base_latent_ode_training_settings_class:
         default_class = latent_timestepper_training_settings()
         for i, training_settings in enumerate(v):
             for key in ['batch_size_override', 'batches_per_epoch_override', 'max_epochs_override', 'optimizer_override', 'lr_start_override', 
-                        'beta1_adam_override', 'beta2_adam_override', 'clip_grad_norm_override', 
+                        'beta1_adam_override', 'beta2_adam_override', 'eps_adam_override', 'clip_grad_norm_override', 
                         'weight_decay_override', 'early_stopping_patience_override', 'early_stopping_threshold_override', 
                         'early_stopping_threshold_mode_override', 'reload_optimizer_override','solver_override', 'load_seq_len_override', 
                         'seq_len_train_override', 'use_adjoint_override', 'evaluate_at_control_times_override', 'solver_rtol_override', 
