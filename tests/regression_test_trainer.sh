@@ -69,8 +69,8 @@ run_training() {
             "mlflow_experiment_name=regression" \
             "mlflow_run_name=$run_name" \
             "mlflow_tracking_uri=file://$MLRUNS_DIR" \
-            "nn_model.training.max_epochs_override=10000" \
-            "nn_model.training.early_stopping_patience_override=800" \
+            "nn_model.training.max_epochs_override=2000" \
+            "nn_model.training.early_stopping_patience_override=2000" \
     )
 }
 
