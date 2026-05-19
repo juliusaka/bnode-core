@@ -1211,6 +1211,7 @@ def _create_phase_optimizer(
     train_cfg: base_training_settings_class,
     pre_train: bool,
     job_idx: int,
+    is_resuming: bool = False,
 ):
     optimizer_name_lower = train_cfg.optimizer.lower()
     if optimizer_name_lower in ('radam', 'radamw') and train_cfg.warmup_epochs > 0:
@@ -1257,15 +1258,22 @@ def _create_phase_optimizer(
     else:
         raise ValueError(f"Unknown optimizer type '{train_cfg.optimizer}'. Supported: 'adam', 'adamw', 'radam', 'radamw', 'lbfgs'.")
     if pre_train is False and train_cfg.reload_optimizer is True:
-        try:
-            optimizer.load_state_dict(torch.load(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
-            logging.info('Reloaded optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = train_cfg.lr_start
-                logging.info('Set learning rate to {} after reloading optimizer'.format(train_cfg.lr_start))
-        except Exception:
-            logging.warning('Could not reload optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
-            logging.warning('Initializing optimizer with new parameters')
+        if is_resuming:
+            logging.info(
+                'reload_optimizer=True but skipping inter-phase reload for job %d: '
+                'optimizer state will be restored from the restart bundle.',
+                job_idx,
+            )
+        else:
+            try:
+                optimizer.load_state_dict(torch.load(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
+                logging.info('Reloaded optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = train_cfg.lr_start
+                    logging.info('Set learning rate to {} after reloading optimizer'.format(train_cfg.lr_start))
+            except Exception:
+                logging.warning('Could not reload optimizer from {}'.format(filepaths.filepath_optimizer_current_hydra_output(job_idx-1)))
+                logging.warning('Initializing optimizer with new parameters')
     return optimizer
 
 
@@ -1377,7 +1385,6 @@ def train_one_phase(
         pre_train,
         job_idx,
     )
-    optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx)
     early_stopping = EarlyStopping(
         patience=train_cfg.early_stopping_patience,
         verbose=True,
@@ -1395,6 +1402,7 @@ def train_one_phase(
     _resuming = restart_train_one_phase_state is not None
     phase_state = restart_train_one_phase_state if _resuming else TrainOnePhaseState()
     phase_state.early_stopping = early_stopping
+    optimizer = _create_phase_optimizer(model, train_cfg, pre_train, job_idx, is_resuming=_resuming)
 
     # compute training settings for this phase based on config and dataloader.
     # seq_len_increase_in_batches: initialized from config on fresh start; on resume it
@@ -1426,7 +1434,9 @@ def train_one_phase(
                 "Expected optimizer state in restart bundle for resume, but got None."
             )
         model.load_state_dict({k: v.to(device) for k, v in restart_model_state.items()})
+        logging.info('Restored model state from restart bundle for job %d.', job_idx)
         optimizer.load_state_dict(restart_optimizer_state)
+        logging.info('Restored optimizer state from restart bundle for job %d.', job_idx)
         scheduler_states = restart_scheduler_states  # already a dict from the bundle
         scheduler_keys = set(scheduler_states.keys()) if scheduler_states is not None else set()
         current_scheduler_keys = set(lr_schedulers.keys()) if lr_schedulers is not None else set()
@@ -1438,11 +1448,19 @@ def train_one_phase(
         if lr_schedulers is not None and scheduler_states is not None:
             for name, scheduler in lr_schedulers.items():
                 scheduler.load_state_dict(scheduler_states[name])
+            logging.info('Restored %d LR scheduler(s) from restart bundle: %s', len(lr_schedulers), sorted(lr_schedulers.keys()))
+        else:
+            logging.info('No LR schedulers to restore from restart bundle.')
         if restart_scaler_state is not None:
             scaler.load_state_dict(restart_scaler_state)
+            logging.info('Restored gradient scaler state from restart bundle.')
+        else:
+            logging.info('No scaler state in restart bundle; using fresh scaler.')
         _bundle = torch.load(checkpoint_store.checkpoint_path, map_location='cpu', weights_only=False)
         phase_state.load_from_state_dict(_bundle["inner"])
+        logging.info('Restored phase state from restart bundle.')
         restore_rng_state(phase_state.rng_state, use_cuda=cfg.use_cuda)
+        logging.info('Restored RNG state from restart bundle.')
         logging.info(
             "Restored train_one_phase_state at global epoch %s (phase epoch %s)",
             epoch_0,

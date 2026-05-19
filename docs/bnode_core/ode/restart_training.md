@@ -121,6 +121,35 @@ trainer hydra.run.dir=outputs/2026-01-15/12-00-00/abc123 mlflow_tracking_uri=htt
 
 Use the same MLflow tracking URI and experiment as the original run. The outer restart state reopens the stored MLflow run id; conflicting run ids are rejected.
 
+## Slurm-managed restarts
+
+### How it works
+
+Slurm sends `SIGTERM` to the job script before killing it at the time limit. The template should register an `on_term` handler that calls `scontrol requeue` and exits cleanly:
+
+```bash
+#SBATCH --open-mode=append   # keep log file across requeues
+#SBATCH --requeue             # also requeue on node failure
+
+on_term() {
+    echo "Time limit reached. Requeuing job ${SLURM_JOB_ID}..."
+    scontrol requeue "${SLURM_JOB_ID}"
+    exit 0
+}
+trap on_term TERM
+```
+
+When `on_term` calls `exit 0`, the `EXIT` trap registered by the generated block fires and kills the background trainer processes. The trainer has already written `training_restart_checkpoint.pt` at the end of the last completed epoch, so the requeued job resumes from there.
+
+| Mechanism | Detail |
+|-----------|--------|
+| `#SBATCH --requeue` | Slurm requeues automatically on node failure (SIGKILL) |
+| `trap on_term TERM` | Requeues at time limit (SIGTERM); lets EXIT trap clean up trainers |
+| `#SBATCH --open-mode=append` | Log file is appended, not overwritten, on each requeue |
+| `RUN_DIR` (UUID-pinned) | Fixed at generation time; every requeue lands in the same Hydra output directory |
+| `training_restart_checkpoint.pt` | Written atomically at the end of each epoch; auto-detected on next start |
+| `bnode_slurm_script_completed=1` | Disarms the EXIT trap on successful completion so Slurm records a clean exit |
+
 ## Operational expectations
 
 - A resumable run must have `training_restart_checkpoint.pt`. The bundle contains model, optimizer, scheduler, and scaler state — no separate `model.pt` or `optimizer.pt` restart files are required.
