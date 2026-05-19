@@ -1753,14 +1753,14 @@ def train_one_phase(
                     mlflow_proxy.log_metric(f'best_{early_stopping_metric_name}', early_stopping.corresponding_score, step=epoch)
             
             # handle checkpointing the trainer state
-            phase_state.phase_epoch = epoch + 1 - phase_epoch_0
+            phase_state.phase_epoch = epoch + 1 - phase_epoch_0 # the epoch in the phase, where we would start again, is the next epoch
             phase_state.seq_len_increase_in_batches = _seq_len_increase_in_batches
             phase_state.rng_state = capture_rng_state(use_cuda=cfg.use_cuda)
             train_all_state = (
                 train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()
             )
             train_all_state.job_idx = job_idx
-            train_all_state.next_epoch_anchor = epoch + 1
+            train_all_state.next_epoch_anchor = epoch + 1 # the epoch, where would start again, is the next one
             _active_run = mlflow.active_run()
             train_all_state.mlflow_run_id = _active_run.info.run_id if _active_run is not None else None
             checkpoint_store.save_epoch_checkpoint(
@@ -1788,7 +1788,7 @@ def train_one_phase(
                     logging.warning('Could not load best model from {}'.format(path_best_model))
         logging.info('loaded best model from {}'.format(path_best_model))
     mlflow_proxy.log_metric('job_{}_final_epoch'.format(job_idx), value=epoch)
-    return epoch + 1
+    return epoch + 1 # the epoch, where the next phase starts
 
 def main():
     """Entry point for (B)NODE training via Hydra CLI.
