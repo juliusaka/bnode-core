@@ -11,6 +11,7 @@ import torch
 
 
 RESTART_CHECKPOINT_FILENAME = "training_restart_checkpoint.pt"
+TRAINING_COMPLETE_MARKER_FILENAME = "training_complete.marker"
 
 
 class CheckpointRequestedExit(RuntimeError):

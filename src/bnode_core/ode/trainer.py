@@ -800,6 +800,12 @@ def train_all_phases(cfg: train_test_config_class):
 
     # load restart state if exists, to continue training from checkpoint if needed
     checkpoint_store = RestartCheckpointStore.from_current_hydra_output()
+    if checkpoint_store.is_training_complete():
+        logging.info(
+            "Training already complete (found %s). Exiting without retraining.",
+            checkpoint_store.complete_marker_path,
+        )
+        return
     train_all_phases_state, train_one_phase_state, restart_scheduler_states, restart_scaler_state, restart_model_state, restart_optimizer_state = checkpoint_store.load_and_validate(job_list=job_list)
     train_all_phases_state = (
         train_all_phases_state if train_all_phases_state is not None else TrainAllPhasesState()

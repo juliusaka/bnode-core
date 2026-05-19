@@ -12,7 +12,11 @@ At the end of every completed training epoch, `RestartCheckpointStore` updates t
 - `training_restart_checkpoint.pt`: a versioned bundle containing the outer state, inner state, LR scheduler state dict, GradScaler state dict, model state dict, and optimizer state dict — written as one `torch.save` call and installed via `os.replace`, so the file is always either the previous complete bundle or the new complete bundle (never a partial mix)
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
 
-Finished runs remove the restart checkpoint bundle file.
+Finished runs remove the restart checkpoint bundle file and write `training_complete.marker` in its place.
+
+## Already-complete guard
+
+When Slurm requeues a job after training has already finished (e.g. due to a node failure immediately after the final epoch), the trainer detects `training_complete.marker` at startup and returns immediately without rerunning any training phases.  This prevents the common failure mode where a spurious requeue causes training to restart from scratch.
 
 ## State model
 

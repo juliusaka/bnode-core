@@ -12,8 +12,9 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 - Keep exactly two persisted restart-state classes:
   - `TrainAllPhasesState`
   - `TrainOnePhaseState`
-- Current trainer runs use **one restart checkpoint bundle**:
-  - `training_restart_checkpoint.pt`
+- Current trainer runs use **one restart checkpoint bundle** and **one completion marker**:
+  - `training_restart_checkpoint.pt` — active during training; removed on clean completion
+  - `training_complete.marker` — written by `clear_restart_artifacts()` at the end of successful training; checked at `train_all_phases()` startup to guard against spurious Slurm requeues after completion
 - Do not re-introduce wrapper-state layers such as `OuterTrainingState`, `TrainingPhaseState`, or `LiveTrainingState`.
 - Do not add legacy compatibility readers, old multi-file restart schemas, or obsolete restart filenames unless the user explicitly asks for compatibility.
 
@@ -52,7 +53,8 @@ Apply these instructions when editing trainer restart/resume state logic or its 
 - `train_all_phases()` loads the bundle early only to choose the resumed job and epoch anchor.
 - `RestartCheckpointStore` owns:
   - atomic writes for the restart bundle (`training_restart_checkpoint.pt`)
-  - restart cleanup (single bundle file)
+  - restart cleanup (single bundle file) — `clear_restart_artifacts()` removes the bundle and writes `training_complete.marker`
+  - the completion guard — `is_training_complete()` returns `True` when `training_complete.marker` exists
 - `train_one_phase()` must construct:
   - optimizer
   - schedulers
@@ -80,12 +82,14 @@ Apply these instructions when editing trainer restart/resume state logic or its 
   - roundtrips for `TrainOnePhaseState`
   - syncing effective `seq_len_increase_in_batches` at epoch-end checkpoint save boundary
   - restoring early-stopping and RNG state from `TrainOnePhaseState`
-  - atomic save behavior and tmp-file cleanup in `RestartCheckpointStore`
+  - `training_complete.marker` and `is_training_complete()` behavior in `RestartCheckpointStore`
+  - early-exit guard in `train_all_phases()` when `is_training_complete()` is True
   - explicit serializer-missing failure behavior for declared special fields
   - saving/loading model and optimizer state dicts in the bundle
 - `tests/ode/test_bnode.py` resume tests should assert the single-file bundle layout explicitly:
   - interrupted runs leave `training_restart_checkpoint.pt` behind (no separate `model.pt` or `optimizer.pt`)
-  - successful resumed runs remove the single restart checkpoint file
+  - successful completed runs remove the restart checkpoint file and write `training_complete.marker`
+  - a second trainer run on the same output directory (simulating Slurm requeue after completion) exits immediately without retraining
   - MLflow resume metadata comes from the outer state in the bundle
   - `model_phase_{idx}.pt` / `optimizer_phase_{idx}.pt` (EarlyStopping best) remain as separate files
 - If persisted fields, restore ordering, or restart filenames change, update docs and all relevant restart tests in the same task.
