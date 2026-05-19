@@ -1699,7 +1699,7 @@ def train_one_phase(
                     early_stopping(
                         ret_vals['loss'],
                         model,
-                        epoch,
+                        epoch + 1,
                         optimizer,
                         corresponding_loss=corresponding_metric_value,
                     )
