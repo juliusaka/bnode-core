@@ -1099,7 +1099,7 @@ def train_one_epoch(model, optimizer, train_loader, train_iter, scaler, train_cf
             _ode_calls_forward = ret_vals_train['ode_calls_forward'] if 'ode_calls_forward' in ret_vals_train.keys() else 0 
             try:
                 logging.info('Train Epoch: {} [{}/{} ({:.0f}%) tot.: {}] Loss: {:.6f}, avg. time per batch: {:.3f} [load. {:.1f}%, forw. {:.1f}%, backw. {:.1f}%, step {:.1f}%], ODE calls forw/backw {}/{}'.format(
-                    epoch+1, batch_idx+1, batches_per_epoch,
+                    epoch, batch_idx+1, batches_per_epoch,
                     100. * batch_idx / batches_per_epoch, len(train_loader),
                     loss.item(), _total_time/(batch_idx+1),_time_loader/_total_time*100, _time_forward/_total_time*100, _time_backward/_total_time*100, _time_step/_total_time*100,
                     _ode_calls_forward, _ode_calls_backward))
@@ -1699,7 +1699,7 @@ def train_one_phase(
                     early_stopping(
                         ret_vals['loss'],
                         model,
-                        epoch + 1,
+                        epoch,
                         optimizer,
                         corresponding_loss=corresponding_metric_value,
                     )
@@ -1720,7 +1720,7 @@ def train_one_phase(
             mlflow_proxy.log_metric('lr', optimizer.param_groups[0]['lr'], step=epoch)
             mlflow_proxy.log_metric('Stable_epochs', phase_state.stable_epochs, step=epoch)
             progress_string = model.get_progress_string(ret_vals_train, ret_vals_by_context['validation'], ret_vals_by_context['test'], pre_train)
-            logging.info('Epoch: {}/{} EarlyStopping: {}/{} |-| {}'.format(epoch + 1, epoch_stop, early_stopping.counter, early_stopping.patience, progress_string))
+            logging.info('Epoch: {}/{} EarlyStopping: {}/{} |-| {}'.format(epoch, epoch_stop, early_stopping.counter, early_stopping.patience, progress_string))
 
             if flag_break_after_epoch:
                 mlflow_proxy.log_metrics(append_context_to_dict_keys(ret_vals_train, 'train_job_{}_final'.format(job_idx - 1), pre_train), step=epoch)
