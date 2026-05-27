@@ -24,6 +24,7 @@ from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpo
 from bnode_core.ode.trainer_utils.restart_state import (
     CheckpointRequestedExit,
     RESTART_CHECKPOINT_FILENAME,
+    TRAINING_COMPLETE_MARKER_FILENAME,
     TrainAllPhasesState,
     TrainOnePhaseState,
 )
@@ -669,4 +670,56 @@ def test_nan_epoch_reloads_model_weights_from_bundle(monkeypatch):
             model_state_after_reload[0][key],
             first_bundle_model[0][key],
             msg=f"Model parameter '{key}' was not correctly reloaded from the bundle after a NaN epoch.",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Already-complete guard tests
+# ---------------------------------------------------------------------------
+
+def test_requeue_after_training_complete_exits_without_retraining():
+    """Trainer exits immediately when requeued after a completed run.
+
+    When Slurm requeues a job (e.g. due to a node failure after training has
+    already finished and the restart checkpoint was deleted), the trainer must
+    detect the completion marker and return without rerunning any training.
+
+    Sequence:
+    1. Run training to completion.  ``clear_restart_artifacts()`` removes the
+       restart checkpoint and writes ``training_complete.marker``.
+    2. Run trainer again from the same output directory without clearing it.
+    3. Assert: trainer returns immediately; the model checkpoint on disk is
+       identical to the one produced in step 1 (no new training occurred).
+    """
+    scope = 'requeue_after_complete'
+    overrides = _resume_training_overrides(
+        nn_model='bnode_pytest',
+        max_epochs=(2, 2),
+    ) + _resume_mlflow_overrides(scope)
+
+    _set_training_seeds()
+    first_dir = ode_training(scope, overrides=overrides)
+
+    checkpoint_path = first_dir / RESTART_CHECKPOINT_FILENAME
+    marker_path = first_dir / TRAINING_COMPLETE_MARKER_FILENAME
+
+    assert not checkpoint_path.exists(), "Restart checkpoint must be removed after successful training."
+    assert marker_path.exists(), "Completion marker must exist after successful training."
+
+    # Record model weights produced by the first (real) run.
+    phase_model = first_dir / 'model_phase_2.pt'
+    model_state_after_first_run = _load_model_state(phase_model)
+
+    # Second run from the same directory: trainer must detect the marker and exit.
+    _set_training_seeds()
+    second_dir = ode_training(scope, overrides=overrides, clear_output_before_start=False)
+    assert second_dir == first_dir
+
+    # Model on disk must be unchanged — no training epochs ran.
+    model_state_after_second_run = _load_model_state(phase_model)
+    for key in model_state_after_first_run:
+        torch.testing.assert_close(
+            model_state_after_first_run[key],
+            model_state_after_second_run[key],
+            msg=f"Model weight '{key}' changed after requeued run — trainer must not retrain.",
         )

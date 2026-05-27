@@ -10,6 +10,7 @@ import torch
 
 import bnode_core.filepaths as filepaths
 from bnode_core.ode.trainer_utils.restart_state import (
+    TRAINING_COMPLETE_MARKER_FILENAME,
     TrainAllPhasesState,
     TrainOnePhaseState,
 )
@@ -26,6 +27,14 @@ class RestartCheckpointStore:
     @classmethod
     def from_current_hydra_output(cls) -> "RestartCheckpointStore":
         return cls(checkpoint_path=filepaths.filepath_restart_checkpoint_current_hydra_output())
+
+    @property
+    def complete_marker_path(self) -> Path:
+        return self.checkpoint_path.with_name(TRAINING_COMPLETE_MARKER_FILENAME)
+
+    def is_training_complete(self) -> bool:
+        """Return True if a previous run already finished training in this output directory."""
+        return self.complete_marker_path.exists()
 
     def load_checkpoint_if_available(
         self,
@@ -127,6 +136,8 @@ class RestartCheckpointStore:
         if self.checkpoint_path.exists():
             self.checkpoint_path.unlink()
             logging.info("Removed trainer restart checkpoint at %s", self.checkpoint_path)
+        self.complete_marker_path.touch()
+        logging.info("Wrote training complete marker at %s", self.complete_marker_path)
 
     @classmethod
     def _validate_bundle_version(cls, bundle: dict) -> None:

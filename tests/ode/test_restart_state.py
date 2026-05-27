@@ -9,6 +9,7 @@ from bnode_core.nn.nn_utils.early_stopping import EarlyStopping
 from bnode_core.ode.trainer_utils.restart_checkpoint_store import RestartCheckpointStore
 from bnode_core.ode.trainer_utils.restart_state import (
     RESTART_CHECKPOINT_FILENAME,
+    TRAINING_COMPLETE_MARKER_FILENAME,
     TrainAllPhasesState,
     TrainOnePhaseState,
     capture_rng_state,
@@ -182,3 +183,32 @@ def test_train_one_phase_state_raises_for_missing_registry_attr(tmp_path, monkey
 
     with pytest.raises(AttributeError):
         state.save(restart_path)
+
+
+def test_is_training_complete_returns_false_when_no_marker(tmp_path):
+    store = RestartCheckpointStore(checkpoint_path=tmp_path / RESTART_CHECKPOINT_FILENAME)
+    assert not store.is_training_complete()
+
+
+def test_is_training_complete_returns_true_when_marker_exists(tmp_path):
+    store = RestartCheckpointStore(checkpoint_path=tmp_path / RESTART_CHECKPOINT_FILENAME)
+    (tmp_path / TRAINING_COMPLETE_MARKER_FILENAME).touch()
+    assert store.is_training_complete()
+
+
+def test_clear_restart_artifacts_creates_completion_marker(tmp_path):
+    checkpoint_path = tmp_path / RESTART_CHECKPOINT_FILENAME
+    checkpoint_path.write_bytes(b"placeholder")
+    store = RestartCheckpointStore(checkpoint_path=checkpoint_path)
+
+    store.clear_restart_artifacts()
+
+    assert not checkpoint_path.exists(), "Checkpoint must be removed"
+    marker = tmp_path / TRAINING_COMPLETE_MARKER_FILENAME
+    assert marker.exists(), "Completion marker must be written"
+
+
+def test_clear_restart_artifacts_creates_marker_even_without_checkpoint(tmp_path):
+    store = RestartCheckpointStore(checkpoint_path=tmp_path / RESTART_CHECKPOINT_FILENAME)
+    store.clear_restart_artifacts()
+    assert (tmp_path / TRAINING_COMPLETE_MARKER_FILENAME).exists()

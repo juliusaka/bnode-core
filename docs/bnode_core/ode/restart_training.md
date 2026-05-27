@@ -12,7 +12,11 @@ At the end of every completed training epoch, `RestartCheckpointStore` updates t
 - `training_restart_checkpoint.pt`: a versioned bundle containing the outer state, inner state, LR scheduler state dict, GradScaler state dict, model state dict, and optimizer state dict — written as one `torch.save` call and installed via `os.replace`, so the file is always either the previous complete bundle or the new complete bundle (never a partial mix)
 - `model_phase_<job_idx>.pt` / `optimizer_phase_<job_idx>.pt`: best checkpoint pair for the active phase when early stopping has saved one
 
-Finished runs remove the restart checkpoint bundle file.
+Finished runs remove the restart checkpoint bundle file and write `training_complete.marker` in its place.
+
+## Already-complete guard
+
+When Slurm requeues a job after training has already finished (e.g. due to a node failure immediately after the final epoch), the trainer detects `training_complete.marker` at startup and returns immediately without rerunning any training phases.  This prevents the common failure mode where a spurious requeue causes training to restart from scratch.
 
 ## State model
 
@@ -120,6 +124,35 @@ trainer hydra.run.dir=outputs/2026-01-15/12-00-00/abc123 mlflow_tracking_uri=htt
 ```
 
 Use the same MLflow tracking URI and experiment as the original run. The outer restart state reopens the stored MLflow run id; conflicting run ids are rejected.
+
+## Slurm-managed restarts
+
+### How it works
+
+Slurm sends `SIGTERM` to the job script before killing it at the time limit. The template should register an `on_term` handler that calls `scontrol requeue` and exits cleanly:
+
+```bash
+#SBATCH --open-mode=append   # keep log file across requeues
+#SBATCH --requeue             # also requeue on node failure
+
+on_term() {
+    echo "Time limit reached. Requeuing job ${SLURM_JOB_ID}..."
+    scontrol requeue "${SLURM_JOB_ID}"
+    exit 0
+}
+trap on_term TERM
+```
+
+When `on_term` calls `exit 0`, the `EXIT` trap registered by the generated block fires and kills the background trainer processes. The trainer has already written `training_restart_checkpoint.pt` at the end of the last completed epoch, so the requeued job resumes from there.
+
+| Mechanism | Detail |
+|-----------|--------|
+| `#SBATCH --requeue` | Slurm requeues automatically on node failure (SIGKILL) |
+| `trap on_term TERM` | Requeues at time limit (SIGTERM); lets EXIT trap clean up trainers |
+| `#SBATCH --open-mode=append` | Log file is appended, not overwritten, on each requeue |
+| `RUN_DIR` (UUID-pinned) | Fixed at generation time; every requeue lands in the same Hydra output directory |
+| `training_restart_checkpoint.pt` | Written atomically at the end of each epoch; auto-detected on next start |
+| `bnode_slurm_script_completed=1` | Disarms the EXIT trap on successful completion so Slurm records a clean exit |
 
 ## Operational expectations
 

@@ -54,6 +54,17 @@ nav:
       - bnode_core/data_generation/introduction.md
       - bnode_core/data_generation/raw_data_generation.md
       - bnode_core/data_generation/data_preperation.md
+      - Sampling Methods:
+        - bnode_core/data_generation/sampling/parameters.md
+        - bnode_core/data_generation/sampling/initial_states.md
+        - bnode_core/data_generation/sampling/controls_random.md
+        - bnode_core/data_generation/sampling/controls_random_offset.md
+        - bnode_core/data_generation/sampling/controls_rocs.md
+        - bnode_core/data_generation/sampling/controls_rrocs.md
+        - bnode_core/data_generation/sampling/controls_steps.md
+        - bnode_core/data_generation/sampling/controls_frequency_response.md
+        - bnode_core/data_generation/sampling/controls_from_file.md
+        - bnode_core/data_generation/sampling/controls_from_excel.md
     - (B)NODE Module:
       - bnode_core/ode/trainer.md
       - bnode_core/ode/restart_training.md
