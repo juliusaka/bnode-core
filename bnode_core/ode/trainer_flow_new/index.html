@@ -1,0 +1,3598 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="bnode-core">
+      
+      
+        <meta name="author" content="Julius Aka">
+      
+      
+        <link rel="canonical" href="https://github.com/juliusaka/balanced-neural-odes/bnode_core/ode/trainer_flow_new/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Training Flow Reference: trainer.py (HEAD of modelica_export_copilot, commit 2ab3859) - bnode-core</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#training-flow-reference-trainerpy-head-of-modelica_export_copilot-commit-2ab3859" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="bnode-core" class="md-header__button md-logo" aria-label="bnode-core" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 0H8C6.9 0 6 .9 6 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V6zm4 18H8V2h7v5h5zM4 4v18h16v2H4c-1.1 0-2-.9-2-2V4zm6 6v2h8v-2zm0 4v2h5v-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bnode-core
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Training Flow Reference: trainer.py (HEAD of modelica_export_copilot, commit 2ab3859)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7M9 21v-1h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1m3-17a5 5 0 0 0-5 5c0 2.05 1.23 3.81 3 4.58V16h4v-2.42c1.77-.77 3-2.53 3-4.58a5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/juliusaka/balanced-neural-odes" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../config/" class="md-tabs__link">
+          
+  
+  
+  Config
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../LICENSE/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="bnode-core" class="md-nav__button md-logo" aria-label="bnode-core" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 0H8C6.9 0 6 .9 6 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V6zm4 18H8V2h7v5h5zM4 4v18h16v2H4c-1.1 0-2-.9-2-2V4zm6 6v2h8v-2zm0 4v2h5v-2z"/></svg>
+
+    </a>
+    bnode-core
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/juliusaka/balanced-neural-odes" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Generation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Generation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/introduction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/raw_data_generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Raw Data Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/data_preperation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Preparation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2_4" id="__nav_2_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sampling Methods
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sampling Methods
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parameters Sampling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/initial_states/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initial States Sampling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random (R)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_random_offset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random Offset (RO)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_rocs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Cubic Splines with Clipping (ROCS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_rrocs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Cubic Splines with Random Rescaling (RROCS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_steps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random Steps (RS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_frequency_response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Frequency Response / Chirp (RF)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_from_file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Load from CSV File
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_from_excel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Constant Input from Excel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    (B)NODE Module
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    (B)NODE Module
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer Module
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../restart_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restart-enabled training workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_3" id="__nav_2_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    BNODE
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bnode/bnode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE Module
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bnode/bnode_export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NODE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_5" id="__nav_2_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ODE Utilities
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ODE Utilities
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainer_utils/test_from_mlflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing from MLflow checkpointed runs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neural Networks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neural Networks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nn/nn_utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neural Network Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nn/vae/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VAE (Variational Autoencoder)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../filepaths/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filepaths
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Config
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../LICENSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-top-level-entry-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Top-Level Entry Point
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Top-Level Entry Point">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#main-line-1708" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        main() (line ~1708)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log_hydra_to_mlflow-decorator-on-train_all_phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @log_hydra_to_mlflow decorator on train_all_phases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Initialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Initialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-dataset-loading-inside-train_all_phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Dataset Loading — inside train_all_phases()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-model-construction-initialize_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Model Construction — initialize_model()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-optimizer-_create_phase_optimizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 Optimizer — _create_phase_optimizer()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-learning-rate-schedulers-_create_phase_lr_schedulers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 Learning Rate Schedulers — _create_phase_lr_schedulers()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-amp-scaler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 AMP Scaler
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-outer-training-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Outer Training Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Outer Training Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-job-list-_build_job_list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Job List — _build_job_list()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-train_all_phases-main-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 train_all_phases() Main Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-per-phase-epoch-budget-_compute_phase_epoch_settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Per-Phase Epoch Budget — _compute_phase_epoch_settings()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-inner-training-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Inner Training Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Inner Training Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-train_one_phase-epoch-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 train_one_phase() Epoch Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-train_one_epoch-batch-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 train_one_epoch() — Batch Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-forward-pass-loss-modelmodel_and_loss_evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 Forward Pass / Loss — model.model_and_loss_evaluation()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-gradient-clipping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Gradient Clipping
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-cuda-memory-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 CUDA Memory Guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#46-return-values-from-train_one_epoch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.6 Return Values from train_one_epoch()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#47-dataloader-iterator-_next_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.7 DataLoader Iterator — _next_batch()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-validation-evaluation-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Validation / Evaluation Logic
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Validation / Evaluation Logic">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test_or_validate_one_epoch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        test_or_validate_one_epoch()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-each-context-is-evaluated-per-epoch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When each context is evaluated per epoch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#handling-non-finite-validation-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Handling non-finite validation values
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#activate_deterministic_mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        activate_deterministic_mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#early-stopping-metric-selection-_get_early_stopping_corresponding_metric" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Early stopping metric selection — _get_early_stopping_corresponding_metric()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-checkpointing-state-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Checkpointing / State Persistence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Checkpointing / State Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-model-checkpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Model Checkpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-optimizer-checkpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Optimizer Checkpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-restart-bundle-single-atomic-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Restart Bundle — single atomic file
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-what-is-stored-in-trainallphasesstate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 What is stored in TrainAllPhasesState
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#65-what-is-stored-in-trainonephasestate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.5 What is stored in TrainOnePhaseState
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#66-final-test-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.6 Final Test Outputs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-restart-resume-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Restart / Resume Logic
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Restart / Resume Logic">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-detection-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 Detection at Startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-outer-loop-resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 Outer Loop Resume
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-inner-loop-resume-inside-train_one_phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 Inner Loop Resume — inside train_one_phase()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-test-job-resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 Test Job Resume
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#75-limitations-design-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 Limitations / Design Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-sequence-length-curriculum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Sequence-Length Curriculum
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Sequence-Length Curriculum">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.1 Purpose
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.2 Configuration Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-phase-transition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.3 Phase Transition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-batch-level-ramp-inside-train_one_epoch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 Batch-Level Ramp — inside train_one_epoch()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-epoch-budget-_compute_phase_epoch_settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.5 Epoch Budget — _compute_phase_epoch_settings()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#86-early-abort-of-curriculum-flag_out_of_seq_len_increase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.6 Early Abort of Curriculum — flag_out_of_seq_len_increase
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#87-lr-warm-up-warmup_epochs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.7 LR Warm-Up — warmup_epochs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8.7 LR Warm-Up — warmup_epochs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Purpose
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduler-composition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduler Composition
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Guards
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#counter-reset" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Counter Reset
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resume-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resume Behaviour
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-early-stopping-convergence-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Early Stopping / Convergence Criteria
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Early Stopping / Convergence Criteria">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#earlystopping-class-bnode_corennnn_utilsearly_stopping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EarlyStopping Class (bnode_core.nn.nn_utils.early_stopping)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-termination-conditions-checked-at-top-of-each-epoch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase Termination Conditions (checked at top of each epoch)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#naninf-loss-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NaN/Inf Loss Recovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reducelronplateau-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReduceLROnPlateau Integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyboardinterrupt-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KeyboardInterrupt Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-notable-helper-classes-dataclasses-and-utility-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Notable Helper Classes, Dataclasses, and Utility Modules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="10. Notable Helper Classes, Dataclasses, and Utility Modules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trainallphasesstate-restart_statepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TrainAllPhasesState (restart_state.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trainonephasestate-restart_statepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TrainOnePhaseState (restart_state.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restartcheckpointstore-restart_checkpoint_storepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RestartCheckpointStore (restart_checkpoint_store.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#earlystopping-bnode_corennnn_utilsearly_stopping" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EarlyStopping (bnode_core.nn.nn_utils.early_stopping)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#checkpointrequestedexit-restart_statepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CheckpointRequestedExit (restart_state.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mlflow_proxy-bnode_coreutilsmlflow_proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mlflow_proxy (bnode_core.utils.mlflow_proxy)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log_hydra_to_mlflow-bnode_coreutilshydra_mlflow_decorator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        @log_hydra_to_mlflow (bnode_core.utils.hydra_mlflow_decorator)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filepaths-module-bnode_corefilepaths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        filepaths module (bnode_core.filepaths)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#load_dataset_and_config-make_stacked_dataset-timeseriesdataset-timeseries_collate_fn-bnode_corennnn_utilsload_data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        load_dataset_and_config, make_stacked_dataset, TimeSeriesDataset, timeseries_collate_fn (bnode_core.nn.nn_utils.load_data)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#neuralode-balancedneuralode-model-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NeuralODE / BalancedNeuralODE (model classes)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#notable-todos-and-design-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notable TODOs and Design Gaps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="training-flow-reference-trainerpy-head-of-modelica_export_copilot-commit-2ab3859">Training Flow Reference: <code>trainer.py</code> (HEAD of <code>modelica_export_copilot</code>, commit 2ab3859)</h1>
+<blockquote>
+<p><strong>Source file:</strong> <code>bnode/bnode-core/src/bnode_core/ode/trainer.py</code> — 1734 lines.<br />
+This document is a complete, stand-alone reference for anyone who has not read the code.<br />
+It covers all ten requested aspects in order.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-top-level-entry-point">Top-Level Entry Point</a></li>
+<li><a href="#2-initialization">Initialization: Dataset, Model, Optimizer, Scheduler</a></li>
+<li><a href="#3-outer-training-loop">Outer Training Loop: Phases and Curriculum</a></li>
+<li><a href="#4-inner-training-loop">Inner Training Loop: Batch Iteration and Backprop</a></li>
+<li><a href="#5-validation--evaluation-logic">Validation / Evaluation Logic</a></li>
+<li><a href="#6-checkpointing--state-persistence">Checkpointing / State Persistence</a></li>
+<li><a href="#7-restart--resume-logic">Restart / Resume Logic</a></li>
+<li><a href="#8-sequence-length-curriculum">Sequence-Length Curriculum</a></li>
+<li><a href="#9-early-stopping--convergence-criteria">Early Stopping / Convergence Criteria</a></li>
+<li><a href="#10-notable-helper-classes-dataclasses-and-utility-modules">Notable Helper Classes, Dataclasses, and Utility Modules</a></li>
+</ol>
+<hr />
+<h2 id="1-top-level-entry-point">1. Top-Level Entry Point</h2>
+<h3 id="main-line-1708"><code>main()</code> (line ~1708)</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>trainer [config_overrides]          # via uv run / installed console-script
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python -m bnode_core.ode.trainer    # direct module invocation
+</code></pre></div>
+<p><code>main()</code> performs three setup steps then delegates entirely to Hydra:</p>
+<ol>
+<li><strong>Config store registration</strong> — calls <code>get_config_store()</code> (from <code>bnode_core.config</code>) to register all Hydra-structured-config dataclasses.</li>
+<li><strong>Config directory auto-detection</strong> — calls <code>filepaths.config_dir_auto_recognize()</code>, which chooses either the superproject <code>config/</code> tree or the package's <code>resources/config/</code>, depending on the current working directory.</li>
+<li><strong>Hydra launch</strong> — wraps <code>train_all_phases</code> with <code>hydra.main(config_path=..., config_name='train_test_ode', version_base=None)</code> and immediately calls the resulting wrapper.</li>
+</ol>
+<h3 id="log_hydra_to_mlflow-decorator-on-train_all_phases"><code>@log_hydra_to_mlflow</code> decorator on <code>train_all_phases</code></h3>
+<p>Before <code>train_all_phases</code> runs, the decorator starts an MLflow run, logs the resolved Hydra config as parameters and tags, and ensures the run is properly closed (including on exception).</p>
+<h3 id="config-type">Config type</h3>
+<p>The Hydra config is validated into <code>train_test_config_class</code> (from <code>bnode_core.config</code>).<br />
+Key top-level fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dataset_name</code> / <code>dataset_path</code></td>
+<td>Primary HDF5 dataset identifier</td>
+</tr>
+<tr>
+<td><code>dataset_norm_name</code> / <code>dataset_norm_path</code></td>
+<td>Optional separate normalization dataset</td>
+</tr>
+<tr>
+<td><code>dataset_ref_name</code> / <code>dataset_ref_path</code></td>
+<td>Optional reference dataset for periodic comparison</td>
+</tr>
+<tr>
+<td><code>nn_model.model_type</code></td>
+<td><code>'node'</code> or <code>'bnode'</code></td>
+</tr>
+<tr>
+<td><code>nn_model.training.pre_train</code></td>
+<td>Enable pre-training (NODE only)</td>
+</tr>
+<tr>
+<td><code>nn_model.training.main_training</code></td>
+<td>List of <code>base_training_settings_class</code> objects, one per phase</td>
+</tr>
+<tr>
+<td><code>nn_model.training.test</code></td>
+<td>Whether to run a final test job</td>
+</tr>
+<tr>
+<td><code>use_cuda</code></td>
+<td>Prefer GPU if available</td>
+</tr>
+<tr>
+<td><code>use_amp</code></td>
+<td>Enable automatic mixed precision</td>
+</tr>
+<tr>
+<td><code>n_workers_train_loader</code> / <code>n_workers_other_loaders</code></td>
+<td>DataLoader worker counts</td>
+</tr>
+<tr>
+<td><code>batch_print_interval</code></td>
+<td>How often to log per-batch stats</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-initialization">2. Initialization</h2>
+<h3 id="21-dataset-loading-inside-train_all_phases">2.1 Dataset Loading — inside <code>train_all_phases()</code></h3>
+<p>Three HDF5 datasets are optionally opened:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">hdf5_dataset</span><span class="p">,</span> <span class="n">_</span>         <span class="o">=</span> <span class="n">load_dataset_and_config</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">dataset_name</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_path</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">hdf5_dataset_norm</span><span class="p">,</span> <span class="n">_</span>    <span class="o">=</span> <span class="n">load_dataset_and_config</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_name</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_path</span><span class="p">)</span>   <span class="c1"># optional</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">hdf5_dataset_ref</span><span class="p">,</span> <span class="n">_</span>     <span class="o">=</span> <span class="n">load_dataset_and_config</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_name</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_path</span><span class="p">)</span>     <span class="c1"># optional</span>
+</code></pre></div>
+<p><code>load_dataset_and_config</code> is from <code>bnode_core.nn.nn_utils.load_data</code>. It resolves the HDF5 file path via <code>filepaths.filepath_dataset_from_config</code> and returns an open <code>h5py.File</code> handle.</p>
+<p>For each training/test job, <code>_create_datasets_and_dataloaders_for_job()</code> is called. It creates <code>TimeSeriesDataset</code> objects (via <code>make_stacked_dataset</code>) for six contexts:</p>
+<table>
+<thead>
+<tr>
+<th>Context key</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'train'</code></td>
+<td>Training split, stride=1</td>
+</tr>
+<tr>
+<td><code>'validation'</code></td>
+<td>Validation split, strided</td>
+</tr>
+<tr>
+<td><code>'test'</code></td>
+<td>Test split, strided</td>
+</tr>
+<tr>
+<td><code>'common_test'</code></td>
+<td>Cross-scenario test split</td>
+</tr>
+<tr>
+<td><code>'testnorm'</code></td>
+<td>Test split from <code>hdf5_dataset_norm</code> (or <code>None</code>)</td>
+</tr>
+<tr>
+<td><code>'ref'</code></td>
+<td>Full test split from <code>hdf5_dataset_ref</code> (or <code>None</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Batch sizes:
+- Training: <code>train_cfg.batch_size</code> (or <code>batch_size_test</code> for test jobs)
+- Validation/test: <code>4 × train_cfg.batch_size</code> (no backprop)
+- Final test job: <code>cfg.nn_model.training.batch_size_test</code> for all contexts</p>
+<p>After a CUDA OOM, <code>batch_size_reduction_factor</code> (a compounding factor starting at 1.0, multiplied by 0.7 each retry) is passed to <code>_create_datasets_and_dataloaders_for_job</code>, which reduces both training and validation batch sizes by that factor (minimum 1). The config is <strong>not</strong> mutated.</p>
+<p><code>torch.utils.data.DataLoader</code> is created for each context with:
+- <code>shuffle=True</code>, <code>drop_last=True</code> for training jobs
+- <code>shuffle=False</code>, <code>drop_last=False</code> for test jobs
+- <code>pin_memory=True</code>, <code>persistent_workers=True</code> (when workers &gt; 0)
+- <code>collate_fn=timeseries_collate_fn</code> — custom collation for variable-length time-series batches</p>
+<p><strong>Sequence length</strong> is read back from the constructed dataset and stored in <code>job['train_cfg'].seq_len_train</code> (uses <code>datasets['train'].seq_len</code> if present, otherwise <code>datasets['train'].datasets['time'].shape[-1]</code>).</p>
+<h3 id="22-model-construction-initialize_model">2.2 Model Construction — <code>initialize_model()</code></h3>
+<p>Reads <code>cfg.nn_model.model_type</code> and branches:</p>
+<p><strong>NODE path</strong> (<code>model_type == 'node'</code>):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">model</span> <span class="o">=</span> <span class="n">NeuralODE</span><span class="p">(</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">states_dim</span><span class="p">,</span> <span class="n">controls_dim</span><span class="p">,</span> <span class="n">parameters_dim</span><span class="p">,</span> <span class="n">outputs_dim</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">controls_to_output_nn</span><span class="p">,</span> <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">n_layers</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">hidden_dim_output_nn</span><span class="p">,</span> <span class="n">n_layers_output_nn</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="n">activation</span><span class="o">=</span><span class="nb">eval</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">activation</span><span class="p">),</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">intialization</span><span class="p">,</span> <span class="n">initialization_ode</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">use_input_smoother</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">)</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">model</span><span class="o">.</span><span class="n">normalization_init</span><span class="p">(</span><span class="n">hdf5_dataset</span><span class="p">)</span>
+</code></pre></div></p>
+<p><strong>BNODE path</strong> (<code>model_type == 'bnode'</code>):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">feedthrough_mask</span> <span class="o">=</span> <span class="n">build_feedthrough_mask</span><span class="p">(</span><span class="n">control_names</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">feedthrough_controls</span><span class="p">,</span> <span class="n">controls_dim</span><span class="p">)</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">model</span> <span class="o">=</span> <span class="n">BalancedNeuralODE</span><span class="p">(</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">states_dim</span><span class="p">,</span> <span class="n">lat_states_mu_dim</span><span class="p">,</span> <span class="n">parameters_dim</span><span class="p">,</span> <span class="n">lat_parameters_dim</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">controls_dim</span><span class="p">,</span> <span class="n">lat_controls_dim</span><span class="p">,</span> <span class="n">outputs_dim</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="n">hidden_dim</span><span class="p">,</span> <span class="n">n_layers</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="n">controls_to_decoder</span><span class="p">,</span> <span class="n">predict_states</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="n">activation</span><span class="p">,</span> <span class="n">initialization_type</span><span class="p">,</span> <span class="n">initialization_type_ode</span><span class="p">,</span> <span class="n">initialization_type_ode_matrix</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="n">lat_ode_type</span><span class="p">,</span> <span class="n">include_params_encoder</span><span class="p">,</span> <span class="n">params_to_state_encoder</span><span class="p">,</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">params_to_control_encoder</span><span class="p">,</span> <span class="n">params_to_decoder</span><span class="p">,</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>    <span class="n">controls_to_state_encoder</span><span class="p">,</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">state_encoder_linear</span><span class="p">,</span> <span class="n">control_encoder_linear</span><span class="p">,</span> <span class="n">parameter_encoder_linear</span><span class="p">,</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="n">ode_linear</span><span class="p">,</span> <span class="n">decoder_linear</span><span class="p">,</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="n">lat_state_mu_independent</span><span class="p">,</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>    <span class="n">use_input_smoother</span><span class="p">,</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    <span class="n">feedthrough_controls_mask</span><span class="p">,</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="p">)</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="n">model</span><span class="o">.</span><span class="n">normalization_init</span><span class="p">(</span><span class="n">hdf5_dataset</span><span class="p">)</span>
+</code></pre></div></p>
+<p><code>normalization_init</code> computes running mean/std from HDF5 dataset statistics and stores them as non-trainable buffers inside the model. When <code>dataset_norm</code> is available, normalization is initialized from it instead of the primary dataset.</p>
+<p>The model is placed on <code>device</code> with <code>model.to(device)</code>. The number of trainable parameters is logged.</p>
+<p><strong>Special loading modes</strong> (handled in <code>_initialize_or_reload_model_for_job()</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Config flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load_trained_model_for_test=True</code></td>
+<td>Load from <code>path_trained_model</code>, skip all training</td>
+</tr>
+<tr>
+<td><code>load_pretrained_model=True</code></td>
+<td>Load from <code>path_pretrained_model</code>, adjust <code>seq_len_epoch_start</code></td>
+</tr>
+</tbody>
+</table>
+<p>When resuming at a test job (i.e., a restart bundle exists and <code>job_idx</code> points to a test job), and no explicit load path is configured, the model weights are loaded directly from the <code>restart_model_state</code> dict in the bundle.</p>
+<h3 id="23-optimizer-_create_phase_optimizer">2.3 Optimizer — <code>_create_phase_optimizer()</code></h3>
+<p>Determined by <code>train_cfg.optimizer</code> (case-insensitive):</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Optimizer</th>
+<th>Key parameters</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'adam'</code></td>
+<td><code>torch.optim.Adam</code></td>
+<td><code>lr_start</code>, <code>weight_decay</code>, <code>beta1_adam</code>, <code>beta2_adam</code>, <code>eps_adam</code></td>
+</tr>
+<tr>
+<td><code>'adamw'</code></td>
+<td><code>torch.optim.AdamW</code></td>
+<td><code>lr_start</code>, <code>weight_decay</code>, <code>beta1_adam</code>, <code>beta2_adam</code>, <code>eps_adam</code> (decoupled weight decay)</td>
+</tr>
+<tr>
+<td><code>'radam'</code></td>
+<td><code>torch.optim.RAdam</code></td>
+<td><code>lr_start</code>, <code>weight_decay</code>, <code>beta1_adam</code>, <code>beta2_adam</code>, <code>eps_adam</code></td>
+</tr>
+<tr>
+<td><code>'radamw'</code></td>
+<td><code>torch.optim.RAdam</code></td>
+<td>same as <code>radam</code> but with <code>decoupled_weight_decay=True</code></td>
+</tr>
+<tr>
+<td><code>'lbfgs'</code></td>
+<td><code>torch.optim.LBFGS</code></td>
+<td><code>lr_start</code>, <code>lbfgs_max_iter</code>, <code>lbfgs_history_size</code>, <code>lbfgs_tolerance_grad</code>, <code>lbfgs_tolerance_change</code>, <code>lbfgs_line_search_fn</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Constraint:</strong> <code>radam</code> and <code>radamw</code> cannot be combined with <code>warmup_epochs &gt; 0</code> — both raise <code>ValueError</code> at startup because RAdam already includes a built-in warm-up via its rectified variance.</p>
+<p>If <code>pre_train=False</code> and <code>train_cfg.reload_optimizer=True</code>, the optimizer state from the previous phase's checkpoint (<code>filepath_optimizer_current_hydra_output(job_idx-1)</code>) is loaded and the learning rate is reset to <code>train_cfg.lr_start</code>. Failure is caught and logged as a warning (does not abort).</p>
+<h3 id="24-learning-rate-schedulers-_create_phase_lr_schedulers">2.4 Learning Rate Schedulers — <code>_create_phase_lr_schedulers()</code></h3>
+<p>Schedulers are only created for main-training phases (<code>pre_train=False</code>, <code>test=False</code>) when <code>train_cfg.lr_scheduler_type</code> is not <code>None</code>.</p>
+<table>
+<thead>
+<tr>
+<th><code>lr_scheduler_type</code></th>
+<th>Scheduler</th>
+<th>Step trigger</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'cosine'</code></td>
+<td><code>CosineAnnealingLR</code></td>
+<td>Per batch (in <code>train_one_epoch</code>)</td>
+</tr>
+<tr>
+<td><code>'plateau'</code></td>
+<td><code>ReduceLROnPlateau</code></td>
+<td>Per epoch, using validation loss</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Cosine scheduler</strong>: <code>T_max</code> is either <code>train_cfg.cosine_T_max × batches_per_epoch</code> or <code>(max_epochs // 10) × batches_per_epoch</code>.<br />
+<strong>Plateau scheduler</strong>: patience is either <code>train_cfg.plateau_patience</code> (if set) or auto-computed from <code>lr_on_plateau_iterations_to_min_lr()</code> capped at <code>early_stopping_patience/5</code>.</p>
+<p>If no schedulers are configured, <code>lr_schedulers</code> is set to <code>None</code>.</p>
+<h3 id="25-amp-scaler">2.5 AMP Scaler</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">scaler</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">amp</span><span class="o">.</span><span class="n">GradScaler</span><span class="p">(</span><span class="s1">&#39;cuda&#39;</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span> <span class="ow">and</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_amp</span><span class="p">)</span>
+</code></pre></div>
+<p>Used during Adam/standard-optimizer backward passes. LBFGS disables AMP entirely.</p>
+<hr />
+<h2 id="3-outer-training-loop">3. Outer Training Loop</h2>
+<h3 id="31-job-list-_build_job_list">3.1 Job List — <code>_build_job_list()</code></h3>
+<p>Returns an ordered list of dicts, each describing one "job":</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">[</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>  <span class="p">{</span><span class="s1">&#39;skip&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="nb">bool</span><span class="o">&gt;</span><span class="p">,</span> <span class="s1">&#39;test&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s1">&#39;train_cfg&#39;</span><span class="p">:</span> <span class="n">pre_training_cfg</span><span class="p">,</span> <span class="s1">&#39;pre_train&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>   <span class="c1"># pre-train (optional)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  <span class="p">{</span><span class="s1">&#39;skip&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="nb">bool</span><span class="o">&gt;</span><span class="p">,</span> <span class="s1">&#39;test&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s1">&#39;train_cfg&#39;</span><span class="p">:</span> <span class="n">main_training</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s1">&#39;pre_train&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>  <span class="c1"># phase 0</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  <span class="p">{</span><span class="s1">&#39;skip&#39;</span><span class="p">:</span> <span class="o">&lt;</span><span class="nb">bool</span><span class="o">&gt;</span><span class="p">,</span> <span class="s1">&#39;test&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s1">&#39;train_cfg&#39;</span><span class="p">:</span> <span class="n">main_training</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s1">&#39;pre_train&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>  <span class="c1"># phase 1, …</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>  <span class="p">{</span><span class="s1">&#39;skip&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="s1">&#39;test&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>  <span class="s1">&#39;train_cfg&#39;</span><span class="p">:</span> <span class="n">main_training</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span><span class="s1">&#39;pre_train&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>  <span class="c1"># final test (optional)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">]</span>
+</code></pre></div>
+<p><strong>BNODE + pre-train guard</strong>: if <code>cfg.nn_model.training.pre_train=True</code> and <code>cfg.nn_model.model_type='bnode'</code>, a warning is logged and the pre-train job is marked as skipped. Training continues normally with the main-training phases.</p>
+<p>Skip conditions:
+- Pre-train job is skipped if <code>cfg.nn_model.training.pre_train=False</code>, <code>cfg.nn_model.model_type='bnode'</code>, <code>load_pretrained_model=True</code>, or <code>load_trained_model_for_test=True</code>.
+- Main-training jobs are skipped if <code>load_trained_model_for_test=True</code>.</p>
+<h3 id="32-train_all_phases-main-loop">3.2 <code>train_all_phases()</code> Main Loop</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>load_restart_checkpoint(job_list)  →  (outer_state, inner_state, scheduler_states,
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>                                        scaler_state, model_state, optimizer_state,
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>                                        checkpoint_store)
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>train_all_phases_state = outer_state or TrainAllPhasesState()   # always non-None
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>for idx, job in enumerate(job_list[job_start_idx:], start=job_start_idx):
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>    batch_size_reduction_factor = None
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>    while True:   # retry loop for CUDA OOM
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>        _create_datasets_and_dataloaders_for_job(... batch_size_reduction_factor=...)
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>        _initialize_or_reload_model_for_job(... restart_model_state=...)
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>        if job[&#39;skip&#39;]: log; continue
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>        if job[&#39;test&#39;] is False:
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>            checkpoint_store.save_outer_for_test_job(...)   # NOT called for training jobs
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>            next_epoch_anchor = train_one_phase(...)
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>        else:
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>            train_all_phases_state.job_idx = idx
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>            checkpoint_store.save_outer_for_test_job(train_all_phases_state)
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>            _run_test_job(...)
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>        break
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a>    except CheckpointRequestedExit: mlflow_proxy.set_tag; return
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>    except RuntimeError (CUDA OOM):
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>        oom_reduction_count += 1
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>        batch_size_reduction_factor = (batch_size_reduction_factor or 1.0) * 0.7
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>        warn if oom_reduction_count &gt;= 30; sleep 10 s; retry
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>
+<a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>checkpoint_store.clear_restart_artifacts()
+</code></pre></div>
+<p><strong>CUDA OOM recovery</strong>: on <code>RuntimeError</code> containing <code>'CUDA out of memory'</code> or <code>'CUDA memory is almost full'</code>, <code>batch_size_reduction_factor</code> is compounded by ×0.7. After 30+ retries, an additional warning is emitted. This factor is reset to <code>None</code> at the start of each new phase.</p>
+<p><strong><code>CheckpointRequestedExit</code></strong>: a <code>RuntimeError</code> subclass raised to trigger a graceful stop after checkpoint write. Caught here; an MLflow tag <code>'ended by' = 'checkpoint request'</code> is set and training returns.</p>
+<p><strong>Phase sequencing</strong>: after each training job completes, <code>seq_len_epoch_start</code> for the next job is set to the current job's <code>seq_len_train</code> (or <code>1</code> for the pre-train→first-phase transition).</p>
+<p><strong>Cleanup</strong>: after all jobs complete, <code>checkpoint_store.clear_restart_artifacts()</code> deletes the single bundle file.</p>
+<h3 id="33-per-phase-epoch-budget-_compute_phase_epoch_settings">3.3 Per-Phase Epoch Budget — <code>_compute_phase_epoch_settings()</code></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>batches_per_epoch = len(train_loader)  if train_cfg.batches_per_epoch is None  else train_cfg.batches_per_epoch
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>warmup_epochs     = train_cfg.warmup_epochs  # 0 for pre-train phases
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>warmup_batches    = warmup_epochs * batches_per_epoch
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>epochs_for_seq_len_increase = int(seq_len_increase_in_batches / batches_per_epoch)   # floor
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>max_epochs = train_cfg.max_epochs + warmup_epochs + epochs_for_seq_len_increase
+</code></pre></div>
+<p>Warmup and seq_len_increase run <strong>sequentially</strong> — their epoch budgets are added together (not max'ed). If <code>seq_len_epoch_start &gt;= seq_len_train</code> (no ramp needed), <code>epochs_for_seq_len_increase = 0</code> and <code>train_cfg.seq_len_increase_in_batches</code> is zeroed.</p>
+<hr />
+<h2 id="4-inner-training-loop">4. Inner Training Loop</h2>
+<h3 id="41-train_one_phase-epoch-loop">4.1 <code>train_one_phase()</code> Epoch Loop</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">epoch_0</span><span class="p">,</span> <span class="n">phase_epoch_0</span> <span class="o">+</span> <span class="n">max_epochs</span><span class="p">):</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="k">if</span> <span class="n">epoch</span> <span class="o">==</span> <span class="n">epoch_stop</span><span class="p">:</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>        <span class="k">break</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="c1"># --- termination checks ---</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">flag_max_epoch</span> <span class="o">=</span> <span class="n">epoch</span> <span class="o">==</span> <span class="n">epoch_stop</span> <span class="o">-</span> <span class="mi">1</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">flag_early_stopping</span> <span class="o">=</span> <span class="n">early_stopping</span><span class="o">.</span><span class="n">early_stop</span> <span class="ow">and</span> <span class="n">flag_out_of_seq_len_increase</span> <span class="ow">and</span> <span class="n">flag_out_of_warmup</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">flag_break_after_loss</span> <span class="o">=</span> <span class="n">early_stopping</span><span class="o">.</span><span class="n">best_score</span> <span class="o">&lt;</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">break_after_loss_of</span>  <span class="c1"># if configured</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="n">_nan_counter_threshold</span> <span class="o">=</span> <span class="mi">50</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">flag_nan_counter</span> <span class="o">=</span> <span class="n">phase_state</span><span class="o">.</span><span class="n">nan_counter</span> <span class="o">&gt;</span> <span class="n">_nan_counter_threshold</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="n">flag_break_after_epoch</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>    <span class="k">if</span> <span class="nb">any</span> <span class="n">termination</span> <span class="n">flag</span><span class="p">:</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="n">model</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">path_best_model</span><span class="p">)</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>        <span class="n">flag_break_after_epoch</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>    <span class="c1"># --- curriculum check ---</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>    <span class="k">if</span> <span class="n">stable_epochs</span> <span class="o">&gt;</span> <span class="n">abort_threshold</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">flag_out_of_seq_len_increase</span><span class="p">:</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>        <span class="c1"># collapse curriculum window and extend epoch_stop</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>    <span class="c1"># --- training or eval-only pass ---</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">flag_break_after_epoch</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">first_epoch_is_evaluation</span><span class="p">:</span>
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>        <span class="n">ret_vals_train</span> <span class="o">=</span> <span class="n">train_one_epoch</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>        <span class="c1"># NaN/Inf/AssertionError handling (see §9)</span>
+<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a>        <span class="n">ret_vals_train</span> <span class="o">=</span> <span class="n">test_or_validate_one_epoch</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>  <span class="c1"># eval-only</span>
+<a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a>        <span class="n">first_epoch_is_evaluation</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a>
+<a id="__codelineno-8-28" name="__codelineno-8-28" href="#__codelineno-8-28"></a>    <span class="c1"># --- validation, test, ref, testnorm ---</span>
+<a id="__codelineno-8-29" name="__codelineno-8-29" href="#__codelineno-8-29"></a>    <span class="n">ret_vals_validation</span> <span class="o">=</span> <span class="n">test_or_validate_one_epoch</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">all_batches</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-8-30" name="__codelineno-8-30" href="#__codelineno-8-30"></a>    <span class="c1"># EarlyStopping update, plateau scheduler step</span>
+<a id="__codelineno-8-31" name="__codelineno-8-31" href="#__codelineno-8-31"></a>    <span class="n">ret_vals_test</span> <span class="o">=</span> <span class="n">test_or_validate_one_epoch</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">all_batches</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-8-32" name="__codelineno-8-32" href="#__codelineno-8-32"></a>    <span class="c1"># ref/testnorm periodic</span>
+<a id="__codelineno-8-33" name="__codelineno-8-33" href="#__codelineno-8-33"></a>
+<a id="__codelineno-8-34" name="__codelineno-8-34" href="#__codelineno-8-34"></a>    <span class="c1"># --- MLflow logging ---</span>
+<a id="__codelineno-8-35" name="__codelineno-8-35" href="#__codelineno-8-35"></a>
+<a id="__codelineno-8-36" name="__codelineno-8-36" href="#__codelineno-8-36"></a>    <span class="k">if</span> <span class="n">flag_break_after_epoch</span><span class="p">:</span>
+<a id="__codelineno-8-37" name="__codelineno-8-37" href="#__codelineno-8-37"></a>        <span class="c1"># log final metrics; break</span>
+<a id="__codelineno-8-38" name="__codelineno-8-38" href="#__codelineno-8-38"></a>
+<a id="__codelineno-8-39" name="__codelineno-8-39" href="#__codelineno-8-39"></a>    <span class="c1"># --- per-epoch restart checkpoint (not written on terminal epoch) ---</span>
+<a id="__codelineno-8-40" name="__codelineno-8-40" href="#__codelineno-8-40"></a>    <span class="n">phase_state</span><span class="o">.</span><span class="n">phase_epoch</span> <span class="o">=</span> <span class="n">epoch</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">phase_epoch_0</span>
+<a id="__codelineno-8-41" name="__codelineno-8-41" href="#__codelineno-8-41"></a>    <span class="n">phase_state</span><span class="o">.</span><span class="n">rng_state</span> <span class="o">=</span> <span class="n">capture_rng_state</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-8-42" name="__codelineno-8-42" href="#__codelineno-8-42"></a>    <span class="n">checkpoint_store</span><span class="o">.</span><span class="n">save_epoch_checkpoint</span><span class="p">(</span>
+<a id="__codelineno-8-43" name="__codelineno-8-43" href="#__codelineno-8-43"></a>        <span class="n">train_all_phases_state</span><span class="p">,</span> <span class="n">phase_state</span><span class="p">,</span> <span class="n">lr_schedulers</span><span class="p">,</span> <span class="n">scaler</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">optimizer</span>
+<a id="__codelineno-8-44" name="__codelineno-8-44" href="#__codelineno-8-44"></a>    <span class="p">)</span>
+</code></pre></div>
+<p>The very first epoch of a phase (<code>first_epoch_is_evaluation=True</code>) is always an evaluation pass (no training) to establish a baseline. On resume (<code>train_one_phase_state is not None</code>), this flag is <code>False</code> — the resumed run does NOT redo the baseline epoch.</p>
+<h3 id="42-train_one_epoch-batch-loop">4.2 <code>train_one_epoch()</code> — Batch Loop</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">for</span> <span class="n">batch_idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">batches_per_epoch</span><span class="p">):</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">data_batch</span><span class="p">,</span> <span class="n">train_iter</span> <span class="o">=</span> <span class="n">_next_batch</span><span class="p">(</span><span class="n">train_loader</span><span class="p">,</span> <span class="n">train_iter</span><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="c1"># apply curriculum truncation (see §8)</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="o">...</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_lbfgs</span><span class="p">:</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>        <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">amp</span><span class="o">.</span><span class="n">autocast</span><span class="p">(</span><span class="s1">&#39;cuda&#39;</span><span class="p">,</span> <span class="n">enabled</span><span class="o">=</span><span class="n">use_amp</span> <span class="ow">and</span> <span class="n">use_cuda</span><span class="p">):</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>            <span class="n">ret_vals_train</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">model_and_loss_evaluation</span><span class="p">(</span><span class="n">data_batch</span><span class="p">,</span> <span class="n">train_cfg</span><span class="p">,</span> <span class="n">pre_train</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>        <span class="n">loss</span> <span class="o">=</span> <span class="n">ret_vals_train</span><span class="p">[</span><span class="s1">&#39;loss&#39;</span><span class="p">]</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>        <span class="n">scaler</span><span class="o">.</span><span class="n">scale</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>        <span class="n">scaler</span><span class="o">.</span><span class="n">unscale_</span><span class="p">(</span><span class="n">optimizer</span><span class="p">)</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>        <span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">clip_grad_norm</span><span class="p">)</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>        <span class="n">scaler</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">optimizer</span><span class="p">)</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>        <span class="n">scaler</span><span class="o">.</span><span class="n">update</span><span class="p">()</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>    <span class="k">else</span><span class="p">:</span>  <span class="c1"># LBFGS</span>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>        <span class="k">def</span><span class="w"> </span><span class="nf">_closure</span><span class="p">():</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>            <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>            <span class="n">out</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">model_and_loss_evaluation</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>            <span class="n">out</span><span class="p">[</span><span class="s1">&#39;loss&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">backward</span><span class="p">()</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>            <span class="n">clip_grad_norm_</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">clip_grad_norm</span><span class="p">)</span>
+<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>            <span class="k">return</span> <span class="n">out</span><span class="p">[</span><span class="s1">&#39;loss&#39;</span><span class="p">]</span>
+<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>        <span class="n">loss</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">_closure</span><span class="p">)</span>
+<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>    <span class="c1"># cosine LR step per batch</span>
+<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>    <span class="k">if</span> <span class="n">lr_schedulers</span> <span class="ow">and</span> <span class="s1">&#39;cosine&#39;</span> <span class="ow">in</span> <span class="n">lr_schedulers</span><span class="p">:</span>
+<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>        <span class="n">lr_schedulers</span><span class="p">[</span><span class="s1">&#39;cosine&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+</code></pre></div>
+<h3 id="43-forward-pass-loss-modelmodel_and_loss_evaluation">4.3 Forward Pass / Loss — <code>model.model_and_loss_evaluation()</code></h3>
+<p>This is a method on <code>NeuralODE</code> / <code>BalancedNeuralODE</code>. From <code>trainer.py</code>'s perspective it is a black box that:
+- Receives <code>data_batch</code> (dict of tensors), <code>train_cfg</code>, <code>pre_train</code>, <code>device</code>, and flags <code>return_model_outputs</code>, <code>test</code>, <code>last_batch</code>, <code>activate_deterministic_mode</code>.
+- Returns a dict of scalar metrics including at minimum <code>'loss'</code>. May also include <code>'rmse_states'</code>, <code>'rmse_outputs'</code>, <code>'rmse_states_outputs'</code>, <code>'ode_calls_forward'</code>, etc.
+- For BNODE: reparameterization (variational sampling) is active during training (<code>test=False</code>) and disabled during evaluation (<code>test=True</code>) and deterministic mode.</p>
+<p><strong>First epoch special case</strong> (<code>epoch_this_phase in [0, 1]</code> and not pre-train): <code>train_cfg.evaluate_at_control_times = True</code> is forced on a deep copy of <code>train_cfg</code> to get a reliable memory-usage estimate.</p>
+<h3 id="44-gradient-clipping">4.4 Gradient Clipping</h3>
+<p>For Adam/standard optimizers: <code>clip_grad_norm_(model.parameters(), train_cfg.clip_grad_norm)</code> after <code>scaler.unscale_()</code>.<br />
+For LBFGS: clipping is applied inside <code>_closure()</code>, and then again after the step purely to measure <code>_norm</code> for logging (no actual clipping effect on the already-stepped weights).<br />
+The actual gradient norm <code>_norm</code> is returned and stored in <code>ret_vals_train['grad_norm']</code>.</p>
+<h3 id="45-cuda-memory-guard">4.5 CUDA Memory Guard</h3>
+<p>After every batch, if <code>use_cuda</code>:
+- Logs <code>torch.cuda.memory_reserved() / (1024**3)</code> as <code>'CUDA_memory_reserved_GB'</code> to MLflow (correct GiB conversion).
+- If reserved memory exceeds 60% of total GPU memory (or projected memory at full sequence length would exceed 60%), raises <code>RuntimeError('CUDA memory is almost full')</code> which is caught in <code>train_all_phases()</code> to trigger batch-size reduction.
+- Hard limit: if reserved &gt; 98% of total, immediately raises.</p>
+<h3 id="46-return-values-from-train_one_epoch">4.6 Return Values from <code>train_one_epoch()</code></h3>
+<p>In addition to the model's metric dict, the following are added:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'grad_norm'</code></td>
+<td>Gradient norm before clipping</td>
+</tr>
+<tr>
+<td><code>'clip_grad_norm'</code></td>
+<td>Current clip norm setting</td>
+</tr>
+<tr>
+<td><code>'seq_len_now'</code></td>
+<td>Effective sequence length used in this epoch</td>
+</tr>
+<tr>
+<td><code>'time_forward'</code> / <code>'time_backward'</code> / <code>'time_optimizer_step'</code> / <code>'time_loader'</code> / <code>'time_total'</code></td>
+<td>Timing breakdown</td>
+</tr>
+<tr>
+<td><code>'time_per_batch'</code> / <code>'time_per_batch_forward'</code> etc.</td>
+<td>Per-batch timing</td>
+</tr>
+<tr>
+<td><code>'ode_calls_backward'</code></td>
+<td>ODE function evaluations during backward (from <code>model.ode_fun_count</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="47-dataloader-iterator-_next_batch">4.7 DataLoader Iterator — <code>_next_batch()</code></h3>
+<p>A persistent iterator is maintained per context in <code>dataloader_iters</code> dict. <code>_next_batch()</code> advances the iterator, recreating it on <code>StopIteration</code>. This allows <code>batches_per_epoch</code> to be much larger than <code>len(train_loader)</code> (sampling with replacement across epochs).</p>
+<hr />
+<h2 id="5-validation-evaluation-logic">5. Validation / Evaluation Logic</h2>
+<h3 id="test_or_validate_one_epoch"><code>test_or_validate_one_epoch()</code></h3>
+<p>Two modes controlled by <code>all_batches</code>:</p>
+<p><strong><code>all_batches=True</code></strong> (used for validation):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">for</span> <span class="n">batch</span> <span class="ow">in</span> <span class="n">data_loader</span><span class="p">:</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>        <span class="n">ret_vals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">model_and_loss_evaluation</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">test</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1"># metrics are averaged across all batches</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="n">ret_vals</span> <span class="o">=</span> <span class="p">{</span><span class="n">key</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">([</span><span class="n">x</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">ret_vals</span><span class="p">])</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">ret_vals</span><span class="p">[</span><span class="mi">0</span><span class="p">]}</span>
+</code></pre></div></p>
+<p><strong><code>all_batches=False</code></strong> (used for test / testnorm / ref during training):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">model</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">data_batch</span><span class="p">,</span> <span class="n">data_iter</span> <span class="o">=</span> <span class="n">_next_batch</span><span class="p">(</span><span class="n">data_loader</span><span class="p">,</span> <span class="n">data_iter</span><span class="p">)</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">ret_vals</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">model_and_loss_evaluation</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">test</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+The persistent <code>data_iter</code> is returned so the caller can maintain position across epochs.</p>
+<h3 id="when-each-context-is-evaluated-per-epoch">When each context is evaluated per epoch</h3>
+<table>
+<thead>
+<tr>
+<th>Context</th>
+<th>Frequency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>'train'</code></td>
+<td>Every epoch (eval pass on one batch)</td>
+</tr>
+<tr>
+<td><code>'validation'</code></td>
+<td>Every epoch, all batches</td>
+</tr>
+<tr>
+<td><code>'test'</code></td>
+<td>Every epoch, one batch</td>
+</tr>
+<tr>
+<td><code>'ref'</code> / <code>'testnorm'</code></td>
+<td>Every <code>cfg.nn_model.training.ref_and_testnorm_every_n_epochs</code> epochs, plus at first epoch and on break</td>
+</tr>
+</tbody>
+</table>
+<h3 id="handling-non-finite-validation-values">Handling non-finite validation values</h3>
+<p><code>AssertionError</code> with <code>'non-finite values in'</code> is caught for validation, test, ref, and testnorm passes. The metrics dict is filled with <code>float('nan')</code> and training continues. Other <code>AssertionError</code> subtypes are re-raised.</p>
+<h3 id="activate_deterministic_mode"><code>activate_deterministic_mode</code></h3>
+<p>On the final break epoch, if <code>train_cfg.activate_deterministic_mode_after_this_phase=True</code>, the model's deterministic mode is activated before the evaluation pass. The resulting model is saved to <code>path_best_model</code>. This is relevant for BNODE models (disables latent sampling permanently).</p>
+<h3 id="early-stopping-metric-selection-_get_early_stopping_corresponding_metric">Early stopping metric selection — <code>_get_early_stopping_corresponding_metric()</code></h3>
+<p>Tries these keys in order and uses the first present: <code>'rmse_states_outputs'</code>, <code>'rmse_states'</code>, <code>'rmse_outputs'</code>. Returns <code>(None, None)</code> if none are present.<br />
+The corresponding RMSE value is tracked alongside the primary validation loss as <code>corresponding_score</code> in <code>EarlyStopping</code>. The MLflow key <code>best_{metric_name}</code> is only logged when <code>early_stopping_metric_name is not None</code>.</p>
+<hr />
+<h2 id="6-checkpointing-state-persistence">6. Checkpointing / State Persistence</h2>
+<h3 id="61-model-checkpoints">6.1 Model Checkpoints</h3>
+<p>Saved by <code>EarlyStopping.save_checkpoint()</code> calling <code>model.save(path)</code> when validation loss improves.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th><code>filepaths</code> function</th>
+<th>When written</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model_phase_{i}.pt</code></td>
+<td><code>filepath_model_current_hydra_output(job_idx)</code></td>
+<td>Every time validation loss improves during phase <code>i</code></td>
+</tr>
+<tr>
+<td><code>model_pretrained.pt</code></td>
+<td><code>filepath_pretrained_model_current_hydra_output()</code></td>
+<td>Every time validation loss improves during pre-training</td>
+</tr>
+<tr>
+<td><code>model_current.pt</code></td>
+<td><code>filepath_model_current_hydra_output()</code> (no index)</td>
+<td>After every non-NaN epoch (rolling; also inside restart bundle)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-optimizer-checkpoints">6.2 Optimizer Checkpoints</h3>
+<p>Saved alongside model by <code>EarlyStopping.save_checkpoint()</code>.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th><code>filepaths</code> function</th>
+<th>When written</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>optimizer_phase_{i}.pt</code></td>
+<td><code>filepath_optimizer_current_hydra_output(job_idx)</code></td>
+<td>On validation loss improvement</td>
+</tr>
+<tr>
+<td><code>optimizer_pretrained.pt</code></td>
+<td><code>filepath_optimizer_current_hydra_output()</code> (pre-train)</td>
+<td>On validation loss improvement</td>
+</tr>
+<tr>
+<td><code>optimizer_current.pt</code></td>
+<td><code>filepath_optimizer_current_hydra_output()</code> (no index)</td>
+<td>After every non-NaN epoch (also inside restart bundle)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63-restart-bundle-single-atomic-file">6.3 Restart Bundle — single atomic file</h3>
+<p>Written by <code>RestartCheckpointStore.save_epoch_checkpoint()</code> at the end of every non-terminal training epoch:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th><code>filepaths</code> function</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>training_restart_checkpoint.pt</code></td>
+<td><code>filepath_restart_checkpoint_current_hydra_output()</code></td>
+<td>Single bundle dict (version 2)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bundle structure</strong> (<code>bundle_version=2</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">{</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="s2">&quot;bundle_version&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    <span class="s2">&quot;outer&quot;</span><span class="p">:</span> <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">to_state_dict</span><span class="p">(),</span>   <span class="c1"># TrainAllPhasesState</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="s2">&quot;inner&quot;</span><span class="p">:</span> <span class="n">train_one_phase_state</span><span class="o">.</span><span class="n">to_state_dict</span><span class="p">(),</span>    <span class="c1"># TrainOnePhaseState</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    <span class="s2">&quot;scheduler&quot;</span><span class="p">:</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">scheduler</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span> <span class="o">...</span><span class="p">},</span>  <span class="c1"># or {}</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    <span class="s2">&quot;scaler&quot;</span><span class="p">:</span> <span class="n">scaler</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">model</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    <span class="s2">&quot;optimizer&quot;</span><span class="p">:</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">state_dict</span><span class="p">(),</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="p">}</span>
+</code></pre></div>
+<p>Atomicity: write to <code>.{name}.{uuid}.tmp</code>, <code>fsync</code>, <code>os.replace</code>, then <code>fsync</code> the directory.</p>
+<p>On successful completion, <code>checkpoint_store.clear_restart_artifacts()</code> deletes the bundle file.</p>
+<p><strong><code>save_outer_for_test_job</code></strong>: before running a test job, the existing bundle is reloaded and the outer state is updated with the current <code>job_idx</code>. This ensures resume works even if interrupted during the test phase.</p>
+<h3 id="64-what-is-stored-in-trainallphasesstate">6.4 What is stored in <code>TrainAllPhasesState</code></h3>
+<p><code>torch.nn.Module</code> subclass (via <code>to_state_dict</code> / <code>load_from_state_dict</code>):
+- <code>job_idx</code> — which job to resume from
+- <code>next_epoch_anchor</code> — global epoch counter at phase start
+- <code>mlflow_run_id</code> — used to validate MLflow run continuity on resume (via <code>mlflow.active_run()</code>)</p>
+<h3 id="65-what-is-stored-in-trainonephasestate">6.5 What is stored in <code>TrainOnePhaseState</code></h3>
+<p><code>torch.nn.Module</code> subclass:
+- <code>phase_epoch</code> — epoch within the current phase
+- <code>nan_counter</code> — consecutive NaN loss count
+- <code>grad_norm_last_reduced_counter</code> — NaN recovery counter for clip_grad_norm reduction
+- <code>stable_epochs</code> — consecutive stable epochs for curriculum abort
+- <code>deterministic_mode_active</code> — flag for BNODE
+- <code>seq_len_increase_in_batches</code> — possibly-updated curriculum budget (captured after early abort)
+- <code>rng_state</code> — complete RNG state snapshot (PyTorch CPU, PyTorch CUDA, NumPy, Python <code>random</code>), stored as a pickled uint8 tensor
+- <code>early_stopping</code> — full <code>EarlyStopping</code> instance (via <code>phase_state.early_stopping</code> assignment)</p>
+<h3 id="66-final-test-outputs">6.6 Final Test Outputs</h3>
+<p>When <code>save_predictions_in_dataset=True</code>, predictions are written to an HDF5 file at <code>filepath_dataset_current_hydra_output()</code>. The file is created once and contexts are appended. Per-context datasets are created at the first batch, then filled with a write-offset loop.</p>
+<hr />
+<h2 id="7-restart-resume-logic">7. Restart / Resume Logic</h2>
+<h3 id="71-detection-at-startup">7.1 Detection at Startup</h3>
+<p>At the beginning of <code>train_all_phases()</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">(</span><span class="n">train_all_phases_state</span><span class="p">,</span> <span class="n">train_one_phase_state</span><span class="p">,</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a> <span class="n">restart_scheduler_states</span><span class="p">,</span> <span class="n">restart_scaler_state</span><span class="p">,</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a> <span class="n">restart_model_state</span><span class="p">,</span> <span class="n">restart_optimizer_state</span><span class="p">,</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a> <span class="n">checkpoint_store</span><span class="p">)</span> <span class="o">=</span> <span class="n">load_restart_checkpoint</span><span class="p">(</span><span class="n">job_list</span><span class="o">=</span><span class="n">job_list</span><span class="p">)</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="n">train_all_phases_state</span> <span class="o">=</span> <span class="n">train_all_phases_state</span> <span class="ow">or</span> <span class="n">TrainAllPhasesState</span><span class="p">()</span>
+</code></pre></div>
+<p><code>load_restart_checkpoint</code> (from <code>restart_utils.py</code>):
+1. <code>RestartCheckpointStore.from_current_hydra_output()</code> creates the store pointing to <code>training_restart_checkpoint.pt</code>.
+2. <code>checkpoint_store.load_checkpoint_if_available()</code> checks if the bundle exists.
+   - If not → returns <code>(None, None, None, None, None, None)</code> → fresh start.
+   - If yes → loads bundle, validates version (must be 2), reconstructs <code>TrainAllPhasesState</code> and <code>TrainOnePhaseState</code>.
+3. <code>_validate_restart_run_id()</code> checks that the active MLflow run matches the run ID stored in the outer state.
+4. <code>_validate_restart_target()</code> checks that <code>job_idx</code> is within the job list bounds and the target job is not a pre-train phase.</p>
+<h3 id="72-outer-loop-resume">7.2 Outer Loop Resume</h3>
+<p>If <code>train_all_phases_state.job_idx &gt; 0</code> (restored from bundle):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">job_start_idx</span> <span class="o">=</span> <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">job_idx</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="n">next_epoch_anchor</span> <span class="o">=</span> <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">next_epoch_anchor</span>
+</code></pre></div>
+The outer <code>enumerate</code> starts from <code>job_start_idx</code>, skipping completed phases entirely.</p>
+<p><code>train_one_phase_state</code> (from bundle) is passed to <code>train_one_phase()</code> only for the first resumed job (<code>idx == job_start_idx</code>). After that, it is set to <code>None</code>.</p>
+<p>Similarly, <code>restart_scheduler_states</code>, <code>restart_scaler_state</code>, <code>restart_model_state</code>, <code>restart_optimizer_state</code> are passed only for the first resumed job and then cleared.</p>
+<h3 id="73-inner-loop-resume-inside-train_one_phase">7.3 Inner Loop Resume — inside <code>train_one_phase()</code></h3>
+<p>If <code>train_one_phase_state is not None</code>:</p>
+<ol>
+<li>Validates that <code>restart_model_state</code> and <code>restart_optimizer_state</code> are not <code>None</code> (raises <code>ValueError</code> otherwise).</li>
+<li><code>model.load_state_dict({k: v.to(device) for k, v in restart_model_state.items()})</code> — loads model weights from bundle.</li>
+<li><code>optimizer.load_state_dict(restart_optimizer_state)</code> — loads optimizer state from bundle.</li>
+<li>Scheduler states validated (key-set must match) and loaded from <code>restart_scheduler_states</code>.</li>
+<li><code>scaler.load_state_dict(restart_scaler_state)</code> if not <code>None</code>.</li>
+<li><code>_bundle = torch.load(checkpoint_store.checkpoint_path, ..., weights_only=False)</code> reloads the full bundle; <code>phase_state.load_from_state_dict(_bundle["inner"])</code> restores <code>TrainOnePhaseState</code> fields.</li>
+<li><code>restore_rng_state(phase_state.rng_state, use_cuda=cfg.use_cuda)</code> restores all RNG states.</li>
+</ol>
+<p>Epoch loop resumes at:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">epoch_0</span> <span class="o">=</span> <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">next_epoch_anchor</span>   <span class="c1"># global epoch counter</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">phase_epoch_0</span> <span class="o">=</span> <span class="n">epoch_0</span> <span class="o">-</span> <span class="n">phase_state</span><span class="o">.</span><span class="n">phase_epoch</span>    <span class="c1"># phase-local start</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">epoch</span> <span class="nb">range</span> <span class="o">=</span> <span class="p">[</span><span class="n">epoch_0</span><span class="p">,</span> <span class="n">phase_epoch_0</span> <span class="o">+</span> <span class="n">max_epochs</span><span class="p">)</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">first_epoch_is_evaluation</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># no baseline re-run on resume</span>
+</code></pre></div></p>
+<h3 id="74-test-job-resume">7.4 Test Job Resume</h3>
+<p>When the bundle's <code>job_idx</code> points to a test job:
+- <code>_validate_restart_target()</code> allows this (only pre-train jobs are rejected).
+- <code>_initialize_or_reload_model_for_job()</code> receives <code>restart_model_state</code> and loads weights from it when <code>job.test=True</code> and no explicit <code>load_trained_model_for_test</code> path is configured.</p>
+<h3 id="75-limitations-design-notes">7.5 Limitations / Design Notes</h3>
+<ul>
+<li>Restart only works for <strong>main-training and test phases</strong>. Pre-training jobs cannot be restarted mid-run.</li>
+<li>The <code>CheckpointRequestedExit</code> exception is a hook for external job-scheduler integration: raise it to cleanly stop training after persisting state.</li>
+<li>LR scheduler type mismatch on resume is fatal (<code>ValueError</code>).</li>
+<li><code>nan_counter</code> and <code>stable_epochs</code> persist across restarts (intentional, not documented in inline comments).</li>
+</ul>
+<hr />
+<h2 id="8-sequence-length-curriculum">8. Sequence-Length Curriculum</h2>
+<h3 id="81-purpose">8.1 Purpose</h3>
+<p>When transitioning to a longer sequence length (new phase or curriculum warm-up), the model is exposed to gradually increasing sequence lengths over <code>seq_len_increase_in_batches</code> batches. Validation always uses the full <code>seq_len_train</code>.</p>
+<h3 id="82-configuration-parameters">8.2 Configuration Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>train_cfg.seq_len_epoch_start</code></td>
+<td><code>int</code> or <code>None</code></td>
+<td>Sequence length at start of this phase</td>
+</tr>
+<tr>
+<td><code>train_cfg.seq_len_train</code></td>
+<td><code>int</code> or <code>None</code></td>
+<td>Target (full) sequence length</td>
+</tr>
+<tr>
+<td><code>train_cfg.seq_len_increase_in_batches</code></td>
+<td><code>int</code></td>
+<td>Total batches over which to ramp up</td>
+</tr>
+<tr>
+<td><code>train_cfg.seq_len_increase_abort_after_n_stable_epochs</code></td>
+<td><code>int</code></td>
+<td>Abort curriculum early after N stable epochs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="83-phase-transition">8.3 Phase Transition</h3>
+<p>After each training phase, <code>train_all_phases()</code> sets:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">job_list</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="s1">&#39;train_cfg&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">seq_len_epoch_start</span> <span class="o">=</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;train_cfg&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">seq_len_train</span>
+</code></pre></div>
+So the next phase starts at the ending length of the previous phase.</p>
+<h3 id="84-batch-level-ramp-inside-train_one_epoch">8.4 Batch-Level Ramp — inside <code>train_one_epoch()</code></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">_batches_this_phase</span> <span class="o">=</span> <span class="n">epoch_this_phase</span> <span class="o">*</span> <span class="n">batches_per_epoch</span> <span class="o">+</span> <span class="n">batch_idx</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="k">if</span> <span class="n">_batches_this_phase</span> <span class="o">&lt;</span> <span class="n">warmup_batches</span><span class="p">:</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="c1"># Warmup phase: freeze seq_len at the start value</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>    <span class="n">_seq_len_now</span> <span class="o">=</span> <span class="n">seq_len_epoch_start</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="k">elif</span> <span class="n">seq_len_increase_in_batches</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>    <span class="n">_batches_after_warmup</span> <span class="o">=</span> <span class="n">_batches_this_phase</span> <span class="o">-</span> <span class="n">warmup_batches</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>    <span class="k">if</span> <span class="n">_batches_after_warmup</span> <span class="o">&lt;</span> <span class="n">seq_len_increase_in_batches</span><span class="p">:</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>        <span class="n">_seq_len_now</span> <span class="o">=</span> <span class="n">seq_len_epoch_start</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>            <span class="n">_batches_after_warmup</span> <span class="o">/</span> <span class="n">seq_len_increase_in_batches</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>            <span class="o">*</span> <span class="p">(</span><span class="n">seq_len_train</span> <span class="o">-</span> <span class="n">seq_len_epoch_start</span><span class="p">)</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>        <span class="p">)</span>
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>        <span class="n">_seq_len_now</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">_seq_len_now</span><span class="p">,</span> <span class="n">seq_len_train</span><span class="p">)</span>
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>        <span class="n">_seq_len_now</span> <span class="o">=</span> <span class="n">seq_len_train</span>
+<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>    <span class="n">_seq_len_now</span> <span class="o">=</span> <span class="n">seq_len_train</span>
+</code></pre></div>
+<p>During warmup, seq_len is frozen at <code>seq_len_epoch_start</code>. After warmup, the ramp uses the <strong>offset</strong> batch count (<code>_batches_after_warmup</code>) so that <code>seq_len_increase_in_batches</code> means "batches of ramp after warmup ends" — the user-facing config meaning is unchanged.</p>
+<h3 id="85-epoch-budget-_compute_phase_epoch_settings">8.5 Epoch Budget — <code>_compute_phase_epoch_settings()</code></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">warmup_epochs</span> <span class="o">=</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">warmup_epochs</span>        <span class="c1"># 0 for pre-train phases</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="n">warmup_batches</span> <span class="o">=</span> <span class="n">warmup_epochs</span> <span class="o">*</span> <span class="n">batches_per_epoch</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="n">epochs_for_seq_len_increase</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">seq_len_increase_in_batches</span> <span class="o">/</span> <span class="n">batches_per_epoch</span><span class="p">)</span>  <span class="c1"># floor</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="n">max_epochs</span> <span class="o">=</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">max_epochs</span> <span class="o">+</span> <span class="n">warmup_epochs</span> <span class="o">+</span> <span class="n">epochs_for_seq_len_increase</span>
+</code></pre></div>
+<p>Warmup and seq_len_increase budgets are <strong>added sequentially</strong>. Both ensure early stopping patience is not consumed while LR or seq_len are still ramping.</p>
+<h3 id="86-early-abort-of-curriculum-flag_out_of_seq_len_increase">8.6 Early Abort of Curriculum — <code>flag_out_of_seq_len_increase</code></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="k">if</span> <span class="p">(</span><span class="n">phase_state</span><span class="o">.</span><span class="n">stable_epochs</span> <span class="o">&gt;</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">seq_len_increase_abort_after_n_stable_epochs</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>        <span class="ow">and</span> <span class="n">flag_out_of_seq_len_increase</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">):</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="c1"># Collapse the remaining curriculum window to the current batch count</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="n">train_cfg</span><span class="o">.</span><span class="n">seq_len_increase_in_batches</span> <span class="o">=</span> <span class="n">batches_per_epoch</span> <span class="o">*</span> <span class="p">(</span><span class="n">epoch</span> <span class="o">-</span> <span class="n">phase_epoch_0</span><span class="p">)</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>    <span class="c1"># Extend epoch_stop by the same amount so max_epochs budget is preserved</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="n">epoch_stop</span> <span class="o">=</span> <span class="n">phase_epoch_0</span> <span class="o">+</span> <span class="n">train_cfg</span><span class="o">.</span><span class="n">max_epochs</span> <span class="o">+</span> <span class="p">(</span><span class="n">epoch</span> <span class="o">-</span> <span class="n">phase_epoch_0</span><span class="p">)</span>
+</code></pre></div>
+<p><code>phase_state.stable_epochs</code> is incremented when <code>loss_validation &lt; 2 * loss_train</code> (model generalises well) and reset to 0 otherwise. Stable epochs are <strong>only counted after warmup is complete</strong> (<code>flag_out_of_warmup is True</code>), since seq_len does not increase during warmup.</p>
+<p>Once <code>batches_this_phase &gt;= warmup_batches + seq_len_increase_in_batches</code>, <code>flag_out_of_seq_len_increase = True</code> and early stopping becomes active (provided warmup is also complete).</p>
+<hr />
+<h2 id="87-lr-warm-up-warmup_epochs">8.7 LR Warm-Up — <code>warmup_epochs</code></h2>
+<h3 id="purpose">Purpose</h3>
+<p>Ramp the learning rate from 0 to <code>lr_start</code> per batch over the first <code>warmup_epochs</code> epochs of a phase, before the main LR scheduler takes over. Prevents large early gradient steps from destabilising the model.</p>
+<h3 id="configuration">Configuration</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>train_cfg.warmup_epochs</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Epochs to ramp LR 0 → <code>lr_start</code>; 0 disables warmup</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scheduler-composition">Scheduler Composition</h3>
+<p><code>_create_phase_lr_schedulers()</code> creates a <code>torch.optim.lr_scheduler.LinearLR(start_factor=1e-8, end_factor=1.0, total_iters=warmup_batches)</code> warmup scheduler. Its placement depends on the main scheduler:</p>
+<table>
+<thead>
+<tr>
+<th>Main scheduler</th>
+<th>Warmup storage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cosine</code></td>
+<td><code>SequentialLR([warmup, cosine], milestones=[warmup_batches])</code> under <code>'cosine'</code> key — stepped per batch</td>
+</tr>
+<tr>
+<td><code>plateau</code></td>
+<td><code>LinearLR</code> under <code>'warmup'</code> key; <code>ReduceLROnPlateau</code> under <code>'plateau'</code> key — plateau gated by <code>flag_out_of_warmup</code></td>
+</tr>
+<tr>
+<td>none</td>
+<td><code>LinearLR</code> under <code>'warmup'</code> key — stepped per batch</td>
+</tr>
+</tbody>
+</table>
+<h3 id="guards">Guards</h3>
+<ul>
+<li><strong>Plateau stepping</strong>: only when <code>flag_out_of_warmup is True</code>.</li>
+<li><strong>Stable-epoch counting</strong>: only when <code>flag_out_of_warmup is True</code>.</li>
+<li><strong>Early stopping gate</strong>: <code>early_stopping.early_stop and flag_out_of_seq_len_increase and flag_out_of_warmup</code>.</li>
+</ul>
+<h3 id="counter-reset">Counter Reset</h3>
+<p><code>early_stopping.reset_counter()</code> is called when the <strong>last</strong> of the two flags (<code>flag_out_of_warmup</code>, <code>flag_out_of_seq_len_increase</code>) transitions to True, so patience starts fresh at normal training conditions.</p>
+<h3 id="resume-behaviour">Resume Behaviour</h3>
+<p><code>flag_out_of_warmup</code> is re-derived at resume time from <code>phase_state.phase_epoch * batches_per_epoch &gt;= warmup_batches</code> — no extra persisted field is needed.</p>
+<hr />
+<h2 id="9-early-stopping-convergence-criteria">9. Early Stopping / Convergence Criteria</h2>
+<h3 id="earlystopping-class-bnode_corennnn_utilsearly_stopping"><code>EarlyStopping</code> Class (<code>bnode_core.nn.nn_utils.early_stopping</code>)</h3>
+<p>Instantiated at the start of each phase:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">early_stopping</span> <span class="o">=</span> <span class="n">EarlyStopping</span><span class="p">(</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>    <span class="n">patience</span><span class="o">=</span><span class="n">train_cfg</span><span class="o">.</span><span class="n">early_stopping_patience</span><span class="p">,</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>    <span class="n">verbose</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="n">threshold</span><span class="o">=</span><span class="n">train_cfg</span><span class="o">.</span><span class="n">early_stopping_threshold</span><span class="p">,</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    <span class="n">threshold_mode</span><span class="o">=</span><span class="n">train_cfg</span><span class="o">.</span><span class="n">early_stopping_threshold_mode</span><span class="p">,</span>   <span class="c1"># &#39;abs&#39; or &#39;rel&#39;</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    <span class="n">path</span><span class="o">=</span><span class="n">path_best_model</span><span class="p">,</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    <span class="n">optimizer_path</span><span class="o">=</span><span class="n">path_optimizer_best_model</span><span class="p">,</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="n">trace_func</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">,</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="p">)</span>
+</code></pre></div></p>
+<p><strong>Improvement criterion:</strong>
+- <code>'abs'</code> mode: <code>loss &lt; best_score - threshold</code>
+- <code>'rel'</code> mode: <code>loss &lt; best_score * (1 - threshold)</code></p>
+<p>When improved: saves model + optimizer checkpoint, resets counter.<br />
+When not improved: increments counter.<br />
+When <code>counter &gt;= patience</code>: sets <code>early_stop = True</code>.</p>
+<p><strong>Counter reset after curriculum</strong>: <code>early_stopping.reset_counter()</code> is called when the last of <code>flag_out_of_seq_len_increase</code> and <code>flag_out_of_warmup</code> transitions to True, so patience starts fresh at normal training conditions.</p>
+<h3 id="phase-termination-conditions-checked-at-top-of-each-epoch">Phase Termination Conditions (checked at top of each epoch)</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Condition</th>
+<th>MLflow tag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>flag_max_epoch</code></td>
+<td><code>epoch == epoch_stop - 1</code></td>
+<td><code>'max epochs'</code></td>
+</tr>
+<tr>
+<td><code>flag_early_stopping</code></td>
+<td><code>early_stopping.early_stop and flag_out_of_seq_len_increase and flag_out_of_warmup</code></td>
+<td><code>'early stopping'</code></td>
+</tr>
+<tr>
+<td><code>flag_break_after_loss</code></td>
+<td><code>early_stopping.best_score &lt; train_cfg.break_after_loss_of</code></td>
+<td><code>'break after loss'</code></td>
+</tr>
+<tr>
+<td><code>flag_nan_counter</code></td>
+<td><code>phase_state.nan_counter &gt; 50</code></td>
+<td><code>'50 NaNs in loss'</code></td>
+</tr>
+</tbody>
+</table>
+<p>When any flag is set, <code>model.load(path_best_model)</code> is called before the final evaluation pass, then the loop breaks.</p>
+<h3 id="naninf-loss-recovery">NaN/Inf Loss Recovery</h3>
+<p>If <code>ret_vals_train['loss']</code> is NaN or Inf (or <code>AssertionError</code> was caught):
+1. If <code>train_cfg.reload_model_if_loss_nan=True</code> and <code>nan_counter &lt;= 49</code>:
+   - Reload model and optimizer from <code>checkpoint_store.checkpoint_path</code> bundle (<code>_bundle["model"]</code>, <code>_bundle["optimizer"]</code>).
+   - Increment <code>grad_norm_last_reduced_counter</code>. If &gt; 2, multiply <code>clip_grad_norm</code> by 0.7 and reset counter.
+   - Log <code>loss_nan_reload=1</code> to MLflow.
+   - If bundle load itself fails (no checkpoint exists yet): raise <code>ValueError</code> (first epoch unstable).
+2. If <code>nan_counter &gt; 49</code>:
+   - Reload the <strong>best</strong> model (<code>model.load(path_best_model)</code>) and optimizer (<code>torch.load(path_optimizer_best_model)</code>).
+3. If <code>nan_counter &gt; 55</code>: raise <code>ValueError</code> and abort.
+4. If <code>reload_model_if_loss_nan=False</code>: log warning and continue with current model.</p>
+<p>On a clean (non-NaN) epoch: reset <code>nan_counter</code> and <code>grad_norm_last_reduced_counter</code> to 0.<br />
+<strong>Note</strong>: <code>model_current.pt</code> and <code>optimizer_current.pt</code> are no longer written separately on clean epochs — the rolling state is persisted only via the end-of-epoch restart bundle.</p>
+<h3 id="reducelronplateau-integration"><code>ReduceLROnPlateau</code> Integration</h3>
+<p>Stepped per epoch using validation loss:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="k">if</span> <span class="n">lr_schedulers</span> <span class="ow">and</span> <span class="s1">&#39;plateau&#39;</span> <span class="ow">in</span> <span class="n">lr_schedulers</span><span class="p">:</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>    <span class="n">val_loss</span> <span class="o">=</span> <span class="n">ret_vals_validation</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;loss&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    <span class="k">if</span> <span class="n">val_loss</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">val_loss</span><span class="p">)</span> <span class="ow">or</span> <span class="n">np</span><span class="o">.</span><span class="n">isinf</span><span class="p">(</span><span class="n">val_loss</span><span class="p">)):</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>        <span class="n">lr_schedulers</span><span class="p">[</span><span class="s1">&#39;plateau&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">val_loss</span><span class="p">)</span>
+</code></pre></div></p>
+<p>NaN/Inf validation loss skips the scheduler step.</p>
+<h3 id="keyboardinterrupt-handling"><code>KeyboardInterrupt</code> Handling</h3>
+<p>The entire epoch loop is wrapped in:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>    <span class="k">for</span> <span class="n">epoch</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>        <span class="o">...</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="k">except</span> <span class="ne">KeyboardInterrupt</span><span class="p">:</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>    <span class="n">mlflow_proxy</span><span class="o">.</span><span class="n">set_tag_if_active</span><span class="p">(</span><span class="s1">&#39;ended by&#39;</span><span class="p">,</span> <span class="s1">&#39;keyboard interrupt&#39;</span><span class="p">)</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>    <span class="n">model</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">path</span><span class="o">=</span><span class="n">path_best_model</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>  <span class="c1"># fallback loop if file missing</span>
+</code></pre></div></p>
+<hr />
+<h2 id="10-notable-helper-classes-dataclasses-and-utility-modules">10. Notable Helper Classes, Dataclasses, and Utility Modules</h2>
+<h3 id="trainallphasesstate-restart_statepy"><code>TrainAllPhasesState</code> (<code>restart_state.py</code>)</h3>
+<p>Serializes the coarse state of <code>train_all_phases()</code> via <code>to_state_dict</code> / <code>load_from_state_dict</code>:
+- <code>job_idx</code>, <code>next_epoch_anchor</code>, <code>mlflow_run_id</code>.</p>
+<h3 id="trainonephasestate-restart_statepy"><code>TrainOnePhaseState</code> (<code>restart_state.py</code>)</h3>
+<p>Serializes the fine state of <code>train_one_phase()</code>:
+- <code>phase_epoch</code>, <code>nan_counter</code>, <code>grad_norm_last_reduced_counter</code>, <code>stable_epochs</code>, <code>deterministic_mode_active</code>, <code>seq_len_increase_in_batches</code>, <code>rng_state</code>.
+- <code>early_stopping</code> is assigned as a Python attribute (not serialized inside the state dict; held directly on the instance).</p>
+<h3 id="restartcheckpointstore-restart_checkpoint_storepy"><code>RestartCheckpointStore</code> (<code>restart_checkpoint_store.py</code>)</h3>
+<p>Manages atomic persistence of the single restart bundle. Key methods:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from_current_hydra_output()</code></td>
+<td>Factory using <code>filepaths</code> to locate Hydra output dir</td>
+</tr>
+<tr>
+<td><code>load_checkpoint_if_available()</code></td>
+<td>Load bundle if present; validate version 2; return all 6 components</td>
+</tr>
+<tr>
+<td><code>save_epoch_checkpoint(...)</code></td>
+<td>Atomic write of complete bundle (outer + inner + scheduler + scaler + model + optimizer)</td>
+</tr>
+<tr>
+<td><code>save_outer_for_test_job(...)</code></td>
+<td>Reload existing bundle, update outer state, re-save atomically</td>
+</tr>
+<tr>
+<td><code>clear_restart_artifacts()</code></td>
+<td>Delete the bundle file on clean completion</td>
+</tr>
+</tbody>
+</table>
+<p>Atomicity: write to <code>.{name}.{uuid}.tmp</code>, <code>fsync</code>, <code>os.replace</code>, then <code>fsync</code> the directory.</p>
+<h3 id="earlystopping-bnode_corennnn_utilsearly_stopping"><code>EarlyStopping</code> (<code>bnode_core.nn.nn_utils.early_stopping</code>)</h3>
+<p><code>torch.nn.Module</code> subclass. Monitors validation loss with configurable patience and threshold. Key attributes: <code>counter</code>, <code>best_score</code>, <code>corresponding_score</code>, <code>early_stop</code>. Serializable via <code>get_extra_state()</code> / <code>set_extra_state()</code>. <code>reset()</code> resets all state; <code>reset_counter()</code> resets only the patience counter (preserves <code>best_score</code>).</p>
+<h3 id="checkpointrequestedexit-restart_statepy"><code>CheckpointRequestedExit</code> (<code>restart_state.py</code>)</h3>
+<p>Simple <code>RuntimeError</code> subclass. Raised to request a graceful training stop after the epoch checkpoint is persisted. Caught in <code>train_all_phases()</code>.</p>
+<h3 id="mlflow_proxy-bnode_coreutilsmlflow_proxy"><code>mlflow_proxy</code> (<code>bnode_core.utils.mlflow_proxy</code>)</h3>
+<p>A thin wrapper around the MLflow client that silently handles the case where no MLflow run is active. Exposes <code>log_param</code>, <code>log_metric</code>, <code>log_metrics</code>, <code>set_tag_if_active</code>. Used throughout trainer.py as a drop-in for raw <code>mlflow.*</code> calls.</p>
+<p>One bare <code>mlflow.active_run()</code> call remains in <code>train_one_phase</code> (line ~1679) to read the run ID for <code>TrainAllPhasesState.mlflow_run_id</code>. It is guarded: <code>_active_run = mlflow.active_run(); train_all_state.mlflow_run_id = _active_run.info.run_id if _active_run is not None else None</code>.</p>
+<h3 id="log_hydra_to_mlflow-bnode_coreutilshydra_mlflow_decorator"><code>@log_hydra_to_mlflow</code> (<code>bnode_core.utils.hydra_mlflow_decorator</code>)</h3>
+<p>Decorator applied to <code>train_all_phases</code>. Starts/resumes an MLflow experiment run and logs the full Hydra config as MLflow parameters. Ensures the run is ended on normal return or exception.</p>
+<h3 id="filepaths-module-bnode_corefilepaths"><code>filepaths</code> module (<code>bnode_core.filepaths</code>)</h3>
+<p>Central path-resolution module. Relevant functions:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dir_current_hydra_output()</code></td>
+<td>Hydra's working output directory for the current run</td>
+</tr>
+<tr>
+<td><code>filepath_model_current_hydra_output(phase)</code></td>
+<td><code>model_phase_{phase}.pt</code> or <code>model_current.pt</code></td>
+</tr>
+<tr>
+<td><code>filepath_pretrained_model_current_hydra_output()</code></td>
+<td><code>model_pretrained.pt</code></td>
+</tr>
+<tr>
+<td><code>filepath_optimizer_current_hydra_output(phase)</code></td>
+<td><code>optimizer_phase_{phase}.pt</code> or <code>optimizer_current.pt</code></td>
+</tr>
+<tr>
+<td><code>filepath_restart_checkpoint_current_hydra_output()</code></td>
+<td><code>training_restart_checkpoint.pt</code></td>
+</tr>
+<tr>
+<td><code>filepath_dataset_current_hydra_output()</code></td>
+<td>HDF5 prediction output file</td>
+</tr>
+<tr>
+<td><code>filepath_from_local_or_ml_artifacts(path)</code></td>
+<td>Resolves <code>mlflow://</code> URIs or local paths</td>
+</tr>
+</tbody>
+</table>
+<h3 id="load_dataset_and_config-make_stacked_dataset-timeseriesdataset-timeseries_collate_fn-bnode_corennnn_utilsload_data"><code>load_dataset_and_config</code>, <code>make_stacked_dataset</code>, <code>TimeSeriesDataset</code>, <code>timeseries_collate_fn</code> (<code>bnode_core.nn.nn_utils.load_data</code>)</h3>
+<ul>
+<li><code>load_dataset_and_config(name, path)</code> → opens and returns an <code>h5py.File</code> handle.</li>
+<li><code>make_stacked_dataset(hdf5, context, load_seq_len, seq_len_batches, stride, max_samples)</code> → constructs a <code>TimeSeriesDataset</code>.</li>
+<li><code>TimeSeriesDataset</code> → standard PyTorch <code>Dataset</code>; each item is a dict of tensors.</li>
+<li><code>timeseries_collate_fn</code> → collation function for variable-length padding.</li>
+</ul>
+<h3 id="neuralode-balancedneuralode-model-classes"><code>NeuralODE</code> / <code>BalancedNeuralODE</code> (model classes)</h3>
+<p>Both expose the same training interface:
+- <code>model_and_loss_evaluation(data_batch, train_cfg, pre_train, device, *, return_model_outputs, test, last_batch, activate_deterministic_mode)</code> → returns metrics dict.
+- <code>normalization_init(hdf5_dataset)</code> → initializes normalization buffers.
+- <code>model.save(path)</code> / <code>model.load(path, device)</code> → save/load model state.
+- <code>model.get_progress_string(ret_vals_train, ret_vals_validation, ret_vals_test, pre_train)</code> → compact string for per-epoch logging.
+- <code>model.ode_fun_count</code> (optional) → ODE evaluations during last backward pass.</p>
+<hr />
+<h2 id="notable-todos-and-design-gaps">Notable TODOs and Design Gaps</h2>
+<ol>
+<li><strong><code>batch_size_test</code> mutation removed</strong> — OOM retry now uses <code>batch_size_reduction_factor</code> local variable; global config is no longer mutated.</li>
+<li><strong>TODO in <code>_create_datasets_and_dataloaders_for_job</code></strong> (line ~468): <code># TODO: I believe this is never reached</code> — the guard for an empty dataset during test-only mode may be dead code.</li>
+<li><strong>LR scheduler type mismatch on resume is fatal</strong> — if config is changed between an interrupted run and a resume attempt, the scheduler key validation raises <code>ValueError</code> with no migration path.</li>
+<li><strong><code>seq_len_increase_abort_after_n_stable_epochs</code> epoch_stop extension</strong> — when the curriculum is aborted early, <code>epoch_stop</code> is extended permanently. This extension is not reset if <code>stable_epochs</code> subsequently drops back to zero.</li>
+<li><strong><code>nan_counter</code> and <code>stable_epochs</code> persist across restarts</strong> — intentional but not documented inline. Resuming a run that had 30 NaN epochs will start with <code>nan_counter=30</code>.</li>
+<li><strong><code>model_current.pt</code> / <code>optimizer_current.pt</code> no longer written separately</strong> — rolling state is only in the restart bundle. If the bundle is deleted manually, NaN recovery cannot load a rolling checkpoint.</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.uni-augsburg.de/de/fakultaet/fai/informatik/prof/imech/team/julius-aka/" target="_blank" rel="noopener" title="www.uni-augsburg.de" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2m-5.15 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M14.34 14H9.66c-.1-.66-.16-1.32-.16-2s.06-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2M12 19.96c-.83-1.2-1.5-2.53-1.91-3.96h3.82c-.41 1.43-1.08 2.76-1.91 3.96M8 8H5.08A7.92 7.92 0 0 1 9.4 4.44C8.8 5.55 8.35 6.75 8 8m-2.92 8H8c.35 1.25.8 2.45 1.4 3.56A8 8 0 0 1 5.08 16m-.82-2C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2M12 4.03c.83 1.2 1.5 2.54 1.91 3.97h-3.82c.41-1.43 1.08-2.77 1.91-3.97M18.92 8h-2.95a15.7 15.7 0 0 0-1.38-3.56c1.84.63 3.37 1.9 4.33 3.56M12 2C6.47 2 2 6.5 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/in/julius-aka/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93zM6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://scholar.google.com/citations?user=7SypqSQAAAAJ&hl" target="_blank" rel="noopener" title="scholar.google.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3 1 9l11 6 9-4.91V17h2V9M5 13.18v4L12 21l7-3.82v-4L12 17z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/juliusaka" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33s1.71.11 2.5.33c1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.top", "navigation.tabs", "search.suggest", "search.highlight"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

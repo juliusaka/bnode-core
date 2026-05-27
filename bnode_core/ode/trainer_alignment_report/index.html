@@ -1,0 +1,2624 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="bnode-core">
+      
+      
+        <meta name="author" content="Julius Aka">
+      
+      
+        <link rel="canonical" href="https://github.com/juliusaka/balanced-neural-odes/bnode_core/ode/trainer_alignment_report/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Trainer Alignment Report: Old (d6ffb64) vs New (2ab3859) - bnode-core</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#trainer-alignment-report-old-d6ffb64-vs-new-2ab3859" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="bnode-core" class="md-header__button md-logo" aria-label="bnode-core" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 0H8C6.9 0 6 .9 6 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V6zm4 18H8V2h7v5h5zM4 4v18h16v2H4c-1.1 0-2-.9-2-2V4zm6 6v2h8v-2zm0 4v2h5v-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bnode-core
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Trainer Alignment Report: Old (d6ffb64) vs New (2ab3859)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7M9 21v-1h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1m3-17a5 5 0 0 0-5 5c0 2.05 1.23 3.81 3 4.58V16h4v-2.42c1.77-.77 3-2.53 3-4.58a5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/juliusaka/balanced-neural-odes" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../config/" class="md-tabs__link">
+          
+  
+  
+  Config
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../LICENSE/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="bnode-core" class="md-nav__button md-logo" aria-label="bnode-core" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 0H8C6.9 0 6 .9 6 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V6zm4 18H8V2h7v5h5zM4 4v18h16v2H4c-1.1 0-2-.9-2-2V4zm6 6v2h8v-2zm0 4v2h5v-2z"/></svg>
+
+    </a>
+    bnode-core
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/juliusaka/balanced-neural-odes" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Generation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Generation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/introduction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/raw_data_generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Raw Data Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/data_preperation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Preparation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2_4" id="__nav_2_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sampling Methods
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sampling Methods
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parameters Sampling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/initial_states/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initial States Sampling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random (R)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_random_offset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random Offset (RO)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_rocs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Cubic Splines with Clipping (ROCS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_rrocs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Cubic Splines with Random Rescaling (RROCS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_steps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random Steps (RS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_frequency_response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Frequency Response / Chirp (RF)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_from_file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Load from CSV File
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_from_excel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Constant Input from Excel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    (B)NODE Module
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    (B)NODE Module
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer Module
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../restart_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restart-enabled training workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_3" id="__nav_2_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    BNODE
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bnode/bnode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE Module
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bnode/bnode_export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NODE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_5" id="__nav_2_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ODE Utilities
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ODE Utilities
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainer_utils/test_from_mlflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing from MLflow checkpointed runs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neural Networks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neural Networks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nn/nn_utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neural Network Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nn/vae/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VAE (Variational Autoencoder)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../filepaths/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filepaths
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Config
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../LICENSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#executive-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executive Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-entry-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Entry Point
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Initialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Initialization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#21-dataset-dataloader-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.1 Dataset / DataLoader Creation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#22-model-construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.2 Model Construction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#23-optimizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.3 Optimizer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#24-lr-schedulers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.4 LR Schedulers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#25-amp-scaler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2.5 AMP Scaler
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-outer-training-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Outer Training Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Outer Training Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-_build_job_list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 _build_job_list()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-train_all_phases-main-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 train_all_phases() main loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-epoch-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Epoch Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-inner-training-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Inner Training Loop
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Inner Training Loop">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-train_one_phase-signature" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 train_one_phase() Signature
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-batch-loop-gradient-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Batch Loop, Gradient Computation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-cuda-memory-metric-bug-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 CUDA Memory Metric Bug — Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-validation-evaluation-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Validation / Evaluation Logic
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-checkpointing-state-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Checkpointing / State Persistence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Checkpointing / State Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-restart-bundle-four-files-single-atomic-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Restart Bundle: Four Files → Single Atomic Bundle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-save_outer_for_test_job-new-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 save_outer_for_test_job — New Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-model_currentpt-optimizer_currentpt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 model_current.pt / optimizer_current.pt
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-restart-resume-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Restart / Resume Logic
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-sequence-length-curriculum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Sequence-Length Curriculum
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-early-stopping-convergence-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Early Stopping / Convergence Criteria
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Early Stopping / Convergence Criteria">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mlflow-nan-tag-fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MLflow NaN Tag — Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nan-recovery-rolling-checkpoint-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NaN Recovery: Rolling Checkpoint Source
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-early-stopping-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Early Stopping Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-helper-classes-and-utilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Helper Classes and Utilities
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#critical-differences-that-could-affect-training-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Critical Differences that Could Affect Training Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Critical Differences that Could Affect Training Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-nan-recovery-source-9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A. NaN Recovery Source (§9)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-oom-batch-size-reduction-21" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B. OOM Batch-Size Reduction (§2.1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-cuda-memory-threshold-evaluation-43" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C. CUDA Memory Threshold Evaluation (§4.3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d-test-job-resume-capability-7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        D. Test Job Resume Capability (§7)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#e-first-epoch-nan-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E. First-Epoch NaN Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-critical-differences-refactoring-correctness-fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Critical Differences (Refactoring / Correctness Fixes)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="trainer-alignment-report-old-d6ffb64-vs-new-2ab3859">Trainer Alignment Report: Old (d6ffb64) vs New (2ab3859)</h1>
+<blockquote>
+<p><strong>Compares:</strong> <code>trainer_flow_old.md</code> (git commit d6ffb64, branch <code>modelica_export_copilot</code>)<br />
+<strong>Against:</strong> <code>trainer_flow_new.md</code> (HEAD commit 2ab3859, branch <code>modelica_export_copilot</code>)<br />
+<strong>Source:</strong> <code>bnode/bnode-core/src/bnode_core/ode/trainer.py</code><br />
+<strong>Sections</strong> follow the same ten headings as the flow documents.</p>
+</blockquote>
+<hr />
+<h2 id="executive-summary">Executive Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Overall architecture</strong></td>
+<td>Substantially refactored; same conceptual pipeline</td>
+</tr>
+<tr>
+<td><strong>Training output (model weights)</strong></td>
+<td>Potentially affected — see §6, §9</td>
+</tr>
+<tr>
+<td><strong>NaN recovery</strong></td>
+<td>Changed source of rolling checkpoint; logic equivalent</td>
+</tr>
+<tr>
+<td><strong>Restart/resume</strong></td>
+<td>Completely redesigned; old four-file protocol replaced by single bundle</td>
+</tr>
+<tr>
+<td><strong>Bugs fixed</strong></td>
+<td>CUDA memory unit bug fixed; MLflow NaN tag fixed</td>
+</tr>
+<tr>
+<td><strong>New runtime guard</strong></td>
+<td>BNODE + pre-train now raises <code>ValueError</code> immediately</td>
+</tr>
+<tr>
+<td><strong>OOM handling</strong></td>
+<td>Local factor replaces global config mutation</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-entry-point">1. Entry Point</h2>
+<p><strong>No functional change.</strong> <code>main()</code> still calls <code>config_store</code>, <code>config_dir_auto_recognize</code>, and wraps <code>train_all_phases</code> with <code>hydra.main</code>. The <code>@log_hydra_to_mlflow</code> decorator is identical.</p>
+<hr />
+<h2 id="2-initialization">2. Initialization</h2>
+<h3 id="21-dataset-dataloader-creation">2.1 Dataset / DataLoader Creation</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OOM batch-size reduction</td>
+<td>Mutated <code>cfg.nn_model.training.batch_size_test</code> globally, then called <code>_create_datasets_and_dataloaders_for_job</code></td>
+<td><code>batch_size_reduction_factor</code> (local float, compounding ×0.7) passed as argument; config <strong>not</strong> mutated</td>
+</tr>
+<tr>
+<td>batch_size_reduction warning</td>
+<td>No extra warning</td>
+<td>Warning logged after 30 OOM retries</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Potential output impact:</strong> With the old code, a CUDA OOM permanently reduced <code>batch_size_test</code> in the Hydra config object, which could affect subsequent phases if they read back <code>cfg.nn_model.training.batch_size_test</code>. With the new code the config is untouched; each phase starts fresh. This difference only matters in multi-phase OOM scenarios, but it was unintentional behaviour in the old version.</p>
+<h3 id="22-model-construction">2.2 Model Construction</h3>
+<p><strong>No functional change</strong> in the build paths. <code>normalization_init</code> and <code>.to(device)</code> are unchanged.</p>
+<p><strong>New addition:</strong> <code>_initialize_or_reload_model_for_job</code> accepts <code>restart_model_state</code> parameter. If resuming at a test job with no other load path configured, model weights are loaded from <code>restart_model_state</code> (from bundle) rather than raising an error or starting from random weights.</p>
+<h3 id="23-optimizer">2.3 Optimizer</h3>
+<p><strong>No functional change.</strong> <code>_create_phase_optimizer</code> construction is unchanged. Reload behaviour on <code>reload_optimizer=True</code> is unchanged.</p>
+<h3 id="24-lr-schedulers">2.4 LR Schedulers</h3>
+<p><strong>No functional change</strong> in scheduler construction or stepping.</p>
+<h3 id="25-amp-scaler">2.5 AMP Scaler</h3>
+<p><strong>No functional change.</strong></p>
+<hr />
+<h2 id="3-outer-training-loop">3. Outer Training Loop</h2>
+<h3 id="31-_build_job_list">3.1 <code>_build_job_list()</code></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BNODE + pre-train guard</td>
+<td>Silently skipped or behaviour undefined</td>
+<td>Logs a warning and marks the pre-train job as skipped; training continues with main-training phases</td>
+</tr>
+</tbody>
+</table>
+<p><strong>New (potential output impact if relied on silently):</strong> Any pipeline that previously used BNODE + <code>pre_train=True</code> and observed silent behaviour will now see a warning and the pre-train job will be skipped explicitly. No impact on normal usage.</p>
+<h3 id="32-train_all_phases-main-loop">3.2 <code>train_all_phases()</code> main loop</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>train_all_phases_state</code> initialization</td>
+<td>Implicitly set by <code>load_restart_state_pair</code>; not documented what happens when None</td>
+<td><code>train_all_phases_state = outer_state or TrainAllPhasesState()</code> — always non-None, explicit</td>
+</tr>
+<tr>
+<td><code>save_outer_for_test_job</code></td>
+<td>Not present</td>
+<td>Called just before running any test job; ensures bundle reflects correct <code>job_idx</code></td>
+</tr>
+<tr>
+<td>OOM detection string</td>
+<td><code>'CUDA out of memory'</code></td>
+<td>Both <code>'CUDA out of memory'</code> and <code>'CUDA memory is almost full'</code></td>
+</tr>
+<tr>
+<td><code>checkpoint_store.clear_restart_artifacts()</code></td>
+<td><code>_clear_restart_state()</code> (4 separate file deletions)</td>
+<td>Single bundle file deletion</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-epoch-budget">3.3 Epoch Budget</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>epochs_for_seq_len_increase</code> formula</td>
+<td>Documented as <code>math.ceil(...)</code> in old flow doc</td>
+<td>Actual code uses <code>int(...)</code> (floor division) — <strong>old flow doc was wrong</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The code in both old and new commits uses <code>int(...)</code> (floor).</strong> The old <code>trainer_flow_new.md</code> (now replaced) incorrectly documented it as <code>ceil</code>. No behaviour change between commits; only the documentation was wrong.</p>
+<hr />
+<h2 id="4-inner-training-loop">4. Inner Training Loop</h2>
+<h3 id="41-train_one_phase-signature">4.1 <code>train_one_phase()</code> Signature</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Signature</td>
+<td><code>(cfg, job, ..., train_one_phase_state, ...)</code> — no separate model/optimizer/scheduler state params</td>
+<td>Added: <code>checkpoint_store</code>, <code>restart_scheduler_states</code>, <code>restart_scaler_state</code>, <code>restart_model_state</code>, <code>restart_optimizer_state</code></td>
+</tr>
+<tr>
+<td>Resume — model/optimizer loading</td>
+<td>Loaded from separate <code>_restore_files</code> paths (rolling <code>.pt</code> files)</td>
+<td>Loaded from <code>restart_model_state</code> / <code>restart_optimizer_state</code> (bundle dict keys)</td>
+</tr>
+<tr>
+<td>Resume — inner state loading</td>
+<td>Loaded from <code>training_inner_restart.pt</code> via <code>phase_state.load_from_state_dict(...)</code> separately</td>
+<td>Loaded from <code>_bundle["inner"]</code> directly</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Potential output impact:</strong> The resumed model and optimizer state come from the same source (the atomic bundle), so the effective state should be identical. However, if the old code's separate files happened to be from a slightly different checkpoint than the inner state file, there was a potential inconsistency window. The new bundle is atomic — all state is from the same epoch. This means resumes with the new code are strictly correct; the old code had a potential off-by-one-epoch inconsistency.</p>
+<h3 id="42-batch-loop-gradient-computation">4.2 Batch Loop, Gradient Computation</h3>
+<p><strong>No functional change</strong> in the batch iteration, forward pass, backward pass, or gradient clipping logic.</p>
+<h3 id="43-cuda-memory-metric-bug-fixed">4.3 CUDA Memory Metric Bug — <strong>Fixed</strong></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Memory unit calculation</td>
+<td><code>/(1024^3)</code> (Python bitwise XOR → divides by 1027) → <strong>wrong units</strong></td>
+<td><code>/(1024**3)</code> (exponentiation → correct GiB)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Impact:</strong> The old code logged an incorrect CUDA memory value to MLflow (approximately 0.3% larger than actual GiB). The threshold comparisons (60%, 98%) were also computed on wrong values. In practice the thresholds are wide enough that this did not affect OOM trigger behaviour in any tested scenario, but the logged metric was wrong.</p>
+<hr />
+<h2 id="5-validation-evaluation-logic">5. Validation / Evaluation Logic</h2>
+<p><strong>No functional change.</strong> <code>test_or_validate_one_epoch</code>, <code>_get_early_stopping_corresponding_metric</code>, <code>activate_deterministic_mode</code>, and the ref/testnorm frequency logic are unchanged.</p>
+<hr />
+<h2 id="6-checkpointing-state-persistence">6. Checkpointing / State Persistence</h2>
+<p>This section has the <strong>largest structural change</strong> between old and new.</p>
+<h3 id="61-restart-bundle-four-files-single-atomic-bundle">6.1 Restart Bundle: Four Files → Single Atomic Bundle</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Restart files</td>
+<td><code>training_outer_restart.pt</code>, <code>training_inner_restart.pt</code>, <code>lr_schedulers.pt</code>, <code>grad_scaler.pt</code></td>
+<td><code>training_restart_checkpoint.pt</code> (bundle version 2)</td>
+</tr>
+<tr>
+<td>Model/optimizer in restart</td>
+<td>Separate rolling files <code>model_current.pt</code>, <code>optimizer_current.pt</code> written after every clean epoch</td>
+<td>Embedded in the bundle: <code>_bundle["model"]</code>, <code>_bundle["optimizer"]</code></td>
+</tr>
+<tr>
+<td>Load function</td>
+<td><code>load_restart_state_pair()</code> → 4 values</td>
+<td><code>load_restart_checkpoint()</code> → 7 values (adds model_state, optimizer_state, checkpoint_store)</td>
+</tr>
+<tr>
+<td>Atomicity</td>
+<td>Per-file atomic write</td>
+<td>Single bundle atomic write (all 7 components together)</td>
+</tr>
+<tr>
+<td>Cleanup</td>
+<td><code>_clear_restart_state()</code> deletes 4 files separately</td>
+<td><code>checkpoint_store.clear_restart_artifacts()</code> deletes 1 file</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Potential output impact:</strong> The old code wrote <code>model_current.pt</code> and <code>optimizer_current.pt</code> independently of the inner/outer restart files. This created a window where the inner state could be from epoch N but model_current could be from epoch N+1 (if the epoch checkpoint completed model saving but not inner state saving before a crash). The new bundle is atomic — all state is from the same epoch. This means resumes with the new code are strictly correct; the old code had a potential off-by-one-epoch inconsistency.</p>
+<h3 id="62-save_outer_for_test_job-new-method">6.2 <code>save_outer_for_test_job</code> — New Method</h3>
+<p>Old code had no mechanism to persist the outer state specifically for test job resume. New code calls <code>checkpoint_store.save_outer_for_test_job(train_all_phases_state)</code> before running a test job. This is an added capability.</p>
+<h3 id="63-model_currentpt-optimizer_currentpt">6.3 <code>model_current.pt</code> / <code>optimizer_current.pt</code></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Written</td>
+<td>After every clean (non-NaN) training epoch</td>
+<td><strong>Not written separately</strong> — only included in the restart bundle</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Implication:</strong> If a user manually deletes the restart bundle, NaN recovery cannot fall back to the rolling model. The rolling model is only accessible via the bundle. This is a deliberate design simplification.</p>
+<hr />
+<h2 id="7-restart-resume-logic">7. Restart / Resume Logic</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bundle version validation</td>
+<td>Not versioned</td>
+<td>Bundle version checked: must be 2 (raises <code>ValueError</code> if not)</td>
+</tr>
+<tr>
+<td><code>_validate_restart_target</code> — test jobs</td>
+<td>Test jobs were rejected (marked as non-restartable)</td>
+<td>Test jobs <strong>allowed</strong>: only pre-train jobs are rejected</td>
+</tr>
+<tr>
+<td>Model/optimizer loading on resume</td>
+<td>Loaded from <code>path_current_model</code> / <code>path_current_optimizer</code> files</td>
+<td>Loaded from <code>restart_model_state</code> / <code>restart_optimizer_state</code> in bundle</td>
+</tr>
+<tr>
+<td>Scheduler loading on resume</td>
+<td>Loaded from <code>lr_schedulers.pt</code></td>
+<td>Loaded from <code>restart_scheduler_states</code> dict in bundle</td>
+</tr>
+<tr>
+<td>Scaler loading on resume</td>
+<td>Loaded from <code>grad_scaler.pt</code></td>
+<td>Loaded from <code>restart_scaler_state</code> dict in bundle</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Potential output impact (resume correctness):</strong> Old code could have an inconsistency between <code>training_inner_restart.pt</code> (epoch N) and <code>model_current.pt</code> (potentially epoch N+1). New code is guaranteed consistent. On an identical (non-crashed) run, outcomes are the same.</p>
+<p><strong>New capability (test job resume):</strong> Previously a run interrupted during the test phase would have had to rerun from the last training phase. Now it resumes at the test job.</p>
+<hr />
+<h2 id="8-sequence-length-curriculum">8. Sequence-Length Curriculum</h2>
+<p><strong>No functional change.</strong> All curriculum logic, ramp formula, early abort, and epoch budget calculation are identical between old and new code. (The <code>int()</code> vs <code>ceil()</code> discrepancy was a documentation error in the old flow doc, not a code change.)</p>
+<hr />
+<h2 id="9-early-stopping-convergence-criteria">9. Early Stopping / Convergence Criteria</h2>
+<h3 id="mlflow-nan-tag-fixed">MLflow NaN Tag — <strong>Fixed</strong></h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MLflow tag on NaN abort</td>
+<td><code>'4 NaNs in loss'</code></td>
+<td><code>'50 NaNs in loss'</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Impact:</strong> The old tag was incorrect (the threshold is <code>nan_counter &gt; 50</code>, so the actual tag text was just mislabelled). No functional difference in training behaviour.</p>
+<h3 id="nan-recovery-rolling-checkpoint-source">NaN Recovery: Rolling Checkpoint Source</h3>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rolling model (nan_counter ≤ 49)</td>
+<td>Load from <code>path_current_model</code> (file)</td>
+<td>Load from <code>checkpoint_store.checkpoint_path</code> bundle, key <code>"model"</code></td>
+</tr>
+<tr>
+<td>Rolling optimizer (nan_counter ≤ 49)</td>
+<td>Load from <code>path_current_optimizer</code> (file)</td>
+<td>Load from bundle, key <code>"optimizer"</code></td>
+</tr>
+<tr>
+<td>Best model (nan_counter &gt; 49)</td>
+<td><code>model.load(path_best_model)</code> + <code>torch.load(path_optimizer_best_model)</code></td>
+<td>Same (unchanged)</td>
+</tr>
+<tr>
+<td>First-epoch failure</td>
+<td>Unclear (no bundle exists yet)</td>
+<td><code>ValueError</code>: "cannot reload from bundle: no checkpoint"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Potential output impact:</strong> If the <code>model_current.pt</code> from the old code was written slightly after the inner restart file (within the same epoch), there was a microsecond window of inconsistency on NaN reload. The new code reloads from the same bundle that was atomically written at end-of-epoch, so model + optimizer are always co-consistent on reload.</p>
+<h3 id="other-early-stopping-conditions">Other Early Stopping Conditions</h3>
+<p><strong>No functional change.</strong> <code>EarlyStopping</code> patience, threshold, <code>break_after_loss_of</code>, and <code>flag_max_epoch</code> logic are unchanged.</p>
+<hr />
+<h2 id="10-helper-classes-and-utilities">10. Helper Classes and Utilities</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Old</th>
+<th>New</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load_restart_state_pair</code></td>
+<td>Returns 4 values: outer, inner, scheduler_states, scaler_state</td>
+<td><strong>Renamed</strong> <code>load_restart_checkpoint</code>, returns 7 values (+model_state, +optimizer_state, +checkpoint_store)</td>
+</tr>
+<tr>
+<td><code>_validate_restart_target</code></td>
+<td>Rejected pre-train AND test jobs</td>
+<td>Rejects only pre-train jobs</td>
+</tr>
+<tr>
+<td><code>_clear_restart_state</code></td>
+<td>Separate function in <code>restart_utils.py</code>, deletes 4 files</td>
+<td><strong>Removed</strong>; replaced by <code>checkpoint_store.clear_restart_artifacts()</code></td>
+</tr>
+<tr>
+<td><code>RestartCheckpointStore</code></td>
+<td>Managed 4 separate files</td>
+<td>Manages single bundle file; <code>save_outer_for_test_job</code> added; <code>checkpoint_path</code> property</td>
+</tr>
+<tr>
+<td><code>TrainAllPhasesState</code></td>
+<td>Same schema</td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>TrainOnePhaseState</code></td>
+<td>Same schema</td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>EarlyStopping</code></td>
+<td>Same interface</td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>mlflow_proxy</code></td>
+<td>Used throughout</td>
+<td>Same; one bare <code>mlflow.active_run()</code> remains at line ~1679 (same as old)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="critical-differences-that-could-affect-training-output">Critical Differences that Could Affect Training Output</h2>
+<p>The following differences are <strong>functionally significant</strong> — they could produce different model weights, different training trajectories, or different convergence outcomes even given the same initial config and seed.</p>
+<h3 id="a-nan-recovery-source-9">A. NaN Recovery Source (§9)</h3>
+<p><strong>Old:</strong> rolling model loaded from <code>model_current.pt</code> + inner state from <code>training_inner_restart.pt</code> — these could be from different epochs.<br />
+<strong>New:</strong> both come from the atomic bundle — always co-consistent.</p>
+<p><strong>Risk level: Low-to-Medium.</strong> In the common case (no crash between model write and inner state write), they were the same epoch. But in a crash scenario, old code could resume with a model one epoch ahead of the optimizer/inner state, leading to inconsistent training state. New code cannot have this inconsistency.</p>
+<h3 id="b-oom-batch-size-reduction-21">B. OOM Batch-Size Reduction (§2.1)</h3>
+<p><strong>Old:</strong> <code>cfg.nn_model.training.batch_size_test</code> was permanently mutated after OOM.<br />
+<strong>New:</strong> <code>batch_size_reduction_factor</code> is local to the current phase retry loop; config is unchanged.</p>
+<p><strong>Risk level: Low, conditional.</strong> Only differs when:
+1. A CUDA OOM occurred in a prior phase, <strong>and</strong>
+2. The subsequent phase reads <code>batch_size_test</code> from config (specifically for test jobs)</p>
+<p>In this case the old code would use a smaller batch size for subsequent test jobs (silently), while new code restores original config semantics. This could produce a slightly different validation signal, though model weights are not directly affected.</p>
+<h3 id="c-cuda-memory-threshold-evaluation-43">C. CUDA Memory Threshold Evaluation (§4.3)</h3>
+<p><strong>Old:</strong> threshold comparisons (60%, 98% of total GPU memory) computed on value divided by 1027 instead of 1073741824 (off by ~0.3%).<br />
+<strong>New:</strong> correct <code>1024**3</code> division.</p>
+<p><strong>Risk level: Very Low.</strong> The thresholds are wide margins; 0.3% error does not change when OOM preemption fires in any realistic scenario. The logged metric was wrong, but the training behaviour was effectively the same.</p>
+<h3 id="d-test-job-resume-capability-7">D. Test Job Resume Capability (§7)</h3>
+<p><strong>Old:</strong> Cannot resume a run interrupted during the test phase.<br />
+<strong>New:</strong> Can resume at the test phase using the outer bundle.</p>
+<p><strong>Risk level: N/A for training output</strong> (test phase does not update model weights). But operationally significant.</p>
+<h3 id="e-first-epoch-nan-handling">E. First-Epoch NaN Handling</h3>
+<p><strong>Old:</strong> If a NaN occurred on the very first epoch (before any restart checkpoint exists), <code>model_current.pt</code> would also not exist; the reload would fail with a file-not-found error.<br />
+<strong>New:</strong> If a NaN occurs on the very first epoch (no bundle yet), a <code>ValueError</code> is explicitly raised with a clear message.</p>
+<p><strong>Risk level: Low.</strong> Only affects robustness of error reporting, not normal training.</p>
+<hr />
+<h2 id="non-critical-differences-refactoring-correctness-fixes">Non-Critical Differences (Refactoring / Correctness Fixes)</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BNODE + pre-train <code>ValueError</code></td>
+<td>Now a warning + skip; previously silent/undefined</td>
+</tr>
+<tr>
+<td>MLflow NaN tag text</td>
+<td>Fixed from <code>'4 NaNs in loss'</code> to <code>'50 NaNs in loss'</code></td>
+</tr>
+<tr>
+<td><code>int(...)</code> vs <code>ceil</code> in epoch budget</td>
+<td>Code was always <code>int()</code> (floor); old flow doc was wrong — no code change</td>
+</tr>
+<tr>
+<td>Atomic bundle consistency</td>
+<td>All restart state from same epoch guaranteed</td>
+</tr>
+<tr>
+<td>Test job resume allowed</td>
+<td><code>_validate_restart_target</code> now only rejects pre-train</td>
+</tr>
+<tr>
+<td><code>_clear_restart_state</code> removed</td>
+<td>Replaced by cleaner <code>checkpoint_store.clear_restart_artifacts()</code></td>
+</tr>
+<tr>
+<td>OOM retry warning after 30 retries</td>
+<td>New informational log</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.uni-augsburg.de/de/fakultaet/fai/informatik/prof/imech/team/julius-aka/" target="_blank" rel="noopener" title="www.uni-augsburg.de" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2m-5.15 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M14.34 14H9.66c-.1-.66-.16-1.32-.16-2s.06-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2M12 19.96c-.83-1.2-1.5-2.53-1.91-3.96h3.82c-.41 1.43-1.08 2.76-1.91 3.96M8 8H5.08A7.92 7.92 0 0 1 9.4 4.44C8.8 5.55 8.35 6.75 8 8m-2.92 8H8c.35 1.25.8 2.45 1.4 3.56A8 8 0 0 1 5.08 16m-.82-2C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2M12 4.03c.83 1.2 1.5 2.54 1.91 3.97h-3.82c.41-1.43 1.08-2.77 1.91-3.97M18.92 8h-2.95a15.7 15.7 0 0 0-1.38-3.56c1.84.63 3.37 1.9 4.33 3.56M12 2C6.47 2 2 6.5 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/in/julius-aka/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93zM6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://scholar.google.com/citations?user=7SypqSQAAAAJ&hl" target="_blank" rel="noopener" title="scholar.google.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3 1 9l11 6 9-4.91V17h2V9M5 13.18v4L12 21l7-3.82v-4L12 17z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/juliusaka" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33s1.71.11 2.5.33c1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.top", "navigation.tabs", "search.suggest", "search.highlight"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

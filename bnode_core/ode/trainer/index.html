@@ -1,0 +1,3297 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="bnode-core">
+      
+      
+        <meta name="author" content="Julius Aka">
+      
+      
+        <link rel="canonical" href="https://github.com/juliusaka/balanced-neural-odes/bnode_core/ode/trainer/">
+      
+      
+        <link rel="prev" href="../../data_generation/sampling/controls_from_excel/">
+      
+      
+        <link rel="next" href="../restart_training/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Trainer Module - bnode-core</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#trainer-module" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="bnode-core" class="md-header__button md-logo" aria-label="bnode-core" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 0H8C6.9 0 6 .9 6 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V6zm4 18H8V2h7v5h5zM4 4v18h16v2H4c-1.1 0-2-.9-2-2V4zm6 6v2h8v-2zm0 4v2h5v-2z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            bnode-core
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Trainer Module
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="white" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7M9 21v-1h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1m3-17a5 5 0 0 0-5 5c0 2.05 1.23 3.81 3 4.58V16h4v-2.42c1.77-.77 3-2.53 3-4.58a5 5 0 0 0-5-5"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/juliusaka/balanced-neural-odes" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../../reference/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../config/" class="md-tabs__link">
+          
+  
+  
+  Config
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../LICENSE/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="bnode-core" class="md-nav__button md-logo" aria-label="bnode-core" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16 0H8C6.9 0 6 .9 6 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V6zm4 18H8V2h7v5h5zM4 4v18h16v2H4c-1.1 0-2-.9-2-2V4zm6 6v2h8v-2zm0 4v2h5v-2z"/></svg>
+
+    </a>
+    bnode-core
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/juliusaka/balanced-neural-odes" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Generation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Data Generation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/introduction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/raw_data_generation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Raw Data Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/data_preperation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Preparation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2_4" id="__nav_2_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sampling Methods
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sampling Methods
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parameters Sampling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/initial_states/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Initial States Sampling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_random/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random (R)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_random_offset/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random Offset (RO)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_rocs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Cubic Splines with Clipping (ROCS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_rrocs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Cubic Splines with Random Rescaling (RROCS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_steps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Random Steps (RS)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_frequency_response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Frequency Response / Chirp (RF)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_from_file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Load from CSV File
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_generation/sampling/controls_from_excel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Controls: Constant Input from Excel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    (B)NODE Module
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    (B)NODE Module
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer Module
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trainer Module
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        trainer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="trainer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--architecture-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--training-pipeline-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Training Pipeline Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--key-training-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Training Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--typical-usage-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Typical Usage Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--command-line-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command Line Interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer.initialize_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        initialize_model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer.train_all_phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        train_all_phases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer.main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        main
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../restart_training/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restart-enabled training workflow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_3" id="__nav_2_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    BNODE
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bnode/bnode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE Module
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bnode/bnode_export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BNODE Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NODE
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_5" id="__nav_2_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ODE Utilities
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    ODE Utilities
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trainer_utils/test_from_mlflow/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing from MLflow checkpointed runs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neural Networks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neural Networks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nn/nn_utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neural Network Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nn/vae/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VAE (Variational Autoencoder)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../filepaths/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Filepaths
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Config
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../LICENSE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        trainer
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="trainer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--architecture-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--training-pipeline-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Training Pipeline Overview
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--key-training-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Training Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--typical-usage-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Typical Usage Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--command-line-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command Line Interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer--see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See Also
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer.initialize_model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        initialize_model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer.train_all_phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        train_all_phases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bnode_core.ode.trainer.main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        main
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="trainer-module">Trainer Module</h1>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="bnode_core.ode.trainer" class="doc doc-heading">
+            <code>bnode_core.ode.trainer</code>
+
+
+</h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Neural ODE and Balanced Neural ODE Training Module.</p>
+<p>This module provides the main training pipeline for Neural ODE (NODE) and Balanced
+Neural ODE (BNODE) models. It handles model initialization, multi-phase training,
+validation, testing, and MLflow experiment tracking.</p>
+<h4 id="bnode_core.ode.trainer--architecture-support">Architecture Support</h4>
+<p>The trainer automatically detects and supports two model architectures:</p>
+<ul>
+<li><strong>Neural ODE (NODE)</strong>: Direct neural differential equation models.</li>
+<li><strong>Balanced Neural ODE (BNODE)</strong>: Latent-space ODE models with encoder-decoder
+  architecture for improved training stability and representation learning.</li>
+</ul>
+<h4 id="bnode_core.ode.trainer--training-pipeline-overview">Training Pipeline Overview</h4>
+<p>The training process follows these stages:</p>
+<ol>
+<li>
+<p><strong>Model Instantiation</strong></p>
+<ul>
+<li>Automatically detects NODE vs BNODE from config</li>
+<li>Initializes normalization layers using dataset statistics</li>
+<li>Sets up device (CPU/CUDA) based on availability and config</li>
+</ul>
+</li>
+<li>
+<p><strong>Pre-training (Optional, NODE only)</strong></p>
+<ul>
+<li>Can be enabled in config: <code>nn_model.training.pre_train=true</code></li>
+<li>Trains on state derivatives (<code>state_der</code>) if present in dataset</li>
+<li>Uses collocation method for initial parameter estimation</li>
+<li><strong>Not supported for BNODE models</strong> (No latent states gradients available, 
+  but you can mock this behavior by using a short main training phase with 
+  states_grad_loss)</li>
+</ul>
+</li>
+<li>
+<p><strong>Multi-Phase Main Training</strong></p>
+<ul>
+<li>Configured as a list in <code>nn_model.training.main_training</code></li>
+<li>Each phase can have different hyperparameters:<ul>
+<li>Solver type (euler, rk4, dopri5, etc.)</li>
+<li>Learning rate, batch size, sequence length</li>
+<li>Early stopping patience and threshold</li>
+</ul>
+</li>
+<li>See <code>resources/config/nn_model/bnode_pytest.yaml</code> for an example</li>
+</ul>
+</li>
+<li>
+<p><strong>Final Testing</strong></p>
+<ul>
+<li>Evaluates model on all dataset splits (train/val/test)</li>
+<li>Optionally saves predictions and internal variables to dataset</li>
+<li>Logs final metrics to MLflow</li>
+</ul>
+</li>
+</ol>
+<h4 id="bnode_core.ode.trainer--key-training-features">Key Training Features</h4>
+<p><strong><em>Compatibility with NODE and BNODE</em></strong></p>
+<ul>
+<li>Trainer auto-detects model type from config</li>
+<li>Both models provide a consistent training interface with 
+  e.g. the <code>model_and_loss_evaluation</code> method.</li>
+</ul>
+<p><strong>Adaptive Batch Processing</strong></p>
+<p>Each epoch processes a specified number of batches (not entire dataset).
+Configured via <code>nn_model.training.main_training[i].batches_per_epoch</code>.</p>
+<p><strong>NaN Recovery</strong></p>
+<ul>
+<li>If NaN loss detected, automatically reloads last checkpoint</li>
+<li>Reduces gradient clipping norm to stabilize training</li>
+<li>Note: LR scheduling might be a better long-term solution</li>
+</ul>
+<p><strong>Reparameterization Control (BNODE)</strong></p>
+<ul>
+<li>Training uses active reparameterization (variational inference)</li>
+<li>When evaluating (validation/test, or at final test for all datasets), 
+  reparameterization is disabled. Also for deterministic mode.</li>
+<li>Ensures consistent evaluation metrics</li>
+</ul>
+<p><strong>Progressive Sequence Length Increase</strong></p>
+<ul>
+<li>When switching phases, sequence length gradually increases</li>
+<li>Initial test with final sequence length to assess extrapolation</li>
+<li>Training sequence length increases gradually (controlled by
+    <code>seq_len_increase_in_batches</code>)</li>
+<li>Validation/test always use full sequence length to monitor extrapolation performance</li>
+<li>Early abort if stable extrapolation achieved:
+    <code>loss_train &lt; 2 * loss_validation</code> for N consecutive epochs
+    (<code>seq_len_increase_abort_after_n_stable_epochs</code>)</li>
+</ul>
+<p><strong>MLflow Integration</strong></p>
+<ul>
+<li>Logs metrics at end of each phase: <code>{metric}_{context}_job{phase}_final</code></li>
+<li>Final test metrics logged as: <code>{metric}_final</code></li>
+<li>All Hydra outputs and trained models saved as artifacts</li>
+<li>Experiment tracking with run name, parameters, and tags</li>
+</ul>
+<h4 id="bnode_core.ode.trainer--typical-usage-examples">Typical Usage Examples</h4>
+<p>As other modules of the <code>bnode_core</code> package, we use Hydra for configuration management.</p>
+<p>Basic training with default config:</p>
+<div class="highlight"><pre><span></span><code>uv run trainer nn_model=latent_ode_base dataset_name=myDataset
+</code></pre></div>
+<p>Training with custom model configuration:</p>
+<div class="highlight"><pre><span></span><code>uv run trainer nn_model=myCustomModel dataset_name=myDataset \
+    mlflow_experiment_name=my_experiment \
+    nn_model.network.lat_states_dim=1024 \
+</code></pre></div>
+<p>Hyperparameter sweep (multi-run mode):</p>
+<div class="highlight"><pre><span></span><code>uv run trainer \
+    nn_model=latent_ode_base \
+    dataset_name=myDataset \
+    nn_model.training.beta_start_override=0.1,0.01,0.001 \
+    -m
+</code></pre></div>
+<p>Override specific training parameters:</p>
+<div class="highlight"><pre><span></span><code>uv run trainer \
+    nn_model=latent_ode_base \
+    dataset_name=myDataset \
+    nn_model.training.lr_start_override=1e-4 \
+    nn_model.training.batch_size_override=512 \
+    use_cuda=false
+</code></pre></div>
+<p>View available configuration options (from Hydra):</p>
+<div class="highlight"><pre><span></span><code>uv run trainer --help
+</code></pre></div>
+<h4 id="bnode_core.ode.trainer--configuration">Configuration</h4>
+<p>For detailed configuration options, see:</p>
+<ul>
+<li><strong>Config Documentation</strong>: Consult the Config section of the documentation</li>
+<li><strong>Config Files</strong>: examples in <code>resources/config/nn_model/</code> directory</li>
+<li><strong>Config Schema</strong>: <code>bnode_core.config</code> module for all available parameters</li>
+<li><strong>Search Tip</strong>: Use Ctrl+F in config files to find specific parameter behavior</li>
+</ul>
+<h4 id="bnode_core.ode.trainer--command-line-interface">Command Line Interface</h4>
+<p>The trainer is registered as a UV script in <code>pyproject.toml</code>, enabling direct
+execution via <code>uv run trainer</code>. All Hydra config parameters can be overridden
+via command line using dot notation.</p>
+<h4 id="bnode_core.ode.trainer--notes">Notes</h4>
+<ul>
+<li>CUDA is automatically used if available (override with <code>use_cuda=false</code>)</li>
+<li>Model checkpoints saved after each phase: <code>model_phase_{i}.pt</code></li>
+<li>Failed artifact logging tracked in <code>could_not_log_artifacts.txt</code></li>
+<li>Supports mixed precision training (AMP) when enabled</li>
+<li>Early stopping based on validation loss with configurable patience</li>
+</ul>
+<h4 id="bnode_core.ode.trainer--see-also">See Also</h4>
+<p>bnode_core.config : Configuration schemas and validation
+bnode_core.ode.node.node_architecture : Neural ODE model implementation
+bnode_core.ode.bnode.bnode_architecture : Balanced Neural ODE model implementation
+bnode_core.nn.nn_utils.load_data : Dataset loading utilities</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="bnode_core.ode.trainer.initialize_model" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">initialize_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">train_test_config_class</span><span class="p">,</span> <span class="n">train_dataset</span><span class="p">:</span> <span class="n">TimeSeriesDataset</span><span class="p">,</span> <span class="n">hdf5_dataset</span><span class="p">:</span> <span class="n">hdf5_dataset_class</span><span class="p">,</span> <span class="n">initialize_normalization</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Initialize and configure NODE or BNODE model with dataset statistics.</p>
+<p>Automatically detects model type from config and initializes normalization
+layers using training dataset statistics. Handles device placement (CPU/CUDA)
+and copies model architecture file to Hydra output directory.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>cfg</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="train_test_config_class (bnode_core.config.train_test_config_class)" href="../../config/#bnode_core.config.train_test_config_class">train_test_config_class</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Validated Hydra configuration.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>train_dataset</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="TimeSeriesDataset (bnode_core.nn.nn_utils.load_data.TimeSeriesDataset)" href="../../nn/nn_utils/#bnode_core.nn.nn_utils.load_data.TimeSeriesDataset">TimeSeriesDataset</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Training dataset for normalization.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>hdf5_dataset</code>
+            </td>
+            <td>
+                  <code><span title="h5py.Dataset">Dataset</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>HDF5 dataset handle for statistics.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>initialize_normalization</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether to initialize normalization
+layers from dataset statistics. Defaults to True.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>model</code></td>            <td>
+                  <code><span title="torch.nn.Module">Module</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Initialized model (NeuralODE or BalancedNeuralODE) moved
+to appropriate device.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="side-effects" open>
+  <summary>Side Effects</summary>
+  <ul>
+<li>Modifies cfg.use_cuda based on availability</li>
+<li>Copies model architecture source file to Hydra output directory</li>
+<li>Logs device and parameter count information</li>
+</ul>
+</details>
+
+<details class="notes" open>
+  <summary>Notes</summary>
+  <ul>
+<li>CUDA is used if available and cfg.use_cuda=True</li>
+<li>Normalization uses training set statistics only</li>
+<li>Model type detection based on network class in config</li>
+</ul>
+</details>
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/bnode_core/ode/trainer.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#__codelineno-0-218">218</a></span>
+<span class="normal"><a href="#__codelineno-0-219">219</a></span>
+<span class="normal"><a href="#__codelineno-0-220">220</a></span>
+<span class="normal"><a href="#__codelineno-0-221">221</a></span>
+<span class="normal"><a href="#__codelineno-0-222">222</a></span>
+<span class="normal"><a href="#__codelineno-0-223">223</a></span>
+<span class="normal"><a href="#__codelineno-0-224">224</a></span>
+<span class="normal"><a href="#__codelineno-0-225">225</a></span>
+<span class="normal"><a href="#__codelineno-0-226">226</a></span>
+<span class="normal"><a href="#__codelineno-0-227">227</a></span>
+<span class="normal"><a href="#__codelineno-0-228">228</a></span>
+<span class="normal"><a href="#__codelineno-0-229">229</a></span>
+<span class="normal"><a href="#__codelineno-0-230">230</a></span>
+<span class="normal"><a href="#__codelineno-0-231">231</a></span>
+<span class="normal"><a href="#__codelineno-0-232">232</a></span>
+<span class="normal"><a href="#__codelineno-0-233">233</a></span>
+<span class="normal"><a href="#__codelineno-0-234">234</a></span>
+<span class="normal"><a href="#__codelineno-0-235">235</a></span>
+<span class="normal"><a href="#__codelineno-0-236">236</a></span>
+<span class="normal"><a href="#__codelineno-0-237">237</a></span>
+<span class="normal"><a href="#__codelineno-0-238">238</a></span>
+<span class="normal"><a href="#__codelineno-0-239">239</a></span>
+<span class="normal"><a href="#__codelineno-0-240">240</a></span>
+<span class="normal"><a href="#__codelineno-0-241">241</a></span>
+<span class="normal"><a href="#__codelineno-0-242">242</a></span>
+<span class="normal"><a href="#__codelineno-0-243">243</a></span>
+<span class="normal"><a href="#__codelineno-0-244">244</a></span>
+<span class="normal"><a href="#__codelineno-0-245">245</a></span>
+<span class="normal"><a href="#__codelineno-0-246">246</a></span>
+<span class="normal"><a href="#__codelineno-0-247">247</a></span>
+<span class="normal"><a href="#__codelineno-0-248">248</a></span>
+<span class="normal"><a href="#__codelineno-0-249">249</a></span>
+<span class="normal"><a href="#__codelineno-0-250">250</a></span>
+<span class="normal"><a href="#__codelineno-0-251">251</a></span>
+<span class="normal"><a href="#__codelineno-0-252">252</a></span>
+<span class="normal"><a href="#__codelineno-0-253">253</a></span>
+<span class="normal"><a href="#__codelineno-0-254">254</a></span>
+<span class="normal"><a href="#__codelineno-0-255">255</a></span>
+<span class="normal"><a href="#__codelineno-0-256">256</a></span>
+<span class="normal"><a href="#__codelineno-0-257">257</a></span>
+<span class="normal"><a href="#__codelineno-0-258">258</a></span>
+<span class="normal"><a href="#__codelineno-0-259">259</a></span>
+<span class="normal"><a href="#__codelineno-0-260">260</a></span>
+<span class="normal"><a href="#__codelineno-0-261">261</a></span>
+<span class="normal"><a href="#__codelineno-0-262">262</a></span>
+<span class="normal"><a href="#__codelineno-0-263">263</a></span>
+<span class="normal"><a href="#__codelineno-0-264">264</a></span>
+<span class="normal"><a href="#__codelineno-0-265">265</a></span>
+<span class="normal"><a href="#__codelineno-0-266">266</a></span>
+<span class="normal"><a href="#__codelineno-0-267">267</a></span>
+<span class="normal"><a href="#__codelineno-0-268">268</a></span>
+<span class="normal"><a href="#__codelineno-0-269">269</a></span>
+<span class="normal"><a href="#__codelineno-0-270">270</a></span>
+<span class="normal"><a href="#__codelineno-0-271">271</a></span>
+<span class="normal"><a href="#__codelineno-0-272">272</a></span>
+<span class="normal"><a href="#__codelineno-0-273">273</a></span>
+<span class="normal"><a href="#__codelineno-0-274">274</a></span>
+<span class="normal"><a href="#__codelineno-0-275">275</a></span>
+<span class="normal"><a href="#__codelineno-0-276">276</a></span>
+<span class="normal"><a href="#__codelineno-0-277">277</a></span>
+<span class="normal"><a href="#__codelineno-0-278">278</a></span>
+<span class="normal"><a href="#__codelineno-0-279">279</a></span>
+<span class="normal"><a href="#__codelineno-0-280">280</a></span>
+<span class="normal"><a href="#__codelineno-0-281">281</a></span>
+<span class="normal"><a href="#__codelineno-0-282">282</a></span>
+<span class="normal"><a href="#__codelineno-0-283">283</a></span>
+<span class="normal"><a href="#__codelineno-0-284">284</a></span>
+<span class="normal"><a href="#__codelineno-0-285">285</a></span>
+<span class="normal"><a href="#__codelineno-0-286">286</a></span>
+<span class="normal"><a href="#__codelineno-0-287">287</a></span>
+<span class="normal"><a href="#__codelineno-0-288">288</a></span>
+<span class="normal"><a href="#__codelineno-0-289">289</a></span>
+<span class="normal"><a href="#__codelineno-0-290">290</a></span>
+<span class="normal"><a href="#__codelineno-0-291">291</a></span>
+<span class="normal"><a href="#__codelineno-0-292">292</a></span>
+<span class="normal"><a href="#__codelineno-0-293">293</a></span>
+<span class="normal"><a href="#__codelineno-0-294">294</a></span>
+<span class="normal"><a href="#__codelineno-0-295">295</a></span>
+<span class="normal"><a href="#__codelineno-0-296">296</a></span>
+<span class="normal"><a href="#__codelineno-0-297">297</a></span>
+<span class="normal"><a href="#__codelineno-0-298">298</a></span>
+<span class="normal"><a href="#__codelineno-0-299">299</a></span>
+<span class="normal"><a href="#__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#__codelineno-0-301">301</a></span>
+<span class="normal"><a href="#__codelineno-0-302">302</a></span>
+<span class="normal"><a href="#__codelineno-0-303">303</a></span>
+<span class="normal"><a href="#__codelineno-0-304">304</a></span>
+<span class="normal"><a href="#__codelineno-0-305">305</a></span>
+<span class="normal"><a href="#__codelineno-0-306">306</a></span>
+<span class="normal"><a href="#__codelineno-0-307">307</a></span>
+<span class="normal"><a href="#__codelineno-0-308">308</a></span>
+<span class="normal"><a href="#__codelineno-0-309">309</a></span>
+<span class="normal"><a href="#__codelineno-0-310">310</a></span>
+<span class="normal"><a href="#__codelineno-0-311">311</a></span>
+<span class="normal"><a href="#__codelineno-0-312">312</a></span>
+<span class="normal"><a href="#__codelineno-0-313">313</a></span>
+<span class="normal"><a href="#__codelineno-0-314">314</a></span>
+<span class="normal"><a href="#__codelineno-0-315">315</a></span>
+<span class="normal"><a href="#__codelineno-0-316">316</a></span>
+<span class="normal"><a href="#__codelineno-0-317">317</a></span>
+<span class="normal"><a href="#__codelineno-0-318">318</a></span>
+<span class="normal"><a href="#__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#__codelineno-0-331">331</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-214" name="__codelineno-0-214"></a><span class="k">def</span><span class="w"> </span><span class="nf">initialize_model</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">train_test_config_class</span><span class="p">,</span> <span class="n">train_dataset</span><span class="p">:</span> <span class="n">TimeSeriesDataset</span><span class="p">,</span> <span class="n">hdf5_dataset</span><span class="p">:</span> <span class="n">hdf5_dataset_class</span><span class="p">,</span> 
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a>                     <span class="n">initialize_normalization</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize and configure NODE or BNODE model with dataset statistics.</span>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a><span class="sd">    Automatically detects model type from config and initializes normalization</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a><span class="sd">    layers using training dataset statistics. Handles device placement (CPU/CUDA)</span>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a><span class="sd">    and copies model architecture file to Hydra output directory.</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a><span class="sd">        cfg (train_test_config_class): Validated Hydra configuration.</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a><span class="sd">        train_dataset (TimeSeriesDataset): Training dataset for normalization.</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a><span class="sd">        hdf5_dataset (hdf5_dataset_class): HDF5 dataset handle for statistics.</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a><span class="sd">        initialize_normalization (bool, optional): Whether to initialize normalization</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a><span class="sd">            layers from dataset statistics. Defaults to True.</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a><span class="sd">    Returns:</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a><span class="sd">        model (torch.nn.Module): Initialized model (NeuralODE or BalancedNeuralODE) moved</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a><span class="sd">            to appropriate device.</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a><span class="sd">    Side Effects:</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a><span class="sd">        - Modifies cfg.use_cuda based on availability</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a><span class="sd">        - Copies model architecture source file to Hydra output directory</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a><span class="sd">        - Logs device and parameter count information</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a><span class="sd">    Notes:</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a><span class="sd">        - CUDA is used if available and cfg.use_cuda=True</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a><span class="sd">        - Normalization uses training set statistics only</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a><span class="sd">        - Model type detection based on network class in config</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a>    <span class="n">_cuda_available</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;CUDA available: </span><span class="si">{}</span><span class="s1"> | cfg.use_cuda: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">_cuda_available</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span><span class="p">))</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>    <span class="k">if</span> <span class="n">_cuda_available</span> <span class="ow">and</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span><span class="p">:</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a>        <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a>        <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;---&gt; Training with cuda: </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span><span class="p">))</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>    <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">and</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a>    <span class="c1"># create model (insert specific creations here)</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a>    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">model_type</span> <span class="o">==</span> <span class="s1">&#39;node&#39;</span><span class="p">:</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a>            <span class="n">model_type</span><span class="o">=</span><span class="s1">&#39;node&#39;</span>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a>    <span class="k">elif</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">model_type</span> <span class="o">==</span> <span class="s1">&#39;bnode&#39;</span><span class="p">:</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>            <span class="n">model_type</span><span class="o">=</span><span class="s1">&#39;bnode&#39;</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a>    <span class="k">else</span><span class="p">:</span> 
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown nn_model.model_type: &#39;</span><span class="si">{</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">model_type</span><span class="si">}</span><span class="s2">&#39;. Expected &#39;node&#39; or &#39;bnode&#39;.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a>    <span class="k">assert</span> <span class="n">model_type</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;node&#39;</span><span class="p">,</span> <span class="s1">&#39;bnode&#39;</span><span class="p">]</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a>    <span class="k">if</span> <span class="n">model_type</span> <span class="o">==</span> <span class="s1">&#39;node&#39;</span><span class="p">:</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a>        <span class="n">model</span> <span class="o">=</span> <span class="n">NeuralODE</span><span class="p">(</span><span class="n">states_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;states&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a>                        <span class="n">controls_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;controls&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;controls&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a>                        <span class="n">parameters_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;parameters&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;parameters&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a>                        <span class="n">outputs_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;outputs&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;outputs&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a>                        <span class="n">controls_to_output_nn</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">controls_to_output_nn</span><span class="p">,</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a>                        <span class="n">hidden_dim</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">linear_hidden_dim</span><span class="p">,</span> 
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a>                        <span class="n">n_layers</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">n_linear_layers</span><span class="p">,</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a>                        <span class="n">hidden_dim_output_nn</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">hidden_dim_output_nn</span><span class="p">,</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a>                        <span class="n">n_layers_output_nn</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">n_layers_output_nn</span><span class="p">,</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a>                        <span class="n">activation</span><span class="o">=</span><span class="nb">eval</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">activation</span><span class="p">),</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>                        <span class="n">intialization</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">pre_training</span><span class="o">.</span><span class="n">initialization_type</span><span class="p">,</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a>                        <span class="n">initialization_ode</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">initialization_type_ode</span><span class="p">,</span>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a>                        <span class="n">use_input_smoother</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">use_input_smoother</span><span class="p">,</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a>        <span class="c1"># initialize normalizations</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a>        <span class="k">if</span> <span class="n">initialize_normalization</span><span class="p">:</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a>            <span class="n">model</span><span class="o">.</span><span class="n">normalization_init</span><span class="p">(</span><span class="n">hdf5_dataset</span><span class="p">)</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a>    <span class="k">elif</span> <span class="n">model_type</span> <span class="o">==</span> <span class="s1">&#39;bnode&#39;</span><span class="p">:</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a>        <span class="c1"># Build feedthrough controls mask if configured</span>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a>        <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">feedthrough_controls</span><span class="p">:</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>            <span class="n">controls_dim</span> <span class="o">=</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;controls&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;controls&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>            <span class="k">if</span> <span class="n">controls_dim</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="s1">&#39;controls_names&#39;</span> <span class="ow">in</span> <span class="n">hdf5_dataset</span><span class="p">:</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                <span class="n">control_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">decode</span><span class="p">()</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">hdf5_dataset</span><span class="p">[</span><span class="s1">&#39;controls_names&#39;</span><span class="p">][:]]</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                <span class="n">feedthrough_mask</span> <span class="o">=</span> <span class="n">build_feedthrough_mask</span><span class="p">(</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                    <span class="n">control_names</span><span class="p">,</span> 
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                    <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">feedthrough_controls</span><span class="p">,</span> 
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                    <span class="n">controls_dim</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                <span class="p">)</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>            <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;feedthrough_controls configured but no controls_names found in dataset or no controls in dataset&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>            <span class="n">feedthrough_mask</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>        <span class="n">model</span> <span class="o">=</span> <span class="n">BalancedNeuralODE</span><span class="p">(</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>                        <span class="n">states_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;states&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                        <span class="n">lat_states_mu_dim</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">lat_states_dim</span><span class="p">,</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                        <span class="n">parameters_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;parameters&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;parameters&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                        <span class="n">lat_parameters_dim</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">lat_parameters_dim</span><span class="p">,</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                        <span class="n">controls_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;controls&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;controls&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                        <span class="n">lat_controls_dim</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">lat_controls_dim</span><span class="p">,</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                        <span class="n">outputs_dim</span><span class="o">=</span><span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;outputs&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;outputs&#39;</span> <span class="ow">in</span> <span class="n">train_dataset</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">else</span> <span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                        <span class="n">hidden_dim</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">linear_hidden_dim</span><span class="p">,</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                        <span class="n">n_layers</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">n_linear_layers</span><span class="p">,</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                        <span class="n">controls_to_decoder</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">controls_to_decoder</span><span class="p">,</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>                        <span class="n">predict_states</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">predict_states</span><span class="p">,</span>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>                        <span class="n">activation</span><span class="o">=</span><span class="nb">eval</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">activation</span><span class="p">),</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>                        <span class="n">initialization_type</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">initialization_type</span><span class="p">,</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>                        <span class="n">initialization_type_ode</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">initialization_type_ode</span><span class="p">,</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>                        <span class="n">initialization_type_ode_matrix</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">initialization_type_ode_matrix</span><span class="p">,</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>                        <span class="n">lat_ode_type</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">lat_ode_type</span><span class="p">,</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>                        <span class="n">include_params_encoder</span><span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">include_params_encoder</span><span class="p">,</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>                        <span class="n">params_to_state_encoder</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">params_to_state_encoder</span><span class="p">,</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>                        <span class="n">params_to_control_encoder</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">params_to_control_encoder</span><span class="p">,</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>                        <span class="n">params_to_decoder</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">params_to_decoder</span><span class="p">,</span>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>                        <span class="n">controls_to_state_encoder</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">controls_to_state_encoder</span><span class="p">,</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>                        <span class="n">state_encoder_linear</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">state_encoder_linear</span><span class="p">,</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>                        <span class="n">control_encoder_linear</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">control_encoder_linear</span><span class="p">,</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>                        <span class="n">parameter_encoder_linear</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">parameter_encoder_linear</span><span class="p">,</span>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>                        <span class="n">ode_linear</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">ode_linear</span><span class="p">,</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>                        <span class="n">decoder_linear</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">decoder_linear</span><span class="p">,</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>                        <span class="n">lat_state_mu_independent</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">network</span><span class="o">.</span><span class="n">lat_state_mu_independent</span><span class="p">,</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>                        <span class="n">use_input_smoother</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">use_input_smoother</span><span class="p">,</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>                        <span class="n">feedthrough_controls_mask</span><span class="o">=</span><span class="n">feedthrough_mask</span><span class="p">,</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>        <span class="c1"># initialize normalizations</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>        <span class="k">if</span> <span class="n">initialize_normalization</span><span class="p">:</span>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>            <span class="n">model</span><span class="o">.</span><span class="n">normalization_init</span><span class="p">(</span><span class="n">hdf5_dataset</span><span class="p">)</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Initialized model: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">model</span><span class="p">))</span>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Number of trainable parameters: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">()</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">requires_grad</span><span class="p">)))</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>    <span class="n">model</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;moved model to </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>    <span class="k">return</span> <span class="n">model</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="bnode_core.ode.trainer.train_all_phases" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">train_all_phases</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">train_test_config_class</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Execute complete multi-phase training pipeline with MLflow tracking.</p>
+<p>Main orchestration function that coordinates:</p>
+<ul>
+<li>Dataset loading</li>
+<li>Model initialization  </li>
+<li>Optional pre-training (NODE only)</li>
+<li>Multi-phase main training</li>
+<li>Final testing and evaluation</li>
+<li>MLflow artifact logging</li>
+</ul>
+<p>The function processes a job list consisting of optional pre-training,
+multiple main training phases, and final testing. Each phase can have
+different hyperparameters and training strategies.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>cfg</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="train_test_config_class (bnode_core.config.train_test_config_class)" href="../../config/#bnode_core.config.train_test_config_class">train_test_config_class</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Validated Hydra configuration containing:
+- dataset_path, dataset_name: Dataset location and identifier
+- nn_model.training.pre_train: Enable pre-training (NODE only)
+- nn_model.training.main_training: List of training phase configs
+- nn_model.training.test: Enable final testing
+- use_cuda: Device preference
+- mlflow_experiment_name: MLflow experiment name</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="side-effects" open>
+  <summary>Side Effects</summary>
+  <ul>
+<li>Creates/updates model checkpoints: model_phase_{i}.pt</li>
+<li>Logs metrics, parameters, and artifacts to MLflow</li>
+<li>Saves predictions to dataset if configured</li>
+<li>Copies Hydra outputs to MLflow artifacts</li>
+<li>Creates could_not_log_artifacts.txt on logging failures</li>
+</ul>
+</details>
+
+<details class="training-flow" open>
+  <summary>Training Flow</summary>
+  <ol>
+<li>Load HDF5 dataset and log to MLflow</li>
+<li>Build job list (pre-train, main phases, test)</li>
+<li>For each job:</li>
+<li>Initialize/reload dataloaders if needed</li>
+<li>Initialize/load model if needed</li>
+<li>Execute training or testing</li>
+<li>Save checkpoint and log metrics</li>
+<li>Copy all outputs to MLflow artifacts</li>
+</ol>
+</details>
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="RuntimeError">RuntimeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If CUDA memory errors occur repeatedly</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="FileNotFoundError">FileNotFoundError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If dataset or checkpoint files missing</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="notes" open>
+  <summary>Notes</summary>
+  <ul>
+<li>Decorated with @log_hydra_to_mlflow for automatic config logging</li>
+<li>Memory errors trigger dataloader recreation with adjusted settings</li>
+<li>NaN losses trigger checkpoint reload and gradient clipping adjustment</li>
+<li>Progressive sequence length increase during phase transitions</li>
+<li>For the runtime-vs-checkpoint state split, see
+  <code>docs/bnode_core/ode/restart_training.md</code></li>
+</ul>
+</details>
+
+<details class="see-also" open>
+  <summary>See Also</summary>
+  <p>train_one_phase : Single training phase execution
+initialize_model : Model instantiation and initialization</p>
+</details>
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/bnode_core/ode/trainer.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-717">717</a></span>
+<span class="normal"><a href="#__codelineno-0-718">718</a></span>
+<span class="normal"><a href="#__codelineno-0-719">719</a></span>
+<span class="normal"><a href="#__codelineno-0-720">720</a></span>
+<span class="normal"><a href="#__codelineno-0-721">721</a></span>
+<span class="normal"><a href="#__codelineno-0-722">722</a></span>
+<span class="normal"><a href="#__codelineno-0-723">723</a></span>
+<span class="normal"><a href="#__codelineno-0-724">724</a></span>
+<span class="normal"><a href="#__codelineno-0-725">725</a></span>
+<span class="normal"><a href="#__codelineno-0-726">726</a></span>
+<span class="normal"><a href="#__codelineno-0-727">727</a></span>
+<span class="normal"><a href="#__codelineno-0-728">728</a></span>
+<span class="normal"><a href="#__codelineno-0-729">729</a></span>
+<span class="normal"><a href="#__codelineno-0-730">730</a></span>
+<span class="normal"><a href="#__codelineno-0-731">731</a></span>
+<span class="normal"><a href="#__codelineno-0-732">732</a></span>
+<span class="normal"><a href="#__codelineno-0-733">733</a></span>
+<span class="normal"><a href="#__codelineno-0-734">734</a></span>
+<span class="normal"><a href="#__codelineno-0-735">735</a></span>
+<span class="normal"><a href="#__codelineno-0-736">736</a></span>
+<span class="normal"><a href="#__codelineno-0-737">737</a></span>
+<span class="normal"><a href="#__codelineno-0-738">738</a></span>
+<span class="normal"><a href="#__codelineno-0-739">739</a></span>
+<span class="normal"><a href="#__codelineno-0-740">740</a></span>
+<span class="normal"><a href="#__codelineno-0-741">741</a></span>
+<span class="normal"><a href="#__codelineno-0-742">742</a></span>
+<span class="normal"><a href="#__codelineno-0-743">743</a></span>
+<span class="normal"><a href="#__codelineno-0-744">744</a></span>
+<span class="normal"><a href="#__codelineno-0-745">745</a></span>
+<span class="normal"><a href="#__codelineno-0-746">746</a></span>
+<span class="normal"><a href="#__codelineno-0-747">747</a></span>
+<span class="normal"><a href="#__codelineno-0-748">748</a></span>
+<span class="normal"><a href="#__codelineno-0-749">749</a></span>
+<span class="normal"><a href="#__codelineno-0-750">750</a></span>
+<span class="normal"><a href="#__codelineno-0-751">751</a></span>
+<span class="normal"><a href="#__codelineno-0-752">752</a></span>
+<span class="normal"><a href="#__codelineno-0-753">753</a></span>
+<span class="normal"><a href="#__codelineno-0-754">754</a></span>
+<span class="normal"><a href="#__codelineno-0-755">755</a></span>
+<span class="normal"><a href="#__codelineno-0-756">756</a></span>
+<span class="normal"><a href="#__codelineno-0-757">757</a></span>
+<span class="normal"><a href="#__codelineno-0-758">758</a></span>
+<span class="normal"><a href="#__codelineno-0-759">759</a></span>
+<span class="normal"><a href="#__codelineno-0-760">760</a></span>
+<span class="normal"><a href="#__codelineno-0-761">761</a></span>
+<span class="normal"><a href="#__codelineno-0-762">762</a></span>
+<span class="normal"><a href="#__codelineno-0-763">763</a></span>
+<span class="normal"><a href="#__codelineno-0-764">764</a></span>
+<span class="normal"><a href="#__codelineno-0-765">765</a></span>
+<span class="normal"><a href="#__codelineno-0-766">766</a></span>
+<span class="normal"><a href="#__codelineno-0-767">767</a></span>
+<span class="normal"><a href="#__codelineno-0-768">768</a></span>
+<span class="normal"><a href="#__codelineno-0-769">769</a></span>
+<span class="normal"><a href="#__codelineno-0-770">770</a></span>
+<span class="normal"><a href="#__codelineno-0-771">771</a></span>
+<span class="normal"><a href="#__codelineno-0-772">772</a></span>
+<span class="normal"><a href="#__codelineno-0-773">773</a></span>
+<span class="normal"><a href="#__codelineno-0-774">774</a></span>
+<span class="normal"><a href="#__codelineno-0-775">775</a></span>
+<span class="normal"><a href="#__codelineno-0-776">776</a></span>
+<span class="normal"><a href="#__codelineno-0-777">777</a></span>
+<span class="normal"><a href="#__codelineno-0-778">778</a></span>
+<span class="normal"><a href="#__codelineno-0-779">779</a></span>
+<span class="normal"><a href="#__codelineno-0-780">780</a></span>
+<span class="normal"><a href="#__codelineno-0-781">781</a></span>
+<span class="normal"><a href="#__codelineno-0-782">782</a></span>
+<span class="normal"><a href="#__codelineno-0-783">783</a></span>
+<span class="normal"><a href="#__codelineno-0-784">784</a></span>
+<span class="normal"><a href="#__codelineno-0-785">785</a></span>
+<span class="normal"><a href="#__codelineno-0-786">786</a></span>
+<span class="normal"><a href="#__codelineno-0-787">787</a></span>
+<span class="normal"><a href="#__codelineno-0-788">788</a></span>
+<span class="normal"><a href="#__codelineno-0-789">789</a></span>
+<span class="normal"><a href="#__codelineno-0-790">790</a></span>
+<span class="normal"><a href="#__codelineno-0-791">791</a></span>
+<span class="normal"><a href="#__codelineno-0-792">792</a></span>
+<span class="normal"><a href="#__codelineno-0-793">793</a></span>
+<span class="normal"><a href="#__codelineno-0-794">794</a></span>
+<span class="normal"><a href="#__codelineno-0-795">795</a></span>
+<span class="normal"><a href="#__codelineno-0-796">796</a></span>
+<span class="normal"><a href="#__codelineno-0-797">797</a></span>
+<span class="normal"><a href="#__codelineno-0-798">798</a></span>
+<span class="normal"><a href="#__codelineno-0-799">799</a></span>
+<span class="normal"><a href="#__codelineno-0-800">800</a></span>
+<span class="normal"><a href="#__codelineno-0-801">801</a></span>
+<span class="normal"><a href="#__codelineno-0-802">802</a></span>
+<span class="normal"><a href="#__codelineno-0-803">803</a></span>
+<span class="normal"><a href="#__codelineno-0-804">804</a></span>
+<span class="normal"><a href="#__codelineno-0-805">805</a></span>
+<span class="normal"><a href="#__codelineno-0-806">806</a></span>
+<span class="normal"><a href="#__codelineno-0-807">807</a></span>
+<span class="normal"><a href="#__codelineno-0-808">808</a></span>
+<span class="normal"><a href="#__codelineno-0-809">809</a></span>
+<span class="normal"><a href="#__codelineno-0-810">810</a></span>
+<span class="normal"><a href="#__codelineno-0-811">811</a></span>
+<span class="normal"><a href="#__codelineno-0-812">812</a></span>
+<span class="normal"><a href="#__codelineno-0-813">813</a></span>
+<span class="normal"><a href="#__codelineno-0-814">814</a></span>
+<span class="normal"><a href="#__codelineno-0-815">815</a></span>
+<span class="normal"><a href="#__codelineno-0-816">816</a></span>
+<span class="normal"><a href="#__codelineno-0-817">817</a></span>
+<span class="normal"><a href="#__codelineno-0-818">818</a></span>
+<span class="normal"><a href="#__codelineno-0-819">819</a></span>
+<span class="normal"><a href="#__codelineno-0-820">820</a></span>
+<span class="normal"><a href="#__codelineno-0-821">821</a></span>
+<span class="normal"><a href="#__codelineno-0-822">822</a></span>
+<span class="normal"><a href="#__codelineno-0-823">823</a></span>
+<span class="normal"><a href="#__codelineno-0-824">824</a></span>
+<span class="normal"><a href="#__codelineno-0-825">825</a></span>
+<span class="normal"><a href="#__codelineno-0-826">826</a></span>
+<span class="normal"><a href="#__codelineno-0-827">827</a></span>
+<span class="normal"><a href="#__codelineno-0-828">828</a></span>
+<span class="normal"><a href="#__codelineno-0-829">829</a></span>
+<span class="normal"><a href="#__codelineno-0-830">830</a></span>
+<span class="normal"><a href="#__codelineno-0-831">831</a></span>
+<span class="normal"><a href="#__codelineno-0-832">832</a></span>
+<span class="normal"><a href="#__codelineno-0-833">833</a></span>
+<span class="normal"><a href="#__codelineno-0-834">834</a></span>
+<span class="normal"><a href="#__codelineno-0-835">835</a></span>
+<span class="normal"><a href="#__codelineno-0-836">836</a></span>
+<span class="normal"><a href="#__codelineno-0-837">837</a></span>
+<span class="normal"><a href="#__codelineno-0-838">838</a></span>
+<span class="normal"><a href="#__codelineno-0-839">839</a></span>
+<span class="normal"><a href="#__codelineno-0-840">840</a></span>
+<span class="normal"><a href="#__codelineno-0-841">841</a></span>
+<span class="normal"><a href="#__codelineno-0-842">842</a></span>
+<span class="normal"><a href="#__codelineno-0-843">843</a></span>
+<span class="normal"><a href="#__codelineno-0-844">844</a></span>
+<span class="normal"><a href="#__codelineno-0-845">845</a></span>
+<span class="normal"><a href="#__codelineno-0-846">846</a></span>
+<span class="normal"><a href="#__codelineno-0-847">847</a></span>
+<span class="normal"><a href="#__codelineno-0-848">848</a></span>
+<span class="normal"><a href="#__codelineno-0-849">849</a></span>
+<span class="normal"><a href="#__codelineno-0-850">850</a></span>
+<span class="normal"><a href="#__codelineno-0-851">851</a></span>
+<span class="normal"><a href="#__codelineno-0-852">852</a></span>
+<span class="normal"><a href="#__codelineno-0-853">853</a></span>
+<span class="normal"><a href="#__codelineno-0-854">854</a></span>
+<span class="normal"><a href="#__codelineno-0-855">855</a></span>
+<span class="normal"><a href="#__codelineno-0-856">856</a></span>
+<span class="normal"><a href="#__codelineno-0-857">857</a></span>
+<span class="normal"><a href="#__codelineno-0-858">858</a></span>
+<span class="normal"><a href="#__codelineno-0-859">859</a></span>
+<span class="normal"><a href="#__codelineno-0-860">860</a></span>
+<span class="normal"><a href="#__codelineno-0-861">861</a></span>
+<span class="normal"><a href="#__codelineno-0-862">862</a></span>
+<span class="normal"><a href="#__codelineno-0-863">863</a></span>
+<span class="normal"><a href="#__codelineno-0-864">864</a></span>
+<span class="normal"><a href="#__codelineno-0-865">865</a></span>
+<span class="normal"><a href="#__codelineno-0-866">866</a></span>
+<span class="normal"><a href="#__codelineno-0-867">867</a></span>
+<span class="normal"><a href="#__codelineno-0-868">868</a></span>
+<span class="normal"><a href="#__codelineno-0-869">869</a></span>
+<span class="normal"><a href="#__codelineno-0-870">870</a></span>
+<span class="normal"><a href="#__codelineno-0-871">871</a></span>
+<span class="normal"><a href="#__codelineno-0-872">872</a></span>
+<span class="normal"><a href="#__codelineno-0-873">873</a></span>
+<span class="normal"><a href="#__codelineno-0-874">874</a></span>
+<span class="normal"><a href="#__codelineno-0-875">875</a></span>
+<span class="normal"><a href="#__codelineno-0-876">876</a></span>
+<span class="normal"><a href="#__codelineno-0-877">877</a></span>
+<span class="normal"><a href="#__codelineno-0-878">878</a></span>
+<span class="normal"><a href="#__codelineno-0-879">879</a></span>
+<span class="normal"><a href="#__codelineno-0-880">880</a></span>
+<span class="normal"><a href="#__codelineno-0-881">881</a></span>
+<span class="normal"><a href="#__codelineno-0-882">882</a></span>
+<span class="normal"><a href="#__codelineno-0-883">883</a></span>
+<span class="normal"><a href="#__codelineno-0-884">884</a></span>
+<span class="normal"><a href="#__codelineno-0-885">885</a></span>
+<span class="normal"><a href="#__codelineno-0-886">886</a></span>
+<span class="normal"><a href="#__codelineno-0-887">887</a></span>
+<span class="normal"><a href="#__codelineno-0-888">888</a></span>
+<span class="normal"><a href="#__codelineno-0-889">889</a></span>
+<span class="normal"><a href="#__codelineno-0-890">890</a></span>
+<span class="normal"><a href="#__codelineno-0-891">891</a></span>
+<span class="normal"><a href="#__codelineno-0-892">892</a></span>
+<span class="normal"><a href="#__codelineno-0-893">893</a></span>
+<span class="normal"><a href="#__codelineno-0-894">894</a></span>
+<span class="normal"><a href="#__codelineno-0-895">895</a></span>
+<span class="normal"><a href="#__codelineno-0-896">896</a></span>
+<span class="normal"><a href="#__codelineno-0-897">897</a></span>
+<span class="normal"><a href="#__codelineno-0-898">898</a></span>
+<span class="normal"><a href="#__codelineno-0-899">899</a></span>
+<span class="normal"><a href="#__codelineno-0-900">900</a></span>
+<span class="normal"><a href="#__codelineno-0-901">901</a></span>
+<span class="normal"><a href="#__codelineno-0-902">902</a></span>
+<span class="normal"><a href="#__codelineno-0-903">903</a></span>
+<span class="normal"><a href="#__codelineno-0-904">904</a></span>
+<span class="normal"><a href="#__codelineno-0-905">905</a></span>
+<span class="normal"><a href="#__codelineno-0-906">906</a></span>
+<span class="normal"><a href="#__codelineno-0-907">907</a></span>
+<span class="normal"><a href="#__codelineno-0-908">908</a></span>
+<span class="normal"><a href="#__codelineno-0-909">909</a></span>
+<span class="normal"><a href="#__codelineno-0-910">910</a></span>
+<span class="normal"><a href="#__codelineno-0-911">911</a></span>
+<span class="normal"><a href="#__codelineno-0-912">912</a></span>
+<span class="normal"><a href="#__codelineno-0-913">913</a></span>
+<span class="normal"><a href="#__codelineno-0-914">914</a></span>
+<span class="normal"><a href="#__codelineno-0-915">915</a></span>
+<span class="normal"><a href="#__codelineno-0-916">916</a></span>
+<span class="normal"><a href="#__codelineno-0-917">917</a></span>
+<span class="normal"><a href="#__codelineno-0-918">918</a></span>
+<span class="normal"><a href="#__codelineno-0-919">919</a></span>
+<span class="normal"><a href="#__codelineno-0-920">920</a></span>
+<span class="normal"><a href="#__codelineno-0-921">921</a></span>
+<span class="normal"><a href="#__codelineno-0-922">922</a></span>
+<span class="normal"><a href="#__codelineno-0-923">923</a></span>
+<span class="normal"><a href="#__codelineno-0-924">924</a></span>
+<span class="normal"><a href="#__codelineno-0-925">925</a></span>
+<span class="normal"><a href="#__codelineno-0-926">926</a></span>
+<span class="normal"><a href="#__codelineno-0-927">927</a></span>
+<span class="normal"><a href="#__codelineno-0-928">928</a></span>
+<span class="normal"><a href="#__codelineno-0-929">929</a></span>
+<span class="normal"><a href="#__codelineno-0-930">930</a></span>
+<span class="normal"><a href="#__codelineno-0-931">931</a></span>
+<span class="normal"><a href="#__codelineno-0-932">932</a></span>
+<span class="normal"><a href="#__codelineno-0-933">933</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-717" name="__codelineno-0-717"></a><span class="nd">@log_hydra_to_mlflow</span>
+<a id="__codelineno-0-718" name="__codelineno-0-718"></a><span class="k">def</span><span class="w"> </span><span class="nf">train_all_phases</span><span class="p">(</span><span class="n">cfg</span><span class="p">:</span> <span class="n">train_test_config_class</span><span class="p">):</span>
+<a id="__codelineno-0-719" name="__codelineno-0-719"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute complete multi-phase training pipeline with MLflow tracking.</span>
+<a id="__codelineno-0-720" name="__codelineno-0-720"></a>
+<a id="__codelineno-0-721" name="__codelineno-0-721"></a><span class="sd">    Main orchestration function that coordinates:</span>
+<a id="__codelineno-0-722" name="__codelineno-0-722"></a>
+<a id="__codelineno-0-723" name="__codelineno-0-723"></a><span class="sd">    - Dataset loading</span>
+<a id="__codelineno-0-724" name="__codelineno-0-724"></a><span class="sd">    - Model initialization  </span>
+<a id="__codelineno-0-725" name="__codelineno-0-725"></a><span class="sd">    - Optional pre-training (NODE only)</span>
+<a id="__codelineno-0-726" name="__codelineno-0-726"></a><span class="sd">    - Multi-phase main training</span>
+<a id="__codelineno-0-727" name="__codelineno-0-727"></a><span class="sd">    - Final testing and evaluation</span>
+<a id="__codelineno-0-728" name="__codelineno-0-728"></a><span class="sd">    - MLflow artifact logging</span>
+<a id="__codelineno-0-729" name="__codelineno-0-729"></a>
+<a id="__codelineno-0-730" name="__codelineno-0-730"></a><span class="sd">    The function processes a job list consisting of optional pre-training,</span>
+<a id="__codelineno-0-731" name="__codelineno-0-731"></a><span class="sd">    multiple main training phases, and final testing. Each phase can have</span>
+<a id="__codelineno-0-732" name="__codelineno-0-732"></a><span class="sd">    different hyperparameters and training strategies.</span>
+<a id="__codelineno-0-733" name="__codelineno-0-733"></a>
+<a id="__codelineno-0-734" name="__codelineno-0-734"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-735" name="__codelineno-0-735"></a><span class="sd">        cfg (train_test_config_class): Validated Hydra configuration containing:</span>
+<a id="__codelineno-0-736" name="__codelineno-0-736"></a><span class="sd">            - dataset_path, dataset_name: Dataset location and identifier</span>
+<a id="__codelineno-0-737" name="__codelineno-0-737"></a><span class="sd">            - nn_model.training.pre_train: Enable pre-training (NODE only)</span>
+<a id="__codelineno-0-738" name="__codelineno-0-738"></a><span class="sd">            - nn_model.training.main_training: List of training phase configs</span>
+<a id="__codelineno-0-739" name="__codelineno-0-739"></a><span class="sd">            - nn_model.training.test: Enable final testing</span>
+<a id="__codelineno-0-740" name="__codelineno-0-740"></a><span class="sd">            - use_cuda: Device preference</span>
+<a id="__codelineno-0-741" name="__codelineno-0-741"></a><span class="sd">            - mlflow_experiment_name: MLflow experiment name</span>
+<a id="__codelineno-0-742" name="__codelineno-0-742"></a>
+<a id="__codelineno-0-743" name="__codelineno-0-743"></a><span class="sd">    Side Effects:</span>
+<a id="__codelineno-0-744" name="__codelineno-0-744"></a><span class="sd">        - Creates/updates model checkpoints: model_phase_{i}.pt</span>
+<a id="__codelineno-0-745" name="__codelineno-0-745"></a><span class="sd">        - Logs metrics, parameters, and artifacts to MLflow</span>
+<a id="__codelineno-0-746" name="__codelineno-0-746"></a><span class="sd">        - Saves predictions to dataset if configured</span>
+<a id="__codelineno-0-747" name="__codelineno-0-747"></a><span class="sd">        - Copies Hydra outputs to MLflow artifacts</span>
+<a id="__codelineno-0-748" name="__codelineno-0-748"></a><span class="sd">        - Creates could_not_log_artifacts.txt on logging failures</span>
+<a id="__codelineno-0-749" name="__codelineno-0-749"></a>
+<a id="__codelineno-0-750" name="__codelineno-0-750"></a><span class="sd">    Training Flow:</span>
+<a id="__codelineno-0-751" name="__codelineno-0-751"></a><span class="sd">        1. Load HDF5 dataset and log to MLflow</span>
+<a id="__codelineno-0-752" name="__codelineno-0-752"></a><span class="sd">        2. Build job list (pre-train, main phases, test)</span>
+<a id="__codelineno-0-753" name="__codelineno-0-753"></a><span class="sd">        3. For each job:</span>
+<a id="__codelineno-0-754" name="__codelineno-0-754"></a><span class="sd">           - Initialize/reload dataloaders if needed</span>
+<a id="__codelineno-0-755" name="__codelineno-0-755"></a><span class="sd">           - Initialize/load model if needed</span>
+<a id="__codelineno-0-756" name="__codelineno-0-756"></a><span class="sd">           - Execute training or testing</span>
+<a id="__codelineno-0-757" name="__codelineno-0-757"></a><span class="sd">           - Save checkpoint and log metrics</span>
+<a id="__codelineno-0-758" name="__codelineno-0-758"></a><span class="sd">        4. Copy all outputs to MLflow artifacts</span>
+<a id="__codelineno-0-759" name="__codelineno-0-759"></a>
+<a id="__codelineno-0-760" name="__codelineno-0-760"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-761" name="__codelineno-0-761"></a><span class="sd">        RuntimeError: If CUDA memory errors occur repeatedly</span>
+<a id="__codelineno-0-762" name="__codelineno-0-762"></a><span class="sd">        FileNotFoundError: If dataset or checkpoint files missing</span>
+<a id="__codelineno-0-763" name="__codelineno-0-763"></a>
+<a id="__codelineno-0-764" name="__codelineno-0-764"></a><span class="sd">    Notes:</span>
+<a id="__codelineno-0-765" name="__codelineno-0-765"></a><span class="sd">        - Decorated with @log_hydra_to_mlflow for automatic config logging</span>
+<a id="__codelineno-0-766" name="__codelineno-0-766"></a><span class="sd">        - Memory errors trigger dataloader recreation with adjusted settings</span>
+<a id="__codelineno-0-767" name="__codelineno-0-767"></a><span class="sd">        - NaN losses trigger checkpoint reload and gradient clipping adjustment</span>
+<a id="__codelineno-0-768" name="__codelineno-0-768"></a><span class="sd">        - Progressive sequence length increase during phase transitions</span>
+<a id="__codelineno-0-769" name="__codelineno-0-769"></a><span class="sd">        - For the runtime-vs-checkpoint state split, see</span>
+<a id="__codelineno-0-770" name="__codelineno-0-770"></a><span class="sd">          ``docs/bnode_core/ode/restart_training.md``</span>
+<a id="__codelineno-0-771" name="__codelineno-0-771"></a>
+<a id="__codelineno-0-772" name="__codelineno-0-772"></a><span class="sd">    See Also:</span>
+<a id="__codelineno-0-773" name="__codelineno-0-773"></a><span class="sd">        train_one_phase : Single training phase execution</span>
+<a id="__codelineno-0-774" name="__codelineno-0-774"></a><span class="sd">        initialize_model : Model instantiation and initialization</span>
+<a id="__codelineno-0-775" name="__codelineno-0-775"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-776" name="__codelineno-0-776"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Start training all phases....&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-777" name="__codelineno-0-777"></a>    <span class="n">device</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s1">&#39;cuda&#39;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="ow">and</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span> <span class="k">else</span> <span class="s1">&#39;cpu&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-778" name="__codelineno-0-778"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Using device: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">device</span><span class="p">))</span>
+<a id="__codelineno-0-779" name="__codelineno-0-779"></a>
+<a id="__codelineno-0-780" name="__codelineno-0-780"></a>    <span class="c1"># load hdf5 dataset and optionally normalization and reference datasets</span>
+<a id="__codelineno-0-781" name="__codelineno-0-781"></a>    <span class="n">hdf5_dataset</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_dataset_and_config</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">dataset_name</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_path</span><span class="p">)</span>
+<a id="__codelineno-0-782" name="__codelineno-0-782"></a>    <span class="n">mlflow_proxy</span><span class="o">.</span><span class="n">log_param</span><span class="p">(</span><span class="s1">&#39;dataset_name&#39;</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_name</span><span class="p">)</span>
+<a id="__codelineno-0-783" name="__codelineno-0-783"></a>
+<a id="__codelineno-0-784" name="__codelineno-0-784"></a>    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-785" name="__codelineno-0-785"></a>        <span class="n">hdf5_dataset_norm</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_dataset_and_config</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_name</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_path</span><span class="p">)</span>
+<a id="__codelineno-0-786" name="__codelineno-0-786"></a>        <span class="n">mlflow_proxy</span><span class="o">.</span><span class="n">log_param</span><span class="p">(</span><span class="s1">&#39;dataset_norm_name&#39;</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_norm_name</span><span class="p">)</span>
+<a id="__codelineno-0-787" name="__codelineno-0-787"></a>    <span class="k">else</span><span class="p">:</span> 
+<a id="__codelineno-0-788" name="__codelineno-0-788"></a>        <span class="n">hdf5_dataset_norm</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-789" name="__codelineno-0-789"></a>
+<a id="__codelineno-0-790" name="__codelineno-0-790"></a>    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-791" name="__codelineno-0-791"></a>        <span class="n">hdf5_dataset_ref</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">load_dataset_and_config</span><span class="p">(</span><span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_name</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_path</span><span class="p">)</span>
+<a id="__codelineno-0-792" name="__codelineno-0-792"></a>        <span class="n">mlflow_proxy</span><span class="o">.</span><span class="n">log_param</span><span class="p">(</span><span class="s1">&#39;dataset_ref_name&#39;</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">dataset_ref_name</span><span class="p">)</span>
+<a id="__codelineno-0-793" name="__codelineno-0-793"></a>    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-794" name="__codelineno-0-794"></a>        <span class="n">hdf5_dataset_ref</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-795" name="__codelineno-0-795"></a>
+<a id="__codelineno-0-796" name="__codelineno-0-796"></a>    <span class="c1"># collect jobs</span>
+<a id="__codelineno-0-797" name="__codelineno-0-797"></a>    <span class="c1"># job_list=[] filled with dict of style: {&#39;skip&#39;: bool, &#39;test&#39;: bool, &#39;train_cfg&#39;: cfg, &#39;pre_train&#39;: bool}</span>
+<a id="__codelineno-0-798" name="__codelineno-0-798"></a>    <span class="n">job_list</span> <span class="o">=</span> <span class="n">_build_job_list</span><span class="p">(</span><span class="n">cfg</span><span class="p">)</span>
+<a id="__codelineno-0-799" name="__codelineno-0-799"></a>    <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Created job list: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">job_list</span><span class="p">))</span>
+<a id="__codelineno-0-800" name="__codelineno-0-800"></a>
+<a id="__codelineno-0-801" name="__codelineno-0-801"></a>    <span class="c1"># load restart state if exists, to continue training from checkpoint if needed</span>
+<a id="__codelineno-0-802" name="__codelineno-0-802"></a>    <span class="n">checkpoint_store</span> <span class="o">=</span> <span class="n">RestartCheckpointStore</span><span class="o">.</span><span class="n">from_current_hydra_output</span><span class="p">()</span>
+<a id="__codelineno-0-803" name="__codelineno-0-803"></a>    <span class="k">if</span> <span class="n">checkpoint_store</span><span class="o">.</span><span class="n">is_training_complete</span><span class="p">():</span>
+<a id="__codelineno-0-804" name="__codelineno-0-804"></a>        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+<a id="__codelineno-0-805" name="__codelineno-0-805"></a>            <span class="s2">&quot;Training already complete (found </span><span class="si">%s</span><span class="s2">). Exiting without retraining.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-806" name="__codelineno-0-806"></a>            <span class="n">checkpoint_store</span><span class="o">.</span><span class="n">complete_marker_path</span><span class="p">,</span>
+<a id="__codelineno-0-807" name="__codelineno-0-807"></a>        <span class="p">)</span>
+<a id="__codelineno-0-808" name="__codelineno-0-808"></a>        <span class="k">return</span>
+<a id="__codelineno-0-809" name="__codelineno-0-809"></a>    <span class="n">train_all_phases_state</span><span class="p">,</span> <span class="n">train_one_phase_state</span><span class="p">,</span> <span class="n">restart_scheduler_states</span><span class="p">,</span> <span class="n">restart_scaler_state</span><span class="p">,</span> <span class="n">restart_model_state</span><span class="p">,</span> <span class="n">restart_optimizer_state</span> <span class="o">=</span> <span class="n">checkpoint_store</span><span class="o">.</span><span class="n">load_and_validate</span><span class="p">(</span><span class="n">job_list</span><span class="o">=</span><span class="n">job_list</span><span class="p">)</span>
+<a id="__codelineno-0-810" name="__codelineno-0-810"></a>    <span class="n">train_all_phases_state</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-811" name="__codelineno-0-811"></a>        <span class="n">train_all_phases_state</span> <span class="k">if</span> <span class="n">train_all_phases_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">TrainAllPhasesState</span><span class="p">()</span>
+<a id="__codelineno-0-812" name="__codelineno-0-812"></a>    <span class="p">)</span>
+<a id="__codelineno-0-813" name="__codelineno-0-813"></a>
+<a id="__codelineno-0-814" name="__codelineno-0-814"></a>    <span class="n">job_start_idx</span> <span class="o">=</span> <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">job_idx</span>
+<a id="__codelineno-0-815" name="__codelineno-0-815"></a>    <span class="n">next_epoch_anchor</span> <span class="o">=</span> <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">next_epoch_anchor</span>
+<a id="__codelineno-0-816" name="__codelineno-0-816"></a>    <span class="n">model</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-817" name="__codelineno-0-817"></a>    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">job</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">job_list</span><span class="p">[</span><span class="n">job_start_idx</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="n">job_start_idx</span><span class="p">):</span>
+<a id="__codelineno-0-818" name="__codelineno-0-818"></a>        <span class="c1"># batch_size_reduction_factor: compounding OOM reduction multiplier for this phase.</span>
+<a id="__codelineno-0-819" name="__codelineno-0-819"></a>        <span class="c1"># None means use config batch sizes as-is; reset to None at the start of every phase.</span>
+<a id="__codelineno-0-820" name="__codelineno-0-820"></a>        <span class="n">batch_size_reduction_factor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-821" name="__codelineno-0-821"></a>        <span class="n">oom_reduction_count</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-0-822" name="__codelineno-0-822"></a>        <span class="n">_log_job_start</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">job</span><span class="p">)</span>
+<a id="__codelineno-0-823" name="__codelineno-0-823"></a>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span> <span class="c1"># loop to catch memory errors</span>
+<a id="__codelineno-0-824" name="__codelineno-0-824"></a>            <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-825" name="__codelineno-0-825"></a>                <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;skip&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span> 
+<a id="__codelineno-0-826" name="__codelineno-0-826"></a>                    <span class="n">datasets</span><span class="p">,</span> <span class="n">dataloaders</span> <span class="o">=</span> <span class="n">_create_datasets_and_dataloaders_for_job</span><span class="p">(</span>
+<a id="__codelineno-0-827" name="__codelineno-0-827"></a>                        <span class="n">cfg</span><span class="p">,</span>
+<a id="__codelineno-0-828" name="__codelineno-0-828"></a>                        <span class="n">job</span><span class="p">,</span>
+<a id="__codelineno-0-829" name="__codelineno-0-829"></a>                        <span class="n">idx</span><span class="p">,</span>
+<a id="__codelineno-0-830" name="__codelineno-0-830"></a>                        <span class="n">hdf5_dataset</span><span class="p">,</span>
+<a id="__codelineno-0-831" name="__codelineno-0-831"></a>                        <span class="n">hdf5_dataset_norm</span><span class="p">,</span>
+<a id="__codelineno-0-832" name="__codelineno-0-832"></a>                        <span class="n">hdf5_dataset_ref</span><span class="p">,</span>
+<a id="__codelineno-0-833" name="__codelineno-0-833"></a>                        <span class="n">batch_size_reduction_factor</span><span class="o">=</span><span class="n">batch_size_reduction_factor</span><span class="p">,</span>
+<a id="__codelineno-0-834" name="__codelineno-0-834"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-835" name="__codelineno-0-835"></a>                    <span class="k">if</span> <span class="n">model</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">cfg</span><span class="o">.</span><span class="n">nn_model</span><span class="o">.</span><span class="n">training</span><span class="o">.</span><span class="n">load_trained_model_for_test</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-0-836" name="__codelineno-0-836"></a>                        <span class="n">model</span> <span class="o">=</span> <span class="n">_initialize_or_reload_model_for_job</span><span class="p">(</span>
+<a id="__codelineno-0-837" name="__codelineno-0-837"></a>                            <span class="n">cfg</span><span class="p">,</span>
+<a id="__codelineno-0-838" name="__codelineno-0-838"></a>                            <span class="n">job</span><span class="p">,</span>
+<a id="__codelineno-0-839" name="__codelineno-0-839"></a>                            <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-0-840" name="__codelineno-0-840"></a>                            <span class="n">datasets</span><span class="p">,</span>
+<a id="__codelineno-0-841" name="__codelineno-0-841"></a>                            <span class="n">hdf5_dataset</span><span class="p">,</span>
+<a id="__codelineno-0-842" name="__codelineno-0-842"></a>                            <span class="n">hdf5_dataset_norm</span><span class="p">,</span>
+<a id="__codelineno-0-843" name="__codelineno-0-843"></a>                            <span class="n">device</span><span class="p">,</span>
+<a id="__codelineno-0-844" name="__codelineno-0-844"></a>                            <span class="n">restart_model_state</span><span class="o">=</span><span class="n">restart_model_state</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">job_start_idx</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-845" name="__codelineno-0-845"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-846" name="__codelineno-0-846"></a>
+<a id="__codelineno-0-847" name="__codelineno-0-847"></a>                <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;skip&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-0-848" name="__codelineno-0-848"></a>                    <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;pre_train&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-0-849" name="__codelineno-0-849"></a>                        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Skipping Pre-Training&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-850" name="__codelineno-0-850"></a>                    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-851" name="__codelineno-0-851"></a>                        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Skipping Train Job </span><span class="si">{}</span><span class="s1"> as trained model is loaded in following phases&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">idx</span><span class="p">))</span>
+<a id="__codelineno-0-852" name="__codelineno-0-852"></a>                <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-853" name="__codelineno-0-853"></a>                    <span class="c1"># perform training on phase</span>
+<a id="__codelineno-0-854" name="__codelineno-0-854"></a>                    <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;test&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">:</span>
+<a id="__codelineno-0-855" name="__codelineno-0-855"></a>                        <span class="c1"># phase_restart_state: inner checkpoint state for this phase, or None for a fresh start.</span>
+<a id="__codelineno-0-856" name="__codelineno-0-856"></a>                        <span class="c1"># Only used on the first job of a resume; subsequent jobs always start fresh.</span>
+<a id="__codelineno-0-857" name="__codelineno-0-857"></a>                        <span class="n">phase_restart_state</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-858" name="__codelineno-0-858"></a>                            <span class="n">train_one_phase_state</span>
+<a id="__codelineno-0-859" name="__codelineno-0-859"></a>                            <span class="k">if</span> <span class="n">train_all_phases_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">job_start_idx</span>
+<a id="__codelineno-0-860" name="__codelineno-0-860"></a>                            <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-861" name="__codelineno-0-861"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-862" name="__codelineno-0-862"></a>                        <span class="n">next_epoch_anchor</span> <span class="o">=</span> <span class="n">train_one_phase</span><span class="p">(</span>
+<a id="__codelineno-0-863" name="__codelineno-0-863"></a>                            <span class="n">cfg</span><span class="p">,</span>
+<a id="__codelineno-0-864" name="__codelineno-0-864"></a>                            <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-0-865" name="__codelineno-0-865"></a>                            <span class="n">dataloaders</span><span class="p">,</span>
+<a id="__codelineno-0-866" name="__codelineno-0-866"></a>                            <span class="n">job</span><span class="p">[</span><span class="s1">&#39;train_cfg&#39;</span><span class="p">],</span>
+<a id="__codelineno-0-867" name="__codelineno-0-867"></a>                            <span class="n">job</span><span class="p">[</span><span class="s1">&#39;pre_train&#39;</span><span class="p">],</span>
+<a id="__codelineno-0-868" name="__codelineno-0-868"></a>                            <span class="n">idx</span><span class="p">,</span>
+<a id="__codelineno-0-869" name="__codelineno-0-869"></a>                            <span class="n">next_epoch_anchor</span><span class="p">,</span>
+<a id="__codelineno-0-870" name="__codelineno-0-870"></a>                            <span class="n">restart_train_one_phase_state</span><span class="o">=</span><span class="n">phase_restart_state</span><span class="p">,</span>
+<a id="__codelineno-0-871" name="__codelineno-0-871"></a>                            <span class="n">train_all_phases_state</span><span class="o">=</span><span class="n">train_all_phases_state</span><span class="p">,</span>
+<a id="__codelineno-0-872" name="__codelineno-0-872"></a>                            <span class="n">checkpoint_store</span><span class="o">=</span><span class="n">checkpoint_store</span><span class="p">,</span>
+<a id="__codelineno-0-873" name="__codelineno-0-873"></a>                            <span class="n">restart_scheduler_states</span><span class="o">=</span><span class="n">restart_scheduler_states</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">job_start_idx</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-874" name="__codelineno-0-874"></a>                            <span class="n">restart_scaler_state</span><span class="o">=</span><span class="n">restart_scaler_state</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">job_start_idx</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-875" name="__codelineno-0-875"></a>                            <span class="n">restart_model_state</span><span class="o">=</span><span class="n">restart_model_state</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">job_start_idx</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-876" name="__codelineno-0-876"></a>                            <span class="n">restart_optimizer_state</span><span class="o">=</span><span class="n">restart_optimizer_state</span> <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="n">job_start_idx</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-877" name="__codelineno-0-877"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-878" name="__codelineno-0-878"></a>                        <span class="c1"># Clear all restart state after first resumed phase; remaining phases start fresh.</span>
+<a id="__codelineno-0-879" name="__codelineno-0-879"></a>                        <span class="n">train_one_phase_state</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-880" name="__codelineno-0-880"></a>                        <span class="n">restart_scheduler_states</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-881" name="__codelineno-0-881"></a>                        <span class="n">restart_scaler_state</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-882" name="__codelineno-0-882"></a>                        <span class="n">restart_model_state</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-883" name="__codelineno-0-883"></a>                        <span class="n">restart_optimizer_state</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-884" name="__codelineno-0-884"></a>                        <span class="c1"># set seq_len_epoch_start for next job</span>
+<a id="__codelineno-0-885" name="__codelineno-0-885"></a>                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">job_list</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span>
+<a id="__codelineno-0-886" name="__codelineno-0-886"></a>                            <span class="c1"># consequently, seq_len_epoch_start should be seq_len_train</span>
+<a id="__codelineno-0-887" name="__codelineno-0-887"></a>                            <span class="n">job_list</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="s1">&#39;train_cfg&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">seq_len_epoch_start</span> <span class="o">=</span> <span class="p">(</span>
+<a id="__codelineno-0-888" name="__codelineno-0-888"></a>                                <span class="n">job</span><span class="p">[</span><span class="s1">&#39;train_cfg&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">seq_len_train</span> <span class="k">if</span> <span class="n">job</span><span class="p">[</span><span class="s1">&#39;pre_train&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">False</span> <span class="k">else</span> <span class="mi">1</span>
+<a id="__codelineno-0-889" name="__codelineno-0-889"></a>                            <span class="p">)</span>
+<a id="__codelineno-0-890" name="__codelineno-0-890"></a>                            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Set seq_len_epoch_start for next job to </span><span class="si">{}</span><span class="s1">, the seq_len_train of this job&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">job_list</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">][</span><span class="s1">&#39;train_cfg&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">seq_len_epoch_start</span><span class="p">))</span>
+<a id="__codelineno-0-891" name="__codelineno-0-891"></a>                    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-892" name="__codelineno-0-892"></a>                        <span class="n">train_all_phases_state</span><span class="o">.</span><span class="n">job_idx</span> <span class="o">=</span> <span class="n">idx</span>
+<a id="__codelineno-0-893" name="__codelineno-0-893"></a>                        <span class="n">checkpoint_store</span><span class="o">.</span><span class="n">save_outer_for_test_job</span><span class="p">(</span><span class="n">train_all_phases_state</span><span class="p">)</span>
+<a id="__codelineno-0-894" name="__codelineno-0-894"></a>                        <span class="n">_run_test_job</span><span class="p">(</span>
+<a id="__codelineno-0-895" name="__codelineno-0-895"></a>                            <span class="n">cfg</span><span class="p">,</span>
+<a id="__codelineno-0-896" name="__codelineno-0-896"></a>                            <span class="n">model</span><span class="p">,</span>
+<a id="__codelineno-0-897" name="__codelineno-0-897"></a>                            <span class="n">dataloaders</span><span class="p">,</span>
+<a id="__codelineno-0-898" name="__codelineno-0-898"></a>                            <span class="n">job</span><span class="p">,</span>
+<a id="__codelineno-0-899" name="__codelineno-0-899"></a>                            <span class="n">device</span><span class="p">,</span>
+<a id="__codelineno-0-900" name="__codelineno-0-900"></a>                            <span class="n">next_epoch_anchor</span><span class="p">,</span>
+<a id="__codelineno-0-901" name="__codelineno-0-901"></a>                            <span class="n">hdf5_dataset</span><span class="p">,</span>
+<a id="__codelineno-0-902" name="__codelineno-0-902"></a>                            <span class="n">hdf5_dataset_norm</span><span class="p">,</span>
+<a id="__codelineno-0-903" name="__codelineno-0-903"></a>                            <span class="n">hdf5_dataset_ref</span><span class="p">,</span>
+<a id="__codelineno-0-904" name="__codelineno-0-904"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-905" name="__codelineno-0-905"></a>                <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span><span class="p">:</span>
+<a id="__codelineno-0-906" name="__codelineno-0-906"></a>                    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">empty_cache</span><span class="p">()</span> 
+<a id="__codelineno-0-907" name="__codelineno-0-907"></a>                <span class="k">break</span> <span class="c1"># break the exception loop</span>
+<a id="__codelineno-0-908" name="__codelineno-0-908"></a>            <span class="k">except</span> <span class="n">CheckpointRequestedExit</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-909" name="__codelineno-0-909"></a>                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Stopping after checkpoint request: </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+<a id="__codelineno-0-910" name="__codelineno-0-910"></a>                <span class="n">mlflow_proxy</span><span class="o">.</span><span class="n">set_tag_if_active</span><span class="p">(</span><span class="s1">&#39;ended by&#39;</span><span class="p">,</span> <span class="s1">&#39;checkpoint request&#39;</span><span class="p">)</span>
+<a id="__codelineno-0-911" name="__codelineno-0-911"></a>                <span class="k">return</span>
+<a id="__codelineno-0-912" name="__codelineno-0-912"></a>            <span class="k">except</span> <span class="ne">RuntimeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+<a id="__codelineno-0-913" name="__codelineno-0-913"></a>                <span class="k">if</span> <span class="s1">&#39;CUDA out of memory&#39;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> <span class="ow">or</span> <span class="s1">&#39;CUDA memory is almost full&#39;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
+<a id="__codelineno-0-914" name="__codelineno-0-914"></a>                    <span class="n">oom_reduction_count</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-915" name="__codelineno-0-915"></a>                    <span class="n">batch_size_reduction_factor</span> <span class="o">=</span> <span class="p">(</span><span class="n">batch_size_reduction_factor</span> <span class="ow">or</span> <span class="mf">1.0</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.7</span>
+<a id="__codelineno-0-916" name="__codelineno-0-916"></a>                    <span class="k">if</span> <span class="n">oom_reduction_count</span> <span class="o">&gt;=</span> <span class="mi">30</span><span class="p">:</span>
+<a id="__codelineno-0-917" name="__codelineno-0-917"></a>                        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-918" name="__codelineno-0-918"></a>                            <span class="s1">&#39;CUDA out of memory has occurred </span><span class="si">%d</span><span class="s1"> times in this phase. &#39;</span>
+<a id="__codelineno-0-919" name="__codelineno-0-919"></a>                            <span class="s1">&#39;Batch size is severely reduced (factor </span><span class="si">%.4f</span><span class="s1">). &#39;</span>
+<a id="__codelineno-0-920" name="__codelineno-0-920"></a>                            <span class="s1">&#39;Check GPU memory configuration.&#39;</span><span class="p">,</span>
+<a id="__codelineno-0-921" name="__codelineno-0-921"></a>                            <span class="n">oom_reduction_count</span><span class="p">,</span>
+<a id="__codelineno-0-922" name="__codelineno-0-922"></a>                            <span class="n">batch_size_reduction_factor</span><span class="p">,</span>
+<a id="__codelineno-0-923" name="__codelineno-0-923"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-924" name="__codelineno-0-924"></a>                    <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+<a id="__codelineno-0-925" name="__codelineno-0-925"></a>                        <span class="s1">&#39;CUDA out of memory. Retrying in 10 s with batch-size factor </span><span class="si">%.3f</span><span class="s1">.&#39;</span><span class="p">,</span>
+<a id="__codelineno-0-926" name="__codelineno-0-926"></a>                        <span class="n">batch_size_reduction_factor</span><span class="p">,</span>
+<a id="__codelineno-0-927" name="__codelineno-0-927"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-928" name="__codelineno-0-928"></a>                    <span class="n">pyTime</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<a id="__codelineno-0-929" name="__codelineno-0-929"></a>                    <span class="k">if</span> <span class="n">cfg</span><span class="o">.</span><span class="n">use_cuda</span><span class="p">:</span>
+<a id="__codelineno-0-930" name="__codelineno-0-930"></a>                        <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">empty_cache</span><span class="p">()</span>
+<a id="__codelineno-0-931" name="__codelineno-0-931"></a>                <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-932" name="__codelineno-0-932"></a>                    <span class="k">raise</span> <span class="n">e</span>
+<a id="__codelineno-0-933" name="__codelineno-0-933"></a>    <span class="n">checkpoint_store</span><span class="o">.</span><span class="n">clear_restart_artifacts</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="bnode_core.ode.trainer.main" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">main</span><span class="p">()</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Entry point for (B)NODE training via Hydra CLI.</p>
+<p>Initializes Hydra configuration system and launches train_all_phases with
+validated config. Auto-detects config directory and uses 'train_test_ode'
+as the default config name.</p>
+<p>This function is registered as 'trainer' in pyproject.toml, enabling
+command-line execution via::</p>
+<div class="highlight"><pre><span></span><code>uv run trainer [config_overrides]
+</code></pre></div>
+
+
+<p><span class="doc-section-title">Examples:</span></p>
+    <p>See module docstring for usage examples.</p>
+
+
+<details class="side-effects" open>
+  <summary>Side Effects</summary>
+  <ul>
+<li>Registers config store with Hydra</li>
+<li>Auto-detects config directory from filepaths</li>
+<li>Launches Hydra-decorated train_all_phases</li>
+</ul>
+</details>
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>src/bnode_core/ode/trainer.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-1793">1793</a></span>
+<span class="normal"><a href="#__codelineno-0-1794">1794</a></span>
+<span class="normal"><a href="#__codelineno-0-1795">1795</a></span>
+<span class="normal"><a href="#__codelineno-0-1796">1796</a></span>
+<span class="normal"><a href="#__codelineno-0-1797">1797</a></span>
+<span class="normal"><a href="#__codelineno-0-1798">1798</a></span>
+<span class="normal"><a href="#__codelineno-0-1799">1799</a></span>
+<span class="normal"><a href="#__codelineno-0-1800">1800</a></span>
+<span class="normal"><a href="#__codelineno-0-1801">1801</a></span>
+<span class="normal"><a href="#__codelineno-0-1802">1802</a></span>
+<span class="normal"><a href="#__codelineno-0-1803">1803</a></span>
+<span class="normal"><a href="#__codelineno-0-1804">1804</a></span>
+<span class="normal"><a href="#__codelineno-0-1805">1805</a></span>
+<span class="normal"><a href="#__codelineno-0-1806">1806</a></span>
+<span class="normal"><a href="#__codelineno-0-1807">1807</a></span>
+<span class="normal"><a href="#__codelineno-0-1808">1808</a></span>
+<span class="normal"><a href="#__codelineno-0-1809">1809</a></span>
+<span class="normal"><a href="#__codelineno-0-1810">1810</a></span>
+<span class="normal"><a href="#__codelineno-0-1811">1811</a></span>
+<span class="normal"><a href="#__codelineno-0-1812">1812</a></span>
+<span class="normal"><a href="#__codelineno-0-1813">1813</a></span>
+<span class="normal"><a href="#__codelineno-0-1814">1814</a></span>
+<span class="normal"><a href="#__codelineno-0-1815">1815</a></span>
+<span class="normal"><a href="#__codelineno-0-1816">1816</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-1793" name="__codelineno-0-1793"></a><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+<a id="__codelineno-0-1794" name="__codelineno-0-1794"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Entry point for (B)NODE training via Hydra CLI.</span>
+<a id="__codelineno-0-1795" name="__codelineno-0-1795"></a>
+<a id="__codelineno-0-1796" name="__codelineno-0-1796"></a><span class="sd">    Initializes Hydra configuration system and launches train_all_phases with</span>
+<a id="__codelineno-0-1797" name="__codelineno-0-1797"></a><span class="sd">    validated config. Auto-detects config directory and uses &#39;train_test_ode&#39;</span>
+<a id="__codelineno-0-1798" name="__codelineno-0-1798"></a><span class="sd">    as the default config name.</span>
+<a id="__codelineno-0-1799" name="__codelineno-0-1799"></a>
+<a id="__codelineno-0-1800" name="__codelineno-0-1800"></a><span class="sd">    This function is registered as &#39;trainer&#39; in pyproject.toml, enabling</span>
+<a id="__codelineno-0-1801" name="__codelineno-0-1801"></a><span class="sd">    command-line execution via::</span>
+<a id="__codelineno-0-1802" name="__codelineno-0-1802"></a>
+<a id="__codelineno-0-1803" name="__codelineno-0-1803"></a><span class="sd">        uv run trainer [config_overrides]</span>
+<a id="__codelineno-0-1804" name="__codelineno-0-1804"></a>
+<a id="__codelineno-0-1805" name="__codelineno-0-1805"></a><span class="sd">    Examples:</span>
+<a id="__codelineno-0-1806" name="__codelineno-0-1806"></a><span class="sd">        See module docstring for usage examples.</span>
+<a id="__codelineno-0-1807" name="__codelineno-0-1807"></a>
+<a id="__codelineno-0-1808" name="__codelineno-0-1808"></a><span class="sd">    Side Effects:</span>
+<a id="__codelineno-0-1809" name="__codelineno-0-1809"></a><span class="sd">        - Registers config store with Hydra</span>
+<a id="__codelineno-0-1810" name="__codelineno-0-1810"></a><span class="sd">        - Auto-detects config directory from filepaths</span>
+<a id="__codelineno-0-1811" name="__codelineno-0-1811"></a><span class="sd">        - Launches Hydra-decorated train_all_phases</span>
+<a id="__codelineno-0-1812" name="__codelineno-0-1812"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-1813" name="__codelineno-0-1813"></a>    <span class="n">get_config_store</span><span class="p">()</span>
+<a id="__codelineno-0-1814" name="__codelineno-0-1814"></a>    <span class="n">config_dir</span> <span class="o">=</span> <span class="n">filepaths</span><span class="o">.</span><span class="n">config_dir_auto_recognize</span><span class="p">()</span>
+<a id="__codelineno-0-1815" name="__codelineno-0-1815"></a>    <span class="n">config_name</span> <span class="o">=</span> <span class="s1">&#39;train_test_ode&#39;</span>
+<a id="__codelineno-0-1816" name="__codelineno-0-1816"></a>    <span class="n">hydra</span><span class="o">.</span><span class="n">main</span><span class="p">(</span><span class="n">config_path</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">config_dir</span><span class="o">.</span><span class="n">absolute</span><span class="p">()),</span> <span class="n">config_name</span><span class="o">=</span><span class="n">config_name</span><span class="p">,</span> <span class="n">version_base</span><span class="o">=</span><span class="kc">None</span><span class="p">)(</span><span class="n">train_all_phases</span><span class="p">)()</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.uni-augsburg.de/de/fakultaet/fai/informatik/prof/imech/team/julius-aka/" target="_blank" rel="noopener" title="www.uni-augsburg.de" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M16.36 14c.08-.66.14-1.32.14-2s-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2m-5.15 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56M14.34 14H9.66c-.1-.66-.16-1.32-.16-2s.06-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2M12 19.96c-.83-1.2-1.5-2.53-1.91-3.96h3.82c-.41 1.43-1.08 2.76-1.91 3.96M8 8H5.08A7.92 7.92 0 0 1 9.4 4.44C8.8 5.55 8.35 6.75 8 8m-2.92 8H8c.35 1.25.8 2.45 1.4 3.56A8 8 0 0 1 5.08 16m-.82-2C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2M12 4.03c.83 1.2 1.5 2.54 1.91 3.97h-3.82c.41-1.43 1.08-2.77 1.91-3.97M18.92 8h-2.95a15.7 15.7 0 0 0-1.38-3.56c1.84.63 3.37 1.9 4.33 3.56M12 2C6.47 2 2 6.5 2 12a10 10 0 0 0 10 10 10 10 0 0 0 10-10A10 10 0 0 0 12 2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://www.linkedin.com/in/julius-aka/" target="_blank" rel="noopener" title="www.linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93zM6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://scholar.google.com/citations?user=7SypqSQAAAAJ&hl" target="_blank" rel="noopener" title="scholar.google.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3 1 9l11 6 9-4.91V17h2V9M5 13.18v4L12 21l7-3.82v-4L12 17z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/juliusaka" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33s1.71.11 2.5.33c1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.instant", "navigation.top", "navigation.tabs", "search.suggest", "search.highlight"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
